@@ -1,0 +1,338 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[a4paper,margin=1in]{geometry}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{hyperref}
+\usepackage{enumitem}
+\usepackage{graphicx}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{float}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{array}
+
+
+\title{
+    \textbf{Project Proposal: EcoTwin} \\
+    \large Geospatial Ecosystem Discovery, Similarity Search, and Analog Forecasting Platform
+}
+
+\author{
+    Ankit Kumar | Peeyush Prashant | Vikash Kumar \\
+}
+
+\date{}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+This proposal details the technical framework for EcoTwin, an intelligent geospatial computing platform designed to optimize ecosystem monitoring and predictive analysis. By utilizing Earth Observation data, geospatial foundation models, vector databases, and historical analog forecasting, EcoTwin enables interactive ecosystem discovery, temporal trend modeling, and explainable forecasting. This document outlines the formal problem approach, system design architecture, and chronological implementation work plan.
+\end{abstract}
+
+\tableofcontents
+\newpage
+
+% =========================================================
+\section{Problem Statement}
+% =========================================================
+Environmental ecosystems undergo continuous, complex transformations driven by climate variability, urban sprawl, agricultural shifts, and localized natural processes. Standard ecological monitoring networks are fundamentally descriptive; they track structural degradation post-facto but fail to provide mechanisms to actively learn from matching global environmental scenarios. Specifically, existing environmental information systems lack the capacity to:
+\begin{itemize}
+    \item Dynamically discover ecologically identical or matching target ecosystems across distinct geographic regions.
+    \item Quantitatively compare multi-year environmental index trajectories over long timelines.
+    \item Utilize historical analog ecosystems as proxy indicators to forecast localized environmental changes without relying purely on black-box generative simulations.
+\end{itemize}
+
+EcoTwin addresses this diagnostic gap by answering the core operational hypothesis: \textit{``What ecosystems elsewhere have already evolved similarly to this specific ecosystem, and what structural insight can we extract from their historical trajectories?''}
+
+% =========================================================
+\section{Research Objectives}
+% =========================================================
+The primary goal is to engineer a highly scalable geospatial discovery engine. The academic and technical objectives comprise:
+\begin{enumerate}
+    \item \textbf{Mathematical Vector Representation:} Map multi-band satellite composites into dense, lower-dimensional embedding spaces utilizing foundation remote sensing transformers to preserve contextual eco-features.
+    \item \textbf{Sub-Linear Similarity Matching:} Implement highly indexed spatial-vector search structures to query geographic analogs in less than 500 milliseconds across thousands of region blocks.
+    \item \textbf{Explainable Analog Forecasting:} Develop a non-parametric forecasting approach that derives future vegetation, water, and burn metrics by modeling the historical trajectory offsets of corresponding spatial analogs.
+\end{enumerate}
+
+% =========================================================
+\section{Proposed Approach}
+% =========================================================
+The EcoTwin approach shifts the predictive forecasting paradigm from direct parametric time-series simulation to a data-driven spatial-temporal \textbf{Analog Architecture}. Instead of training a distinct neural network to generate synthetic imagery predictions, the platform constructs a multi-year offline pipeline that discretizes target surfaces into standardized ecosystems. By extracting deep spatial-spectral representations using the Prithvi foundation model, geographic regions are stored as points inside a vector index. Online queries locate top-$K$ geographic twins using cosine similarity. The actual future trajectory of an older historical twin then provides an empirical, verifiable blueprint for how the younger target region is likely to evolve, rendering the system's output completely verifiable and grounded in historical observation.
+
+% =========================================================
+\section{Methodology}
+% =========================================================
+The proposed EcoTwin framework follows a grid-based ecosystem intelligence approach that combines Earth Observation data, geospatial foundation models, vector similarity search, and analog-based forecasting. The methodology is designed to transform large-scale satellite observations into searchable ecosystem representations and use historical analog trajectories to estimate future ecosystem conditions.
+
+\subsection{Methodology Overview}
+The complete workflow consists of six major stages:
+\begin{enumerate}
+\item Spatial Grid Generation
+\item Earth Observation Data Collection
+\item Environmental Feature Extraction
+\item Geospatial Embedding Generation
+\item Ecosystem Analog Search
+\item Analog-Based Forecasting
+\end{enumerate}
+The workflow converts raw satellite imagery into ecosystem embeddings that can be compared globally to discover ecologically similar regions.
+
+\subsection{Stage 1: Spatial Grid Generation}
+Traditional ecological studies often analyze entire administrative regions, watersheds, or protected areas as single entities. Such approaches introduce variability in region size and shape, making direct comparison difficult. To establish a standardized representation, the study area is divided into fixed-size spatial grids.
+\[
+\text{Grid}_{\text{cell}} = 5\text{km} \times 5\text{km}
+\]
+Each grid cell becomes an independent ecological observation unit. For every grid cell, the following information is maintained:
+\begin{itemize}
+\item Geographic coordinates
+\item Boundary geometry
+\item Multi-year satellite observations
+\item Environmental indicators
+\item Geospatial embeddings
+\end{itemize}
+The grid-based representation ensures consistency across different ecosystems and enables large-scale comparison between geographically distant regions.
+
+\subsection{Stage 2: Earth Observation Data Acquisition}
+Satellite observations are collected using Google Earth Engine. The primary dataset used is:
+\begin{itemize}
+\item Sentinel-2 Surface Reflectance (10m resolution)
+\end{itemize}
+Additional datasets may include:
+\begin{itemize}
+\item Landsat Archive
+\item MODIS Products
+\item Digital Elevation Models
+\item Climate Variables
+\item Land Cover Maps
+\end{itemize}
+For each grid cell, annual cloud-free composites are generated over a multi-year observation window. The processing pipeline performs:
+\begin{enumerate}
+\item Cloud masking
+\item Shadow removal
+\item Atmospheric correction
+\item Annual median compositing
+\end{enumerate}
+This produces a consistent environmental snapshot for every grid cell and every year.
+
+\subsection{Stage 3: Environmental Feature Extraction}
+To characterize ecosystem behavior, multiple ecological indicators are computed from the satellite observations.
+
+\subsubsection{Vegetation Indicator}
+Normalized Difference Vegetation Index (NDVI):
+\[
+\text{NDVI} = \frac{\text{NIR} - \text{RED}}{\text{NIR} + \text{RED}}
+\]
+NDVI provides information about vegetation density and ecosystem productivity.
+
+\subsubsection{Water Indicator}
+Normalized Difference Water Index (NDWI):
+\[
+\text{NDWI} = \frac{\text{GREEN} - \text{NIR}}{\text{GREEN} + \text{NIR}}
+\]
+NDWI measures surface water presence and moisture conditions.
+
+\subsubsection{Burn Severity Indicator}
+Normalized Burn Ratio (NBR):
+\[
+\text{NBR} = \frac{\text{NIR} - \text{SWIR}}{\text{NIR} + \text{SWIR}}
+\]
+NBR is used for wildfire impact assessment and ecosystem disturbance analysis.
+
+\subsubsection{Statistical Aggregation}
+For every grid and every year, the following statistics are computed:
+\begin{itemize}
+\item Mean
+\item Median
+\item Standard Deviation
+\item Minimum
+\item Maximum
+\end{itemize}
+These metrics provide a structured summary of ecosystem conditions.
+
+\subsection{Stage 4: Geospatial Embedding Generation}
+While environmental indices capture specific ecosystem characteristics, they may fail to represent complex spatial patterns. To overcome this limitation, EcoTwin employs the Prithvi Geospatial Foundation Model. The model receives multi-spectral satellite imagery as input:
+\[
+X = \{B2, B3, B4, B8, B11, B12\}
+\]
+where:
+\begin{itemize}
+\item B2 = Blue
+\item B3 = Green
+\item B4 = Red
+\item B8 = Near Infrared
+\item B11 = Shortwave Infrared 1
+\item B12 = Shortwave Infrared 2
+\end{itemize}
+The foundation model transforms the imagery into a dense numerical representation:
+\[
+\mathbf{e} \in \mathbb{R}^{768}
+\]
+where $\mathbf{e}$ represents the ecological fingerprint of a grid cell. These embeddings capture:
+\begin{itemize}
+\item Vegetation structure
+\item Surface moisture conditions
+\item Land cover composition
+\item Spatial texture
+\item Temporal ecosystem characteristics
+\end{itemize}
+
+\subsection{Stage 5: Ecosystem Analog Search}
+The generated embeddings are stored within a vector database using pgvector. Given a target grid cell embedding:
+\[
+\mathbf{e}_q
+\]
+the objective is to retrieve the most similar ecosystem grids from the database. Similarity is computed using cosine similarity:
+\[
+\text{Similarity}(\mathbf{e}_q, \mathbf{e}_i) = \frac{\mathbf{e}_q \cdot \mathbf{e}_i}{\|\mathbf{e}_q\| \|\mathbf{e}_i\|}
+\]
+The search engine retrieves the top-$K$ ecosystem analogs:
+\[
+A = \{a_1, a_2, \ldots, a_K\}
+\]
+where each analog represents a geographically distinct ecosystem exhibiting similar environmental characteristics. This enables the discovery of ecosystem twins across different regions, countries, and continents.
+
+\subsection{Stage 6: Analog-Based Forecasting}
+The forecasting component is based on historical ecosystem analogs rather than purely synthetic prediction models. Assume:
+\begin{itemize}
+\item Target Grid: $G_t$
+\item Analog Grid: $G_a$
+\end{itemize}
+If the current state of $G_t$ closely matches the historical state of $G_a$, then the future trajectory observed in $G_a$ can be used as a proxy forecast for $G_t$. For example:
+\begin{itemize}
+\item Grid $G_t$ in 2025 resembles Grid $G_a$ in 2018.
+\item Grid $G_a$ experienced vegetation decline from 2018--2025.
+\item Similar decline patterns may therefore be expected in $G_t$.
+\end{itemize}
+The forecast is generated by analyzing:
+\begin{itemize}
+\item NDVI trajectories
+\item NDWI trajectories
+\item NBR trajectories
+\item Land-cover transitions
+\item Long-term ecosystem trends
+\end{itemize}
+This produces an interpretable and evidence-based prediction framework.
+
+\subsection{Validation Strategy}
+The proposed system is evaluated using historical back-testing. The validation process consists of:
+\begin{enumerate}
+\item Selecting historical ecosystem states.
+\item Identifying analog ecosystems.
+\item Generating forecasts using analog trajectories.
+\item Comparing forecasts against actual observations.
+\end{enumerate}
+Performance is measured using:
+\begin{itemize}
+\item Mean Absolute Error (MAE)
+\item Root Mean Square Error (RMSE)
+\item Temporal Correlation
+\item Similarity Ranking Accuracy
+\end{itemize}
+
+\subsection{Expected Outcome}
+The methodology enables EcoTwin to discover ecosystem analogs at regional and global scales, explain ecosystem similarity through geospatial foundation model embeddings, and generate transparent forecasts grounded in real historical environmental evolution rather than black-box simulations.
+
+% =========================================================
+\section{System Architecture}
+% =========================================================
+The infrastructure uses a clear decoupling of the offline feature pipeline from the high-throughput online backend.
+
+\subsection{Database Schema Design}
+Data persistence is handled via a multi-engine layout inside PostgreSQL, utilizing \texttt{PostGIS} for geographic geometry tracking and \texttt{pgvector} for structural similarity operations.
+
+\begin{lstlisting}[language=SQL, caption=Core Database Schema Definition]
+-- Enable spatial and vector modules
+CREATE EXTENSION IF NOT EXISTS postgis;
+CREATE EXTENSION IF NOT EXISTS vector;
+
+-- Base Spatial Table
+CREATE TABLE regions (
+    region_id UUID PRIMARY KEY,
+    center_lat DOUBLE PRECISION NOT NULL,
+    center_lon DOUBLE PRECISION NOT NULL,
+    area_km DOUBLE PRECISION DEFAULT 25.0,
+    geom GEOMETRY(POLYGON, 4326),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- High-Dimensional Embedding Store
+CREATE TABLE region_embeddings (
+    region_id UUID REFERENCES regions(region_id),
+    year INTEGER NOT NULL,
+    embedding VECTOR(768) NOT NULL,
+    PRIMARY KEY (region_id, year)
+);
+
+-- Optimization Vector Index
+CREATE INDEX idx_region_embedding_cosine 
+ON region_embeddings 
+USING ivfflat (embedding vector_cosine_ops) 
+WITH (lists = 100);
+\end{lstlisting}
+
+\subsection{Service Engine Logic}
+The system targets performance limits optimized for interactive research applications:
+\begin{itemize}
+    \item \textbf{Similarity Search Engine:} Computes spatial twins by executing an inverted file flat cosine distance scan:
+    $$\min \left( 1 - \frac{\vec{u} \cdot \vec{v}}{\|\vec{u}\| \|\vec{v}\|} \right)$$
+    Target response latency is bounded strictly under 500ms for $K=10$ results.
+    \item \textbf{Caching Architecture:} Redis acts as an in-memory acceleration layer with a 24-hour Time-To-Live (TTL) for heavy metadata and lookups.
+\end{itemize}
+
+% =========================================================
+\section{Work Plan \& Timeline}
+% =========================================================
+The project is structured into three iterative operational phases spanning a logical engineering cycle:
+
+\begin{longtable}{p{3cm}p{7cm}p{4cm}}
+\caption{System Implementation Roadmap} \\
+\toprule
+\textbf{Phase} & \textbf{Core Engineering Scope} & \textbf{Status/Target} \\
+\midrule
+\endfirsthead %
+\endhead
+\textbf{Phase 1: Infra \& Data Pipeline} 
+& \begin{itemize}[leftmargin=*]
+    \item Spatial grid generation ($5\text{km} \times 5\text{km}$)
+    \item Google Earth Engine Sentinel ingestion automated
+    \item Setup PostgreSQL DB with PostGIS + pgvector extensions
+\end{itemize} 
+& Completed \\
+\midrule
+\textbf{Phase 2: ML \& Search Layer} 
+& \begin{itemize}[leftmargin=*]
+    \item Integrate Prithvi model pipeline for embedding generation
+    \item Populate vector index stores over 2018-2025 timelines
+    \item Construct FastAPI similarity query backend service
+\end{itemize} 
+& In Progress \\
+\midrule
+\textbf{Phase 3: Client Interface} 
+& \begin{itemize}[leftmargin=*]
+    \item Develop React map front-end using Leaflet mapping tools
+    \item Build Analog Forecast engine calculations
+    \item Setup asynchronous report rendering via Celery workers
+\end{itemize} 
+& Planned \\
+\bottomrule
+\end{longtable}
+
+% =========================================================
+\section{Deliverables}
+% =========================================================
+The project execution will produce the following tangible artifacts for evaluation:
+\begin{enumerate}
+    \item \textbf{Software Repository Bundle:} A containerized source code repository organized using standard engineering layouts:
+    \begin{itemize}
+        \item \texttt{backend/}: High-performance asynchronous FastAPI microservice.
+        \item \texttt{frontend/}: Fully typed TypeScript + React interactive dashboard UI.
+        \item \texttt{ml/ \& data\_pipeline/}: Feature extraction scripts and embedding batch-processing modules.
+    \end{itemize}
+    \item \textbf{Production Profile Deployment:} A multi-container Docker Compose microservice landscape routed through an Nginx reverse-proxy setup. Minimum hosting target constraints: Ubuntu 24.04 server instance outfitted with an 8-core CPU architecture, 16 GB of RAM, and 200 GB SSD block storage.
+    \item \textbf{Automated Document Generator:} An integrated backend printing pipeline producing downloadable standalone PDF analysis documents summarizing target metadata, twin indicators, and confidence ratings.
+\end{enumerate}
+
+\end{document}

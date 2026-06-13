@@ -1,0 +1,76 @@
+\contentsline {section}{\numberline {1}Introduction}{4}{section.1}%
+\contentsline {section}{\numberline {2}Architecture Overview}{4}{section.2}%
+\contentsline {subsection}{\numberline {2.1}High-Level Architecture}{4}{subsection.2.1}%
+\contentsline {section}{\numberline {3}Technology Stack}{5}{section.3}%
+\contentsline {subsection}{\numberline {3.1}Frontend}{5}{subsection.3.1}%
+\contentsline {subsection}{\numberline {3.2}Backend}{5}{subsection.3.2}%
+\contentsline {subsection}{\numberline {3.3}Database}{5}{subsection.3.3}%
+\contentsline {subsection}{\numberline {3.4}ML Layer}{5}{subsection.3.4}%
+\contentsline {subsection}{\numberline {3.5}Remote Sensing}{6}{subsection.3.5}%
+\contentsline {section}{\numberline {4}Region Architecture}{6}{section.4}%
+\contentsline {subsection}{\numberline {4.1}Region Definition}{6}{subsection.4.1}%
+\contentsline {subsection}{\numberline {4.2}Reasoning}{6}{subsection.4.2}%
+\contentsline {subsection}{\numberline {4.3}Region Structure}{6}{subsection.4.3}%
+\contentsline {section}{\numberline {5}Data Pipeline}{6}{section.5}%
+\contentsline {subsection}{\numberline {5.1}Step 1: Generate Grid}{6}{subsection.5.1}%
+\contentsline {subsection}{\numberline {5.2}Step 2: Sentinel Retrieval}{7}{subsection.5.2}%
+\contentsline {subsection}{\numberline {5.3}Step 3: Cloud Masking}{7}{subsection.5.3}%
+\contentsline {subsection}{\numberline {5.4}Step 4: Composite Generation}{7}{subsection.5.4}%
+\contentsline {section}{\numberline {6}Feature Extraction}{7}{section.6}%
+\contentsline {subsection}{\numberline {6.1}Environmental Indicators}{7}{subsection.6.1}%
+\contentsline {subsubsection}{\numberline {6.1.1}NDVI}{7}{subsubsection.6.1.1}%
+\contentsline {subsubsection}{\numberline {6.1.2}NDWI}{7}{subsubsection.6.1.2}%
+\contentsline {subsubsection}{\numberline {6.1.3}NBR}{7}{subsubsection.6.1.3}%
+\contentsline {subsection}{\numberline {6.2}Stored Statistics}{7}{subsection.6.2}%
+\contentsline {section}{\numberline {7}Embedding Pipeline}{8}{section.7}%
+\contentsline {subsection}{\numberline {7.1}Input}{8}{subsection.7.1}%
+\contentsline {subsection}{\numberline {7.2}Model}{8}{subsection.7.2}%
+\contentsline {subsection}{\numberline {7.3}Output}{8}{subsection.7.3}%
+\contentsline {subsection}{\numberline {7.4}Storage}{8}{subsection.7.4}%
+\contentsline {section}{\numberline {8}Database Design}{8}{section.8}%
+\contentsline {subsection}{\numberline {8.1}regions}{8}{subsection.8.1}%
+\contentsline {subsection}{\numberline {8.2}region_features}{8}{subsection.8.2}%
+\contentsline {subsection}{\numberline {8.3}region_embeddings}{9}{subsection.8.3}%
+\contentsline {subsection}{\numberline {8.4}temporal_profiles}{9}{subsection.8.4}%
+\contentsline {subsection}{\numberline {8.5}reports}{9}{subsection.8.5}%
+\contentsline {section}{\numberline {9}Vector Search Design}{10}{section.9}%
+\contentsline {subsection}{\numberline {9.1}Search Workflow}{10}{subsection.9.1}%
+\contentsline {subsection}{\numberline {9.2}Similarity Metric}{10}{subsection.9.2}%
+\contentsline {subsection}{\numberline {9.3}Default}{10}{subsection.9.3}%
+\contentsline {section}{\numberline {10}Forecasting Engine}{10}{section.10}%
+\contentsline {subsection}{\numberline {10.1}Forecasting Philosophy}{10}{subsection.10.1}%
+\contentsline {subsection}{\numberline {10.2}Workflow}{10}{subsection.10.2}%
+\contentsline {subsection}{\numberline {10.3}Forecast Inputs}{11}{subsection.10.3}%
+\contentsline {subsection}{\numberline {10.4}Forecast Outputs}{11}{subsection.10.4}%
+\contentsline {section}{\numberline {11}API Architecture}{11}{section.11}%
+\contentsline {subsection}{\numberline {11.1}Region APIs}{11}{subsection.11.1}%
+\contentsline {subsubsection}{\numberline {11.1.1}Get Region}{11}{subsubsection.11.1.1}%
+\contentsline {subsubsection}{\numberline {11.1.2}Find Region}{11}{subsubsection.11.1.2}%
+\contentsline {subsection}{\numberline {11.2}Similarity APIs}{12}{subsection.11.2}%
+\contentsline {subsubsection}{\numberline {11.2.1}Search Analogs}{12}{subsubsection.11.2.1}%
+\contentsline {subsection}{\numberline {11.3}Temporal APIs}{12}{subsection.11.3}%
+\contentsline {subsubsection}{\numberline {11.3.1}Temporal Profile}{12}{subsubsection.11.3.1}%
+\contentsline {subsection}{\numberline {11.4}Forecast APIs}{12}{subsection.11.4}%
+\contentsline {subsubsection}{\numberline {11.4.1}Forecast}{12}{subsubsection.11.4.1}%
+\contentsline {subsection}{\numberline {11.5}Report APIs}{13}{subsection.11.5}%
+\contentsline {subsubsection}{\numberline {11.5.1}Generate Report}{13}{subsubsection.11.5.1}%
+\contentsline {section}{\numberline {12}Frontend Design}{13}{section.12}%
+\contentsline {subsection}{\numberline {12.1}Map Page}{13}{subsection.12.1}%
+\contentsline {subsection}{\numberline {12.2}Region Panel}{13}{subsection.12.2}%
+\contentsline {subsection}{\numberline {12.3}Analog Panel}{13}{subsection.12.3}%
+\contentsline {subsection}{\numberline {12.4}Forecast Panel}{13}{subsection.12.4}%
+\contentsline {section}{\numberline {13}Caching Strategy}{14}{section.13}%
+\contentsline {subsection}{\numberline {13.1}Redis}{14}{subsection.13.1}%
+\contentsline {section}{\numberline {14}Security}{14}{section.14}%
+\contentsline {subsection}{\numberline {14.1}Authentication}{14}{subsection.14.1}%
+\contentsline {subsection}{\numberline {14.2}Authorization}{14}{subsection.14.2}%
+\contentsline {subsection}{\numberline {14.3}Rate Limiting}{14}{subsection.14.3}%
+\contentsline {section}{\numberline {15}Deployment Architecture}{14}{section.15}%
+\contentsline {subsection}{\numberline {15.1}Containers}{14}{subsection.15.1}%
+\contentsline {subsection}{\numberline {15.2}Docker Compose}{14}{subsection.15.2}%
+\contentsline {section}{\numberline {16}Cloud Deployment}{15}{section.16}%
+\contentsline {subsection}{\numberline {16.1}Infrastructure}{15}{subsection.16.1}%
+\contentsline {subsection}{\numberline {16.2}Production Stack}{15}{subsection.16.2}%
+\contentsline {section}{\numberline {17}Monitoring}{15}{section.17}%
+\contentsline {section}{\numberline {18}Performance Targets}{15}{section.18}%
+\contentsline {section}{\numberline {19}Future Enhancements}{16}{section.19}%

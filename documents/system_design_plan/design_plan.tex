@@ -1,0 +1,825 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[a4paper,margin=1in]{geometry}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{hyperref}
+\usepackage{enumitem}
+\usepackage{graphicx}
+\usepackage{amsmath}
+\usepackage{float}
+\usepackage{xcolor}
+\usepackage{listings}
+
+\title{
+EcoTwin \
+System Design Document (SDD)
+}
+
+\author{
+Architecture & Technical Design Specification
+}
+
+\date{\today}
+
+\begin{document}
+
+\maketitle
+\tableofcontents
+\newpage
+
+% =========================================================
+\section{Introduction}
+
+This document describes the technical architecture,
+system components, database design,
+data flow, APIs, deployment strategy,
+and implementation details for EcoTwin.
+
+EcoTwin is a geospatial ecosystem discovery
+and analog forecasting platform.
+
+The platform enables:
+
+\begin{itemize}
+\item Ecosystem discovery
+\item Similarity search
+\item Temporal ecosystem analysis
+\item Analog-based forecasting
+\item Automated report generation
+\end{itemize}
+
+% =========================================================
+\section{Architecture Overview}
+
+\subsection{High-Level Architecture}
+
+\begin{verbatim}
+
+```
+                OFFLINE PIPELINE
+
+  Sentinel-2 Historical Imagery
+                |
+                V
+     Region Grid Generation
+                |
+                V
+     Feature Extraction
+                |
+                V
+     Prithvi Embeddings
+                |
+                V
+  PostgreSQL + PostGIS + pgvector
+
+
+
+                 ONLINE SYSTEM
+```
+
+User
+|
+V
+React Frontend
+|
+V
+FastAPI Backend
+|
++-----------------------+
+|                       |
+V                       V
+
+PostGIS            pgvector Search
+|                       |
++-----------+-----------+
+|
+V
+Forecast Engine
+|
+V
+PDF Generator
+
+\end{verbatim}
+
+% =========================================================
+\section{Technology Stack}
+
+\subsection{Frontend}
+
+\begin{itemize}
+\item React
+\item TypeScript
+\item Vite
+\item React Leaflet
+\item Plotly
+\item TailwindCSS
+\end{itemize}
+
+\subsection{Backend}
+
+\begin{itemize}
+\item FastAPI
+\item SQLAlchemy
+\item Alembic
+\item Pydantic
+\end{itemize}
+
+\subsection{Database}
+
+\begin{itemize}
+\item PostgreSQL
+\item PostGIS
+\item pgvector
+\end{itemize}
+
+\subsection{ML Layer}
+
+\begin{itemize}
+\item PyTorch
+\item Prithvi Foundation Model
+\item NumPy
+\item Pandas
+\end{itemize}
+
+\subsection{Remote Sensing}
+
+\begin{itemize}
+\item Google Earth Engine
+\item Sentinel-2 SR Harmonized
+\item Sentinel Cloud Probability
+\end{itemize}
+
+% =========================================================
+\section{Region Architecture}
+
+\subsection{Region Definition}
+
+A region represents the smallest searchable
+ecosystem unit.
+
+Region size:
+
+[
+5km \times 5km
+]
+
+Area:
+
+[
+25km^2
+]
+
+\subsection{Reasoning}
+
+Using a fixed grid provides:
+
+\begin{itemize}
+\item Fast indexing
+\item Uniform ecosystem representation
+\item Easy retrieval
+\item Simple forecasting
+\end{itemize}
+
+\subsection{Region Structure}
+
+\begin{verbatim}
+Region ID
+
+Center Latitude
+Center Longitude
+
+Bounding Box
+
+Polygon Geometry
+
+Area
+\end{verbatim}
+
+% =========================================================
+\section{Data Pipeline}
+
+\subsection{Step 1: Generate Grid}
+
+Input:
+
+\begin{itemize}
+\item Project Boundary
+\end{itemize}
+
+Output:
+
+\begin{itemize}
+\item Region Grid
+\end{itemize}
+
+\subsection{Step 2: Sentinel Retrieval}
+
+Dataset:
+
+\begin{verbatim}
+COPERNICUS/S2_SR_HARMONIZED
+\end{verbatim}
+
+Period:
+
+\begin{verbatim}
+2018-2025
+\end{verbatim}
+
+\subsection{Step 3: Cloud Masking}
+
+Apply:
+
+\begin{itemize}
+\item SCL Mask
+\item Cloud Probability Mask
+\end{itemize}
+
+\subsection{Step 4: Composite Generation}
+
+Method:
+
+\begin{verbatim}
+Median Composite
+\end{verbatim}
+
+Output:
+
+\begin{itemize}
+\item RGB Composite
+\item Spectral Composite
+\end{itemize}
+
+% =========================================================
+\section{Feature Extraction}
+
+\subsection{Environmental Indicators}
+
+\subsubsection{NDVI}
+
+[
+NDVI =
+\frac{B8-B4}
+{B8+B4}
+]
+
+\subsubsection{NDWI}
+
+[
+NDWI =
+\frac{B3-B8}
+{B3+B8}
+]
+
+\subsubsection{NBR}
+
+[
+NBR =
+\frac{B8-B12}
+{B8+B12}
+]
+
+\subsection{Stored Statistics}
+
+For every region:
+
+\begin{itemize}
+\item Mean
+\item Median
+\item Standard Deviation
+\item Minimum
+\item Maximum
+\end{itemize}
+
+% =========================================================
+\section{Embedding Pipeline}
+
+\subsection{Input}
+
+Sentinel-2 Composite
+
+Bands:
+
+\begin{verbatim}
+B2
+B3
+B4
+B8
+B11
+B12
+\end{verbatim}
+
+\subsection{Model}
+
+Prithvi Foundation Model
+
+\subsection{Output}
+
+Embedding:
+
+\begin{verbatim}
+768 Dimensions
+\end{verbatim}
+
+\subsection{Storage}
+
+Stored in pgvector.
+
+% =========================================================
+\section{Database Design}
+
+\subsection{regions}
+
+\begin{verbatim}
+CREATE TABLE regions (
+
+region_id UUID PRIMARY KEY,
+
+center_lat DOUBLE PRECISION,
+
+center_lon DOUBLE PRECISION,
+
+area_km DOUBLE PRECISION,
+
+geom GEOMETRY(POLYGON,4326),
+
+created_at TIMESTAMP
+
+);
+\end{verbatim}
+
+% ---------------------------------------------------------
+
+\subsection{region_features}
+
+\begin{verbatim}
+CREATE TABLE region_features (
+
+region_id UUID,
+
+year INTEGER,
+
+ndvi_mean REAL,
+ndvi_std REAL,
+
+ndwi_mean REAL,
+ndwi_std REAL,
+
+nbr_mean REAL,
+nbr_std REAL,
+
+dominant_ecosystem TEXT
+
+);
+\end{verbatim}
+
+% ---------------------------------------------------------
+
+\subsection{region_embeddings}
+
+\begin{verbatim}
+CREATE TABLE region_embeddings (
+
+region_id UUID,
+
+year INTEGER,
+
+embedding VECTOR(768)
+
+);
+\end{verbatim}
+
+% ---------------------------------------------------------
+
+\subsection{temporal_profiles}
+
+\begin{verbatim}
+CREATE TABLE temporal_profiles (
+
+region_id UUID,
+
+year INTEGER,
+
+ndvi REAL,
+
+ndwi REAL,
+
+nbr REAL
+
+);
+\end{verbatim}
+
+% ---------------------------------------------------------
+
+\subsection{reports}
+
+\begin{verbatim}
+CREATE TABLE reports (
+
+report_id UUID,
+
+region_id UUID,
+
+generated_at TIMESTAMP,
+
+pdf_url TEXT
+
+);
+\end{verbatim}
+
+% =========================================================
+\section{Vector Search Design}
+
+\subsection{Search Workflow}
+
+\begin{verbatim}
+
+Selected Region
+|
+V
+
+Retrieve Embedding
+|
+V
+
+pgvector Similarity Search
+|
+V
+
+Top K Analog Regions
+
+\end{verbatim}
+
+\subsection{Similarity Metric}
+
+Cosine Similarity
+
+\subsection{Default}
+
+[
+K = 10
+]
+
+% =========================================================
+\section{Forecasting Engine}
+
+\subsection{Forecasting Philosophy}
+
+Forecasting uses ecosystem analogs.
+
+No direct predictive model is used.
+
+\subsection{Workflow}
+
+\begin{verbatim}
+
+Current Region
+|
+V
+
+Find Historical Analog
+
+```
+  |
+  V
+```
+
+Observe Future Evolution
+
+```
+  |
+  V
+```
+
+Generate Forecast
+
+\end{verbatim}
+
+\subsection{Forecast Inputs}
+
+\begin{itemize}
+\item Current Embedding
+\item Historical Embeddings
+\item NDVI History
+\item NDWI History
+\item NBR History
+\end{itemize}
+
+\subsection{Forecast Outputs}
+
+\begin{itemize}
+\item Vegetation Trend
+\item Water Trend
+\item Burn Severity Trend
+\item Confidence Score
+\end{itemize}
+
+% =========================================================
+\section{API Architecture}
+
+\subsection{Region APIs}
+
+\subsubsection{Get Region}
+
+\begin{verbatim}
+GET
+
+/api/v1/regions/{id}
+\end{verbatim}
+
+Response:
+
+\begin{verbatim}
+Region Metadata
+\end{verbatim}
+
+% ---------------------------------------------------------
+
+\subsubsection{Find Region}
+
+\begin{verbatim}
+POST
+
+/api/v1/regions/query
+\end{verbatim}
+
+Request:
+
+\begin{verbatim}
+{
+lat,
+lon
+}
+\end{verbatim}
+
+Response:
+
+\begin{verbatim}
+{
+region_id
+}
+\end{verbatim}
+
+% =========================================================
+\subsection{Similarity APIs}
+
+\subsubsection{Search Analogs}
+
+\begin{verbatim}
+GET
+
+/api/v1/similarity/{region_id}
+\end{verbatim}
+
+Response:
+
+\begin{verbatim}
+[
+analog_1,
+analog_2,
+analog_3
+]
+\end{verbatim}
+
+% =========================================================
+\subsection{Temporal APIs}
+
+\subsubsection{Temporal Profile}
+
+\begin{verbatim}
+GET
+
+/api/v1/temporal/{region_id}
+\end{verbatim}
+
+% =========================================================
+\subsection{Forecast APIs}
+
+\subsubsection{Forecast}
+
+\begin{verbatim}
+GET
+
+/api/v1/forecast/{region_id}
+\end{verbatim}
+
+Response:
+
+\begin{verbatim}
+{
+ndvi_forecast,
+ndwi_forecast,
+confidence
+}
+\end{verbatim}
+
+% =========================================================
+\subsection{Report APIs}
+
+\subsubsection{Generate Report}
+
+\begin{verbatim}
+POST
+
+/api/v1/report
+\end{verbatim}
+
+Response:
+
+\begin{verbatim}
+PDF URL
+\end{verbatim}
+
+% =========================================================
+\section{Frontend Design}
+
+\subsection{Map Page}
+
+Features:
+
+\begin{itemize}
+\item Satellite Basemap
+\item Region Selection
+\item Analog Visualization
+\end{itemize}
+
+\subsection{Region Panel}
+
+Displays:
+
+\begin{itemize}
+\item Region ID
+\item Ecosystem Type
+\item NDVI
+\item NDWI
+\item NBR
+\end{itemize}
+
+\subsection{Analog Panel}
+
+Displays:
+
+\begin{itemize}
+\item Similarity Score
+\item Region Metadata
+\item Location
+\end{itemize}
+
+\subsection{Forecast Panel}
+
+Displays:
+
+\begin{itemize}
+\item Forecast Horizon
+\item Predicted Trends
+\item Confidence
+\end{itemize}
+
+% =========================================================
+\section{Caching Strategy}
+
+\subsection{Redis}
+
+Cache:
+
+\begin{itemize}
+\item Region Metadata
+\item Similarity Results
+\item Forecast Results
+\end{itemize}
+
+TTL:
+
+\begin{verbatim}
+24 Hours
+\end{verbatim}
+
+% =========================================================
+\section{Security}
+
+\subsection{Authentication}
+
+JWT Tokens
+
+\subsection{Authorization}
+
+Role Based Access
+
+\subsection{Rate Limiting}
+
+Per User Request Limits
+
+% =========================================================
+\section{Deployment Architecture}
+
+\subsection{Containers}
+
+\begin{verbatim}
+
+Frontend
+Backend
+PostgreSQL
+Redis
+
+\end{verbatim}
+
+\subsection{Docker Compose}
+
+Services:
+
+\begin{itemize}
+\item frontend
+\item backend
+\item postgres
+\item redis
+\end{itemize}
+
+% =========================================================
+\section{Cloud Deployment}
+
+\subsection{Infrastructure}
+
+Recommended:
+
+\begin{itemize}
+\item DigitalOcean
+\item AWS
+\item Azure
+\item GCP
+\end{itemize}
+
+\subsection{Production Stack}
+
+\begin{verbatim}
+
+Nginx
+
+Frontend Container
+
+Backend Container
+
+PostgreSQL
+
+Redis
+
+Object Storage
+
+\end{verbatim}
+
+% =========================================================
+\section{Monitoring}
+
+Tools:
+
+\begin{itemize}
+\item Prometheus
+\item Grafana
+\item Loki
+\end{itemize}
+
+Metrics:
+
+\begin{itemize}
+\item API Latency
+\item Search Latency
+\item Forecast Latency
+\item Error Rates
+\end{itemize}
+
+% =========================================================
+\section{Performance Targets}
+
+\begin{tabular}{|p{5cm}|p{4cm}|}
+\hline
+
+Operation & Target \
+\hline
+
+Region Lookup & <100ms \
+\hline
+
+Similarity Search & <500ms \
+\hline
+
+Forecast & <2 sec \
+\hline
+
+Report Generation & <10 sec \
+\hline
+
+\end{tabular}
+
+% =========================================================
+\section{Future Enhancements}
+
+\begin{itemize}
+\item Dynamic Ecosystem Boundaries
+\item Global Search
+\item Climate Data Integration
+\item Multi-Model Forecasting
+\item Mobile Application
+\item Real-Time Monitoring
+\end{itemize}
+
+\end{document}

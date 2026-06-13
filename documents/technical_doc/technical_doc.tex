@@ -1,0 +1,954 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[a4paper,margin=1in]{geometry}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{hyperref}
+\usepackage{enumitem}
+\usepackage{graphicx}
+\usepackage{amsmath}
+\usepackage{float}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{array}
+
+\title{
+EcoTwin \
+Technical Implementation Specification (TIS)
+}
+
+\author{
+Implementation Blueprint
+}
+
+\date{\today}
+
+\begin{document}
+
+\maketitle
+\tableofcontents
+\newpage
+
+% =====================================================
+\section{Purpose}
+
+This document defines the detailed implementation
+specifications required to build EcoTwin.
+
+It serves as the engineering execution guide for:
+
+\begin{itemize}
+\item Backend Developers
+\item Frontend Developers
+\item GIS Engineers
+\item ML Engineers
+\item DevOps Engineers
+\end{itemize}
+
+The document includes:
+
+\begin{itemize}
+\item Folder Structure
+\item Coding Standards
+\item Earth Engine Workflow
+\item Region Generation Logic
+\item Prithvi Integration
+\item Vector Search Design
+\item Forecasting Workflow
+\item Docker Deployment
+\item CI/CD Pipeline
+\end{itemize}
+
+% =====================================================
+\section{Repository Structure}
+
+\begin{verbatim}
+
+ecotwin/
+
+├── frontend/
+│
+├── backend/
+│
+├── ml/
+│
+├── data_pipeline/
+│
+├── infrastructure/
+│
+├── docs/
+│
+├── scripts/
+│
+├── tests/
+│
+└── docker/
+
+\end{verbatim}
+
+% =====================================================
+\section{Frontend Structure}
+
+\begin{verbatim}
+
+frontend/
+
+src/
+
+├── app/
+│
+├── pages/
+│   ├── HomePage
+│   ├── RegionPage
+│   ├── ForecastPage
+│   └── ReportPage
+│
+├── components/
+│   ├── Map
+│   ├── RegionCard
+│   ├── SimilarityPanel
+│   ├── ForecastPanel
+│   ├── Charts
+│   └── ReportViewer
+│
+├── hooks/
+│
+├── services/
+│
+├── types/
+│
+├── utils/
+│
+└── assets/
+
+\end{verbatim}
+
+% =====================================================
+\section{Backend Structure}
+
+\begin{verbatim}
+
+backend/
+
+app/
+
+├── api/
+│
+├── core/
+│
+├── models/
+│
+├── schemas/
+│
+├── services/
+│
+├── repositories/
+│
+├── database/
+│
+├── middleware/
+│
+├── jobs/
+│
+├── workers/
+│
+└── main.py
+
+\end{verbatim}
+
+% =====================================================
+\section{ML Structure}
+
+\begin{verbatim}
+
+ml/
+
+├── embeddings/
+│
+├── forecasting/
+│
+├── feature_extraction/
+│
+├── similarity/
+│
+└── training/
+
+\end{verbatim}
+
+% =====================================================
+\section{Data Pipeline Structure}
+
+\begin{verbatim}
+
+data_pipeline/
+
+├── region_generation/
+│
+├── sentinel_ingestion/
+│
+├── cloud_masking/
+│
+├── composites/
+│
+├── exports/
+│
+└── batch_jobs/
+
+\end{verbatim}
+
+% =====================================================
+\section{Coding Standards}
+
+\subsection{Python}
+
+Rules:
+
+\begin{itemize}
+\item Python 3.11+
+\item PEP8 Compliance
+\item Type Hints Mandatory
+\item Docstrings Mandatory
+\item Black Formatter
+\item Ruff Linter
+\end{itemize}
+
+Example:
+
+\begin{verbatim}
+
+def get_region(
+region_id: str
+) -> Region:
+"""
+Retrieve region metadata.
+"""
+pass
+
+\end{verbatim}
+
+% =====================================================
+\section{Frontend Standards}
+
+\begin{itemize}
+\item TypeScript Strict Mode
+\item Functional Components
+\item React Hooks
+\item ESLint
+\item Prettier
+\end{itemize}
+
+Component Naming:
+
+\begin{verbatim}
+
+RegionCard.tsx
+
+ForecastPanel.tsx
+
+SimilarityPanel.tsx
+
+\end{verbatim}
+
+% =====================================================
+\section{Region Generation Algorithm}
+
+\subsection{Objective}
+
+Create fixed-size ecosystem regions.
+
+Region Size:
+
+[
+5km \times 5km
+]
+
+\subsection{Input}
+
+Project Boundary Polygon
+
+\subsection{Output}
+
+Region Grid
+
+\subsection{Algorithm}
+
+\begin{enumerate}
+\item Load boundary polygon.
+\item Convert to projected CRS.
+\item Generate square grid.
+\item Clip to boundary.
+\item Store centroid.
+\item Assign region ID.
+\end{enumerate}
+
+Output:
+
+\begin{verbatim}
+
+AP_000001
+
+AP_000002
+
+AP_000003
+
+\end{verbatim}
+
+% =====================================================
+\section{Earth Engine Pipeline}
+
+\subsection{Datasets}
+
+Primary:
+
+\begin{verbatim}
+
+COPERNICUS/S2_SR_HARMONIZED
+
+\end{verbatim}
+
+Secondary:
+
+\begin{verbatim}
+
+COPERNICUS/S2_CLOUD_PROBABILITY
+
+\end{verbatim}
+
+% -----------------------------------------------------
+
+\subsection{Cloud Masking}
+
+Apply:
+
+\begin{itemize}
+\item Cloud Probability
+\item SCL Filtering
+\end{itemize}
+
+Remove:
+
+\begin{itemize}
+\item Clouds
+\item Cirrus
+\item Cloud Shadows
+\item Snow
+\end{itemize}
+
+% -----------------------------------------------------
+
+\subsection{Composite Generation}
+
+Method:
+
+\begin{verbatim}
+
+Median Composite
+
+\end{verbatim}
+
+Period:
+
+\begin{verbatim}
+
+Yearly
+
+2018-2025
+
+\end{verbatim}
+
+Output:
+
+\begin{itemize}
+\item RGB Composite
+\item Feature Composite
+\end{itemize}
+
+% =====================================================
+\section{Feature Extraction Workflow}
+
+For each region:
+
+Compute:
+
+\begin{itemize}
+\item NDVI
+\item NDWI
+\item NBR
+\end{itemize}
+
+Store:
+
+\begin{itemize}
+\item Mean
+\item Std
+\item Min
+\item Max
+\end{itemize}
+
+% =====================================================
+\section{Prithvi Workflow}
+
+\subsection{Purpose}
+
+Generate ecosystem embeddings.
+
+\subsection{Input}
+
+Region Composite
+
+Bands:
+
+\begin{verbatim}
+
+B2
+B3
+B4
+B8
+B11
+B12
+
+\end{verbatim}
+
+\subsection{Preprocessing}
+
+\begin{enumerate}
+\item Normalize bands.
+\item Resize to model input size.
+\item Convert to tensor.
+\end{enumerate}
+
+\subsection{Inference}
+
+\begin{verbatim}
+
+Composite
+|
+V
+
+Prithvi Encoder
+|
+V
+
+Embedding
+
+\end{verbatim}
+
+Output:
+
+\begin{verbatim}
+
+768 Dimensions
+
+\end{verbatim}
+
+Store:
+
+\begin{verbatim}
+
+region_embeddings
+
+\end{verbatim}
+
+table.
+
+% =====================================================
+\section{Embedding Generation Job}
+
+Batch Process:
+
+\begin{verbatim}
+
+For Each Region
+For Each Year
+
+```
+    Load Composite
+
+    Generate Embedding
+
+    Save Vector
+```
+
+\end{verbatim}
+
+Schedule:
+
+\begin{verbatim}
+
+Weekly
+
+\end{verbatim}
+
+% =====================================================
+\section{pgvector Schema}
+
+Enable:
+
+\begin{verbatim}
+
+CREATE EXTENSION vector;
+
+\end{verbatim}
+
+Table:
+
+\begin{verbatim}
+
+CREATE TABLE region_embeddings(
+
+region_id UUID,
+
+year INTEGER,
+
+embedding VECTOR(768)
+
+);
+
+\end{verbatim}
+
+Index:
+
+\begin{verbatim}
+
+CREATE INDEX idx_region_embedding
+
+ON region_embeddings
+
+USING ivfflat
+(embedding vector_cosine_ops);
+
+\end{verbatim}
+
+% =====================================================
+\section{Similarity Search Service}
+
+Workflow:
+
+\begin{verbatim}
+
+Selected Region
+|
+V
+
+Embedding
+|
+V
+
+pgvector Search
+|
+V
+
+Top-K Analogs
+
+\end{verbatim}
+
+Query:
+
+\begin{verbatim}
+
+SELECT *
+
+FROM region_embeddings
+
+ORDER BY embedding
+<=> query_embedding
+
+LIMIT 10;
+
+\end{verbatim}
+
+% =====================================================
+\section{Forecasting Engine}
+
+\subsection{Approach}
+
+Analog Forecasting
+
+\subsection{Workflow}
+
+\begin{verbatim}
+
+Current Region
+|
+V
+
+Find Historical Analogs
+
+```
+  |
+  V
+```
+
+Retrieve Future Trajectories
+
+```
+  |
+  V
+```
+
+Average Changes
+
+```
+  |
+  V
+```
+
+Forecast
+
+\end{verbatim}
+
+% -----------------------------------------------------
+
+\subsection{Forecast Metrics}
+
+\begin{itemize}
+\item NDVI
+\item NDWI
+\item NBR
+\end{itemize}
+
+Forecast Horizon:
+
+\begin{itemize}
+\item 1 Year
+\item 3 Years
+\item 5 Years
+\end{itemize}
+
+% =====================================================
+\section{Background Jobs}
+
+Use:
+
+\begin{verbatim}
+
+Celery
+
+Redis
+
+\end{verbatim}
+
+Jobs:
+
+\begin{itemize}
+\item Composite Generation
+\item Embedding Generation
+\item Forecast Cache Refresh
+\item Report Generation
+\end{itemize}
+
+% =====================================================
+\section{API Versioning}
+
+Pattern:
+
+\begin{verbatim}
+
+/api/v1/
+
+\end{verbatim}
+
+Future:
+
+\begin{verbatim}
+
+/api/v2/
+
+\end{verbatim}
+
+% =====================================================
+\section{Environment Variables}
+
+Backend:
+
+\begin{verbatim}
+
+DATABASE_URL=
+
+REDIS_URL=
+
+JWT_SECRET=
+
+GEE_SERVICE_ACCOUNT=
+
+AWS_BUCKET=
+
+\end{verbatim}
+
+Frontend:
+
+\begin{verbatim}
+
+VITE_API_URL=
+
+\end{verbatim}
+
+% =====================================================
+\section{Docker Architecture}
+
+Containers:
+
+\begin{verbatim}
+
+frontend
+
+backend
+
+postgres
+
+redis
+
+nginx
+
+worker
+
+\end{verbatim}
+
+% =====================================================
+\section{Docker Compose Layout}
+
+\begin{verbatim}
+
+services:
+
+frontend
+
+backend
+
+postgres
+
+redis
+
+worker
+
+nginx
+
+\end{verbatim}
+
+% =====================================================
+\section{Nginx Configuration}
+
+Responsibilities:
+
+\begin{itemize}
+\item Reverse Proxy
+\item SSL Termination
+\item Compression
+\item Static Asset Serving
+\end{itemize}
+
+Routes:
+
+\begin{verbatim}
+
+/api/*
+
+backend
+
+/
+
+frontend
+
+\end{verbatim}
+
+% =====================================================
+\section{CI/CD Pipeline}
+
+Tool:
+
+\begin{verbatim}
+
+GitHub Actions
+
+\end{verbatim}
+
+Pipeline:
+
+\begin{verbatim}
+
+Push
+
+|
+
+Lint
+
+|
+
+Unit Tests
+
+|
+
+Build
+
+|
+
+Docker Build
+
+|
+
+Deploy
+
+\end{verbatim}
+
+% =====================================================
+\section{Testing Strategy}
+
+\subsection{Backend}
+
+Framework:
+
+\begin{verbatim}
+
+pytest
+
+\end{verbatim}
+
+Coverage Target:
+
+[
+80%
+]
+
+\subsection{Frontend}
+
+Framework:
+
+\begin{verbatim}
+
+Vitest
+
+React Testing Library
+
+\end{verbatim}
+
+Coverage:
+
+[
+80%
+]
+
+% =====================================================
+\section{Logging Strategy}
+
+Use:
+
+\begin{verbatim}
+
+Structlog
+
+\end{verbatim}
+
+Levels:
+
+\begin{itemize}
+\item INFO
+\item WARNING
+\item ERROR
+\item CRITICAL
+\end{itemize}
+
+Store:
+
+\begin{verbatim}
+
+logs/
+
+\end{verbatim}
+
+directory.
+
+% =====================================================
+\section{Monitoring}
+
+Metrics:
+
+\begin{itemize}
+\item API Latency
+\item Search Latency
+\item Forecast Latency
+\item CPU
+\item Memory
+\end{itemize}
+
+Stack:
+
+\begin{verbatim}
+
+Prometheus
+
+Grafana
+
+Loki
+
+\end{verbatim}
+
+% =====================================================
+\section{Production Infrastructure}
+
+Minimum Production Server:
+
+\begin{tabular}{|c|c|}
+\hline
+CPU & 8 Core \
+\hline
+RAM & 16 GB \
+\hline
+Storage & 200 GB SSD \
+\hline
+OS & Ubuntu 24.04 \
+\hline
+\end{tabular}
+
+% =====================================================
+\section{Release Roadmap}
+
+Phase 1
+
+\begin{itemize}
+\item Grid Generation
+\item Sentinel Pipeline
+\item Database Setup
+\end{itemize}
+
+Phase 2
+
+\begin{itemize}
+\item Prithvi Integration
+\item Similarity Search
+\item Forecast Engine
+\end{itemize}
+
+Phase 3
+
+\begin{itemize}
+\item Frontend
+\item Reporting
+\item Deployment
+\end{itemize}
+
+% =====================================================
+\section{Definition of Done}
+
+A feature is complete when:
+
+\begin{itemize}
+\item Code Reviewed
+\item Unit Tested
+\item Integrated
+\item Documented
+\item Deployed to Staging
+\item Approved
+\end{itemize}
+
+% =====================================================
+\section{Conclusion}
+
+This specification provides the detailed
+implementation blueprint for EcoTwin.
+
+It defines the complete technical structure
+required to implement ecosystem discovery,
+similarity search, temporal analysis,
+analog forecasting, and production deployment.
+
+\end{document}
