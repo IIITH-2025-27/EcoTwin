@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   MapContainer,
   TileLayer,
@@ -10,12 +10,19 @@ import {
   ZoomControl,
 } from 'react-leaflet';
 import type { LatLngBoundsLiteral, LatLngExpression } from 'leaflet';
-import { MapPin, X } from 'lucide-react';
+import type { Feature, GeoJsonObject } from 'geojson';
+import { ArrowLeft, MapPin, RefreshCw } from 'lucide-react';
 
 import { queryRegionByCoords } from '@/api/regions';
 import { useMapStore } from '@/store/mapStore';
 import { useSimilarity } from '@/hooks/useSimilarity';
+import { useSyncedStates } from '@/hooks/useSyncedStates';
+import IndiaStateLayer from './IndiaStateLayer';
 import type { AnalogResult } from '@/types';
+
+// GeoJSON source: India state boundaries
+const INDIA_GEOJSON_URL =
+  'https://raw.githubusercontent.com/geohacker/india/master/state/india_state.geojson';
 
 // ── Constants ─────────────────────────────────────────────────────────────
 const DEFAULT_CENTER: LatLngExpression = [
@@ -46,12 +53,14 @@ function fmt(n: number, d = 4) {
 }
 
 // ── Internal: click handler ───────────────────────────────────────────────
-function MapClickHandler() {
+// Only active when user is in state drill-down mode (enabled=true)
+function MapClickHandler({ enabled }: { enabled: boolean }) {
   const { selectRegion, setMapClickLoading, setActiveTab } = useMapStore();
   const [clickPos, setClickPos] = useState<{ lat: number; lon: number } | null>(null);
 
   useMapEvents({
     click: async (e) => {
+      if (!enabled) return;
       const { lat, lng: lon } = e.latlng;
       setClickPos({ lat, lon });
       setMapClickLoading(true);
@@ -217,6 +226,24 @@ export default function EcoTwinMap() {
   } = useMapStore();
 
   const { data: similarityData } = useSimilarity(selectedRegionId, topK);
+  const { data: syncedStates = [] } = useSyncedStates();
+
+  // ── State: selected Indian state for drill-down ────────────────────────
+  const [activeState, setActiveState] = useState<string | null>(null);
+
+  const [geoJson, setGeoJson] = useState<GeoJsonObject | null>(null);
+  const [geoJsonError, setGeoJsonError] = useState(false);
+  const geoJsonFetched = useRef(false);
+
+  // Fetch India GeoJSON once
+  useEffect(() => {
+    if (geoJsonFetched.current) return;
+    geoJsonFetched.current = true;
+    fetch(INDIA_GEOJSON_URL)
+      .then((r) => r.json())
+      .then((data: GeoJsonObject) => setGeoJson(data))
+      .catch(() => setGeoJsonError(true));
+  }, []);
 
   const handleAnalogClick = useCallback(
     (analog: AnalogResult) => {
@@ -226,9 +253,22 @@ export default function EcoTwinMap() {
     [selectRegion, setActiveTab],
   );
 
+  const handleStateSelect = useCallback((canonical: string, _feature: Feature) => {
+    setActiveState(canonical);
+    // IndiaStateLayer handles fitBounds internally via useEffect
+  }, []);
+
+  const handleBackToIndia = () => {
+    setActiveState(null);
+  };
+
+  const inStateMode = activeState !== null;
+  const noDataAvailable = syncedStates.length === 0;
+
   return (
     <div className="relative h-full w-full">
-      {/* Map loading overlay */}
+
+      {/* ── Map loading overlay ── */}
       {mapClickLoading && (
         <div className="absolute inset-x-0 top-3 z-[1000] flex justify-center">
           <div className="flex items-center gap-2 rounded-full bg-surface-800/90 px-4 py-2 shadow-xl backdrop-blur-sm border border-slate-700/50">
@@ -238,13 +278,55 @@ export default function EcoTwinMap() {
         </div>
       )}
 
-      {/* Click hint */}
-      {!selectedRegionId && !mapClickLoading && (
+      {/* ── Back button + state name (drill-down mode) ── */}
+      {inStateMode && (
+        <div className="absolute top-4 left-4 z-[1000] flex items-center gap-2">
+          <button
+            onClick={handleBackToIndia}
+            className="flex items-center gap-1.5 rounded-lg bg-surface-800/90 border border-slate-700/50 px-3 py-2 text-xs font-medium text-slate-200 backdrop-blur-sm hover:bg-surface-700/90 transition-colors shadow-lg"
+          >
+            <ArrowLeft className="h-3.5 w-3.5" />
+            Back to India
+          </button>
+          <div className="rounded-lg bg-sky-500/20 border border-sky-500/40 px-3 py-2 text-xs font-semibold text-sky-300 backdrop-blur-sm shadow-lg">
+            {activeState}
+          </div>
+        </div>
+      )}
+
+      {/* ── Drill-down click hint ── */}
+      {inStateMode && !selectedRegionId && !mapClickLoading && (
         <div className="pointer-events-none absolute bottom-8 left-1/2 z-[1000] -translate-x-1/2">
-          <div className="flex items-center gap-2 rounded-full bg-surface-800/80 px-4 py-2 border border-slate-700/50 backdrop-blur-sm">
-            <MapPin className="h-3.5 w-3.5 text-primary-400" />
+          <div className="flex items-center gap-2 rounded-full bg-surface-800/80 px-4 py-2 border border-sky-500/40 backdrop-blur-sm">
+            <MapPin className="h-3.5 w-3.5 text-sky-400" />
             <span className="text-xs text-slate-300">
-              Click anywhere on the map to discover an ecosystem
+              Click within <span className="text-sky-300 font-medium">{activeState}</span> to select a point
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* ── Overview: no data banner ── */}
+      {!inStateMode && noDataAvailable && !geoJsonError && (
+        <div className="pointer-events-none absolute bottom-6 left-1/2 z-[1000] -translate-x-1/2 w-max">
+          <div className="flex items-center gap-2.5 rounded-xl bg-surface-800/90 border border-slate-600/50 px-5 py-3 backdrop-blur-sm shadow-xl">
+            <RefreshCw className="h-4 w-4 flex-shrink-0 text-slate-400" />
+            <span className="text-sm text-slate-300">
+              No state data available —{' '}
+              <span className="text-primary-400 font-medium">Sync data first</span>{' '}
+              using the Sync button in the toolbar
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* ── Overview: select a state hint (when states have data) ── */}
+      {!inStateMode && !noDataAvailable && !selectedRegionId && !mapClickLoading && (
+        <div className="pointer-events-none absolute bottom-8 left-1/2 z-[1000] -translate-x-1/2">
+          <div className="flex items-center gap-2 rounded-full bg-surface-800/80 px-4 py-2 border border-teal-500/30 backdrop-blur-sm">
+            <span className="h-2 w-2 rounded-full bg-teal-400 flex-shrink-0" />
+            <span className="text-xs text-slate-300">
+              Click a highlighted state to start exploring
             </span>
           </div>
         </div>
@@ -255,7 +337,7 @@ export default function EcoTwinMap() {
         zoom={DEFAULT_ZOOM}
         zoomControl={false}
         className="h-full w-full"
-        preferCanvas={true}
+        preferCanvas={false}
       >
         {/* Satellite basemap */}
         <TileLayer
@@ -272,7 +354,19 @@ export default function EcoTwinMap() {
         />
 
         <ZoomControl position="bottomright" />
-        <MapClickHandler />
+
+        {/* India state boundaries layer */}
+        {geoJson && (
+          <IndiaStateLayer
+            geoData={geoJson}
+            syncedStates={syncedStates}
+            activeState={activeState}
+            onStateSelect={handleStateSelect}
+          />
+        )}
+
+        {/* Region click handler — only active in state drill-down mode */}
+        <MapClickHandler enabled={inStateMode} />
 
         {/* Selected region */}
         {selectedRegionLat !== null && selectedRegionLon !== null && (

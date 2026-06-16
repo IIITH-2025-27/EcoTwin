@@ -6,7 +6,10 @@ celery_app = Celery(
     "ecotwin",
     broker=settings.CELERY_BROKER_URL,
     backend=settings.CELERY_RESULT_BACKEND,
-    include=["app.workers.tasks.report_tasks"],
+    include=[
+        "app.workers.tasks.report_tasks",
+        "app.ML_pipeline.pipeline",
+    ],
 )
 
 celery_app.conf.update(
@@ -21,5 +24,6 @@ celery_app.conf.update(
     result_expires=3_600,  # 1 hour
     task_routes={
         "app.workers.tasks.report_tasks.*": {"queue": "reports"},
+        "app.ML_pipeline.pipeline.*":        {"queue": "pipeline"},
     },
 )

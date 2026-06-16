@@ -1,11 +1,12 @@
-import { MapPin, Timer, ArrowRight } from 'lucide-react';
+import React from 'react';
+import { MapPin, Timer, ArrowRight, Zap, Ruler, GitMerge } from 'lucide-react';
 import { clsx } from 'clsx';
 import LoadingSpinner from '@/components/common/LoadingSpinner';
 import ErrorMessage from '@/components/common/ErrorMessage';
 import Card from '@/components/common/Card';
 import { useSimilarity } from '@/hooks/useSimilarity';
 import { useMapStore } from '@/store/mapStore';
-import type { AnalogResult } from '@/types';
+import type { AnalogResult, SimilarityMethod } from '@/types';
 
 // ── Similarity ring ───────────────────────────────────────────────────────
 function SimilarityRing({ score }: { score: number }) {
@@ -113,19 +114,53 @@ function AnalogCard({
   );
 }
 
+// ── Method selector config ────────────────────────────────────────────────
+const METHODS: Array<{
+  value: SimilarityMethod;
+  label: string;
+  icon: React.ReactNode;
+  tip: string;
+}> = [
+  {
+    value: 'cosine',
+    label: 'Cosine',
+    icon: <Zap className="h-3 w-3" />,
+    tip: 'Cosine similarity — angle between embeddings. Best for unit-norm Prithvi vectors.',
+  },
+  {
+    value: 'euclidean',
+    label: 'Euclidean',
+    icon: <Ruler className="h-3 w-3" />,
+    tip: 'Euclidean (L2) distance — magnitude-aware. Score = 1 / (1 + distance).',
+  },
+  {
+    value: 'knn',
+    label: 'KNN',
+    icon: <GitMerge className="h-3 w-3" />,
+    tip: 'Exact k-NN inner product — equivalent to cosine on normalised embeddings.',
+  },
+];
+
 // ── Main component ────────────────────────────────────────────────────────
 export default function AnalogPanel() {
   const {
     selectedRegionId,
     topK,
     setTopK,
+    similarityMethod,
+    setSimilarityMethod,
     highlightedAnalogId,
     setHighlightedAnalogId,
     selectRegion,
     setActiveTab,
   } = useMapStore();
 
-  const { data, isLoading, error, refetch } = useSimilarity(selectedRegionId, topK);
+  const { data, isLoading, error, refetch } = useSimilarity(
+    selectedRegionId,
+    topK,
+    undefined,
+    similarityMethod,
+  );
 
   if (!selectedRegionId) {
     return (
@@ -162,6 +197,26 @@ export default function AnalogPanel() {
 
   return (
     <div className="space-y-3 p-3 tab-content-enter">
+      {/* Method selector */}
+      <div className="flex gap-1 rounded-lg bg-surface-800/60 border border-slate-700/40 p-1">
+        {METHODS.map(({ value, label, icon, tip }) => (
+          <button
+            key={value}
+            title={tip}
+            onClick={() => setSimilarityMethod(value)}
+            className={clsx(
+              'flex flex-1 items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium transition-colors',
+              similarityMethod === value
+                ? 'bg-primary-600 text-white shadow-sm'
+                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-700/40',
+            )}
+          >
+            {icon}
+            {label}
+          </button>
+        ))}
+      </div>
+
       {/* Controls */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-1.5 text-xs text-slate-400">

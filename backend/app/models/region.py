@@ -17,6 +17,7 @@ class Region(Base):
     center_lon = Column(Float, nullable=False)
     area_km = Column(Float, default=25.0)
     geom = Column(Geometry("POLYGON", srid=4326), nullable=True)
+    state_name = Column(String(100), nullable=True, index=True)
     created_at = Column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
@@ -72,7 +73,9 @@ class RegionFeature(Base):
     nbr_min = Column(Float)
     nbr_max = Column(Float)
 
-    dominant_ecosystem = Column(String(100))
+    dominant_ecosystem   = Column(String(100))
+    # Populated by Phase 3 of the ML pipeline (classifier.py)
+    ecosystem_confidence = Column(Float, nullable=True)
 
     region = relationship("Region", back_populates="features")
 

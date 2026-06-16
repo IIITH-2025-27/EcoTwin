@@ -18,7 +18,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Install torch from the lightweight CPU-only wheel index first so pip does not
+# pull the full CUDA variant (~2 GB). All other packages come from PyPI.
+RUN pip install --no-cache-dir \
+      torch==2.4.1+cpu \
+      --index-url https://download.pytorch.org/whl/cpu && \
+    pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 

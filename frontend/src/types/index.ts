@@ -48,6 +48,8 @@ export interface RegionQueryResult {
 
 // ── Similarity ────────────────────────────────────────────────────────────
 
+export type SimilarityMethod = 'cosine' | 'euclidean' | 'knn';
+
 export interface AnalogResult {
   region_id: string;
   center_lat: number;
@@ -62,6 +64,7 @@ export interface SimilarityResponse {
   query_year: number;
   analogs: AnalogResult[];
   search_latency_ms: number;
+  method: SimilarityMethod;
 }
 
 // ── Temporal ──────────────────────────────────────────────────────────────

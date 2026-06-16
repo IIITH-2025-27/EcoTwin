@@ -24,9 +24,21 @@ passlib[bcrypt]==1.7.4
 python-multipart==0.0.12
 
 # ── ML ────────────────────────────────────────────────────────────────────────
-# torch==2.4.1
+# torch is installed separately in the Dockerfile from the CPU-only wheel index:
+#   pip install torch==2.4.1+cpu --index-url https://download.pytorch.org/whl/cpu
+# Listed here as a comment so the version is visible but not re-fetched from PyPI.
+# torch==2.4.1+cpu  (installed via Dockerfile)
 numpy==1.26.4
 pandas==2.2.3
+scikit-learn==1.5.2
+opencv-python-headless==4.10.0.84
+
+# ── HuggingFace (Prithvi encoder) ─────────────────────────────────────────────
+transformers==4.44.2
+huggingface-hub==0.25.2
+
+# ── Google Earth Engine ───────────────────────────────────────────────────────
+earthengine-api==0.1.413
 
 # ── Geospatial ────────────────────────────────────────────────────────────────
 shapely==2.0.6

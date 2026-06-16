@@ -2,6 +2,7 @@ from uuid import UUID
 
 import structlog
 from fastapi import APIRouter, Depends
+from sqlalchemy import text
 
 from app.core.dependencies import DatabaseDep
 from app.repositories.region_repository import RegionRepository
@@ -14,6 +15,20 @@ logger = structlog.get_logger(__name__)
 
 def _service(db: DatabaseDep) -> RegionService:
     return RegionService(region_repo=RegionRepository(db))
+
+
+@router.get("/synced-states", response_model=list[str])
+async def get_synced_states(db: DatabaseDep) -> list[str]:
+    """Return state names that have at least one region with pipeline data."""
+    result = await db.execute(
+        text(
+            "SELECT DISTINCT r.state_name "
+            "FROM regions r "
+            "JOIN region_features rf ON rf.region_id = r.region_id "
+            "WHERE r.state_name IS NOT NULL AND r.state_name != ''"
+        )
+    )
+    return [row[0] for row in result.fetchall()]
 
 
 @router.get("/{region_id}", response_model=RegionSummaryResponse)

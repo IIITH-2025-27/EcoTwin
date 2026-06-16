@@ -16,3 +16,9 @@ export async function queryRegionByCoords(
   } satisfies RegionQueryRequest);
   return data;
 }
+
+/** Returns state names (matching INDIA_STATE_CENTROIDS keys) that have pipeline data. */
+export async function fetchSyncedStates(): Promise<string[]> {
+  const { data } = await apiClient.get<string[]>('/regions/synced-states');
+  return data;
+}

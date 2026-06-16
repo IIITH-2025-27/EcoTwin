@@ -76,7 +76,29 @@ services:
       redis:
         condition: service_healthy
     restart: unless-stopped
-
+  # ── Celery Worker (ML pipeline) ──────────────────────────────────────────────
+  pipeline_worker:
+    build:
+      context: .
+      target: production
+    container_name: ecotwin_pipeline
+    env_file: .env
+    command: >
+      celery -A app.workers.celery_app worker
+      --loglevel=info
+      --queues=pipeline
+      --concurrency=2
+    volumes:
+      - report_storage:/app/reports
+      - prithvi_model:/app/models
+      - hf_cache:/root/.cache/huggingface
+      - sync_backups:/app/backups
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
   # ── Flower (Celery monitoring) ─────────────────────────────────────────────
   flower:
     build:
@@ -109,3 +131,9 @@ volumes:
   postgres_data:
   redis_data:
   report_storage:
+  sync_backups:
+  # Persists the Prithvi-100M .pt checkpoint across container restarts.
+  # On first start the worker downloads ~400 MB from HuggingFace hub;
+  # subsequent starts load from this volume in ~15 s.
+  prithvi_model:
+  hf_cache:

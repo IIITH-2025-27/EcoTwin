@@ -1,10 +1,13 @@
-import { Leaf, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { useState } from 'react';
+import { Leaf, PanelLeftClose, PanelLeftOpen, RefreshCw } from 'lucide-react';
 import { useMapStore } from '@/store/mapStore';
 import { useRegion } from '@/hooks/useRegion';
+import SyncModal from '@/components/SyncModal/SyncModal';
 
 export default function Navbar() {
   const { selectedRegionId, isSidebarCollapsed, toggleSidebar } = useMapStore();
   const { data: regionData } = useRegion(selectedRegionId);
+  const [showSync, setShowSync] = useState(false);
 
   return (
     <header className="flex h-14 items-center justify-between border-b border-slate-700/60 bg-surface-800/95 px-4 backdrop-blur-sm">
@@ -64,8 +67,18 @@ export default function Navbar() {
         </div>
       )}
 
-      {/* Right: version tag */}
+      {/* Right: Sync button + version tag */}
       <div className="flex items-center gap-3">
+        <button
+          onClick={() => setShowSync(true)}
+          className="flex items-center gap-1.5 rounded-lg border border-primary-600/40 bg-primary-600/15 px-3 py-1.5
+                     text-xs font-medium text-primary-300 hover:bg-primary-600/25 hover:text-primary-200
+                     transition-colors"
+          title="Sync satellite data from Google Earth Engine"
+        >
+          <RefreshCw className="h-3.5 w-3.5" />
+          <span className="hidden sm:inline">Sync Data</span>
+        </button>
         <span className="hidden rounded-md bg-slate-700/40 px-2 py-0.5 font-mono text-xs text-slate-500 sm:inline">
           v1.0.0
         </span>
@@ -76,6 +89,8 @@ export default function Navbar() {
           </span>
         </div>
       </div>
+
+      {showSync && <SyncModal onClose={() => setShowSync(false)} />}
     </header>
   );
 }

@@ -49,6 +49,21 @@
   }
 }
 
+/* ── India state tooltips ────────────────────────────────────────────────── */
+.ecotwin-state-tooltip {
+  background: rgba(15, 23, 42, 0.92) !important;
+  border: 1px solid rgba(71, 85, 105, 0.6) !important;
+  border-radius: 6px !important;
+  color: #e2e8f0 !important;
+  font-size: 11px !important;
+  padding: 6px 10px !important;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.4) !important;
+  backdrop-filter: blur(4px);
+}
+.ecotwin-state-tooltip::before {
+  display: none !important;
+}
+
 /* ── Leaflet overrides ───────────────────────────────────────────────────── */
 .leaflet-container {
   width: 100%;

@@ -14,6 +14,7 @@ Geospatial Ecosystem Discovery, Similarity Search & Analog Forecasting Platform.
 - [Running Locally (Without Docker)](#running-locally-without-docker)
 - [Running With Docker](#running-with-docker)
 - [Database Migrations](#database-migrations)
+- [ML Pipeline & Data Sync](#ml-pipeline--data-sync)
 - [Running Tests](#running-tests)
 - [API Reference](#api-reference)
 - [Useful Scripts](#useful-scripts)
@@ -27,9 +28,11 @@ It powers:
 
 - **Ecosystem region lookup** — nearest 5 km × 5 km grid cell for any lat/lon
 - **Analog similarity search** — cosine similarity over 768-dim Prithvi embeddings via `pgvector`
-- **Temporal profiles** — year-by-year NDVI / NDWI / NBR trends (2018 – present)
+- **Temporal profiles** — year-by-year NDVI / NDWI / NBR trends (2017 – present)
 - **Analog-based forecasting** — 5-year outlook derived from historical twin trajectories
 - **Automated PDF reports** — async generation via Celery workers
+- **ML data pipeline** — GEE Sentinel-2 ingestion → Prithvi-100M embeddings → ecosystem classification
+- **Data sync** — per-state ingestion control via a dedicated sync API and Celery pipeline queue
 
 ---
 
@@ -40,9 +43,11 @@ It powers:
 | API Framework | FastAPI + Uvicorn / Gunicorn |
 | Database | PostgreSQL 16 + PostGIS + pgvector |
 | ORM / Migrations | SQLAlchemy 2 (async) + Alembic |
-| Cache | Redis 7 |
+| Cache / Broker | Redis 7 |
 | Task Queue | Celery 5 + Flower (monitoring) |
-| ML Embeddings | PyTorch + Prithvi Foundation Model |
+| ML Embeddings | PyTorch (CPU) + Prithvi-100M (IBM/NASA) |
+| Remote Sensing | Google Earth Engine (Sentinel-2 SR) |
+| Ecosystem Classification | Rule-based + optional scikit-learn probe |
 | PDF Reports | ReportLab |
 | Containerisation | Docker + Docker Compose |
 
@@ -57,6 +62,7 @@ It powers:
 | Redis | 7 | via Docker (recommended) |
 | Docker | 24 | [Docker_help.md](./Docker_help.md) |
 | Docker Compose | v2 | bundled with Docker Desktop |
+| GEE account | — | [earthengine.google.com](https://earthengine.google.com) |
 
 ---
 
@@ -65,20 +71,27 @@ It powers:
 ```
 backend/
 ├── app/
-│   ├── main.py            ← FastAPI application factory
-│   ├── core/              ← Config, security, logging, exceptions, DI
-│   ├── db/                ← SQLAlchemy engine & session
-│   ├── models/            ← ORM models
-│   ├── schemas/           ← Pydantic request / response schemas
-│   ├── repositories/      ← Data access layer
-│   ├── services/          ← Business logic
-│   ├── api/v1/endpoints/  ← Route handlers
-│   ├── cache/             ← Redis client
-│   ├── workers/           ← Celery app + tasks
-│   └── utils/             ← Geo utilities
-├── alembic/               ← DB migration scripts
-├── tests/                 ← Unit + integration tests
-├── scripts/               ← Init SQL for Docker
+│   ├── main.py                 ← FastAPI application factory
+│   ├── core/                   ← Config, security, logging, exceptions, DI
+│   ├── db/                     ← SQLAlchemy engine & session
+│   ├── models/                 ← ORM models (Region, RegionFeature, …)
+│   ├── schemas/                ← Pydantic request / response schemas
+│   ├── repositories/           ← Data access layer
+│   ├── services/               ← Business logic (region, sync, report, …)
+│   ├── api/v1/endpoints/       ← Route handlers
+│   ├── cache/                  ← Redis client
+│   ├── workers/                ← Celery app + tasks
+│   ├── ML_pipeline/            ← GEE ingest, Prithvi inference, classifier, Celery tasks
+│   │   ├── constants.py        ← All tuneable values (single source of truth)
+│   │   ├── gee_ingest.py       ← Phase 1: Sentinel-2 composite → NDVI/NDWI/NBR
+│   │   ├── prithvi_inference.py← Phase 2: band array → 768-dim embedding
+│   │   ├── _prithvi_model.py   ← PrithviEncoder architecture stub
+│   │   ├── classifier.py       ← Phase 3: ecosystem label + confidence
+│   │   └── pipeline.py         ← Celery tasks (chain: P1 → P2 → P3)
+│   └── utils/                  ← Geo utilities
+├── alembic/                    ← DB migration scripts
+├── tests/                      ← Unit + integration tests
+├── scripts/                    ← Init SQL for Docker
 ├── Dockerfile
 ├── docker-compose.yml
 ├── requirements.txt
@@ -97,11 +110,35 @@ backend/
 cp .env.example .env
 ```
 
-### 2. Edit `.env` — set the required secrets
+### 2. Edit `.env` — minimum required keys
 
 ```env
+# ── Database ───────────────────────────────────────────────────────────────
 POSTGRES_PASSWORD=your_secure_password
+
+# ── App ────────────────────────────────────────────────────────────────────
 SECRET_KEY=your_long_random_secret_key
+
+# ── Google Earth Engine ────────────────────────────────────────────────────
+# Option A: user credentials (run `earthengine authenticate` locally)
+# Option B: service account (recommended for Docker)
+GEE_SERVICE_ACCOUNT_EMAIL=your-sa@project.iam.gserviceaccount.com
+GEE_SERVICE_ACCOUNT_KEY_PATH=/app/secrets/gee_key.json
+
+# ── Prithvi model ──────────────────────────────────────────────────────────
+# Leave empty to auto-download from HuggingFace on first pipeline run.
+# Set to a path if you have a local .pt checkpoint:
+PRITHVI_MODEL_PATH=/app/models/prithvi_100m.pt
+
+# Set to true during development to skip model inference (fast stub vectors)
+PRITHVI_USE_STUB=false
+
+# ── Optional: sklearn classification head ─────────────────────────────────
+# Leave empty to use rule-based classifier (default)
+CLASSIFIER_MODEL_PATH=
+
+# ── Backups ────────────────────────────────────────────────────────────────
+BACKUP_DIR=/app/backups
 ```
 
 > **Never commit `.env` to version control.**
@@ -124,15 +161,14 @@ source .venv/bin/activate
 .venv\Scripts\activate
 ```
 
-### 2. Install dependencies
+### 2. Install PyTorch (CPU) first, then remaining dependencies
 
 ```bash
+pip install torch==2.4.1+cpu --index-url https://download.pytorch.org/whl/cpu
 pip install -r requirements-dev.txt
 ```
 
-### 3. Point to a local database
-
-Update `.env`:
+### 3. Point to local services
 
 ```env
 POSTGRES_HOST=localhost
@@ -151,26 +187,31 @@ alembic upgrade head
 uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-The API is now live at **http://localhost:8000**  
-Interactive docs (dev mode): **http://localhost:8000/api/docs**
+API: **http://localhost:8000** | Docs: **http://localhost:8000/api/docs**
 
-### 6. Start the Celery worker (separate terminal)
+### 6. Start Celery workers (separate terminals)
 
 ```bash
+# Reports worker
 celery -A app.workers.celery_app worker --loglevel=info --queues=reports --concurrency=2
+
+# ML pipeline worker
+celery -A app.workers.celery_app worker --loglevel=info --queues=pipeline --concurrency=2
 ```
 
 ---
 
 ## Running With Docker
 
-> Recommended for the full stack — spins up PostgreSQL, Redis, backend, Celery worker, and Flower in one command.
+> Recommended for the full stack — spins up PostgreSQL, Redis, backend API, both Celery workers, and Flower in one command.
 
 ### 1. Build and start all services
 
 ```bash
 docker compose up --build
 ```
+
+On first start the `pipeline_worker` will automatically download the Prithvi-100M model (~400 MB) from HuggingFace and cache it in the `hf_cache` named volume. Subsequent starts load from the volume in ~15 s.
 
 ### 2. Run migrations inside the running container
 
@@ -180,26 +221,39 @@ docker compose exec backend alembic upgrade head
 
 ### 3. Verify services
 
-| Service | URL | Port | Description |
-|----------|-----|------|-------------|
-| API | http://localhost:8000/api/v1/health | 8000 | Backend health check endpoint |
-| API Docs (Swagger UI) | http://localhost:8000/api/docs | 8000 | API documentation |
-| Flower (Celery Monitoring) | http://localhost:5555 | 5555 | Celery task monitoring dashboard |
-| pgAdmin | http://localhost:8080 | 8080 | PostgreSQL administration UI |
-| PostgreSQL | localhost:5432 | 5432 | PostgreSQL + PostGIS + pgvector database |
-| Redis | localhost:6379 | 6379 | Redis cache and Celery broker |
+| Service | URL | Description |
+|---|---|---|
+| API | http://localhost:8000/api/v1/health | Health check |
+| Swagger UI | http://localhost:8000/api/docs | Interactive API docs |
+| Flower | http://localhost:5555 | Celery task monitoring |
+| pgAdmin | http://localhost:8080 | PostgreSQL admin UI |
+| PostgreSQL | localhost:5432 | Database |
+| Redis | localhost:6379 | Cache + broker |
 
-### 4. Stop all services
+### 4. Docker volumes
+
+| Volume | Purpose |
+|---|---|
+| `postgres_data` | PostgreSQL database files |
+| `redis_data` | Redis persistence |
+| `report_storage` | Generated PDF reports (`/app/reports`) |
+| `sync_backups` | `pg_dump` backup files (`/app/backups`) |
+| `prithvi_model` | Local `.pt` checkpoint mount (`/app/models`) |
+| `hf_cache` | HuggingFace download cache (`~/.cache/huggingface`) |
+
+### 5. Stop all services
 
 ```bash
 docker compose down
 ```
 
-### 5. Stop and remove all data volumes
+### 6. Stop and remove all data volumes
 
 ```bash
 docker compose down -v
 ```
+
+> ⚠️ `-v` will also delete the `hf_cache` volume — the next start will re-download Prithvi-100M.
 
 ---
 
@@ -215,7 +269,7 @@ alembic downgrade -1
 # Rollback all migrations
 alembic downgrade base
 
-# Generate a new migration (after model changes)
+# Generate a new migration after model changes
 alembic revision --autogenerate -m "describe_your_change"
 
 # Show current migration state
@@ -225,31 +279,93 @@ alembic current
 alembic history --verbose
 ```
 
+Current migrations:
+
+| Revision | Description |
+|---|---|
+| `001` | Initial schema (regions, features, embeddings, temporal, reports) |
+| `002` | Add `ecosystem_confidence` column to `region_features` |
+| `003` | Add `state_name` column + index to `regions` |
+
+---
+
+## ML Pipeline & Data Sync
+
+### Pipeline phases (per region × year)
+
+```
+Phase 1 (GEE)        fetch_composite → NDVI / NDWI / NBR stats + band array
+      ↓
+Phase 2 (Prithvi)    band array → 768-dim L2-normalised embedding → pgvector
+      ↓
+Phase 3 (classifier) NDVI/NDWI/NBR means → ecosystem label + confidence
+```
+
+All three phases run as a Celery chain on the **`pipeline`** queue (`pipeline_worker` service).
+
+### Triggering a sync via API
+
+```bash
+# Check which states have data
+GET /api/v1/regions/synced-states
+
+# Start a sync (wipe mode, Delhi, 2020–2022)
+curl -X POST http://localhost:8000/api/v1/sync/start \
+  -H "Content-Type: application/json" \
+  -d '{
+    "states": ["Delhi"],
+    "duration": {"mode": "duration", "start_year": 2020, "end_year": 2022},
+    "sync_mode": "wipe",
+    "confirmed": true
+  }'
+
+# Poll job status
+GET /api/v1/sync/status/<job_id>
+```
+
+### Time estimate
+
+| Scope | Workers | Estimated time |
+|---|---|---|
+| 1 state × 1 year | 1 | ~1–1.5 min |
+| 1 state × 5 years | 1 | ~5–8 min |
+| 1 state × 5 years | 5 (parallel) | ~1–2 min |
+| First ever run (model download) | any | +5 min one-time |
+
+### GEE authentication
+
+**Option A — user credentials (local dev):**
+```bash
+earthengine authenticate
+```
+
+**Option B — service account (Docker/production):**
+1. Create a GEE-enabled service account and download the JSON key.
+2. Mount the key file into the container and set:
+   ```env
+   GEE_SERVICE_ACCOUNT_EMAIL=sa@project.iam.gserviceaccount.com
+   GEE_SERVICE_ACCOUNT_KEY_PATH=/app/secrets/gee_key.json
+   ```
+
+### Stub mode (no GEE / no GPU)
+
+Set `PRITHVI_USE_STUB=true` in `.env` to skip real GEE calls and model inference. The pipeline uses deterministic hash-based vectors. Useful for local development; embeddings will not be meaningful for similarity search.
+
 ---
 
 ## Running Tests
 
-### All tests
-
 ```bash
+# All tests
 pytest
-```
 
-### Unit tests only
-
-```bash
+# Unit tests only
 pytest tests/unit/
-```
 
-### Integration tests only
-
-```bash
+# Integration tests only
 pytest tests/integration/
-```
 
-### With coverage report
-
-```bash
+# With coverage report
 pytest --cov=app --cov-report=html
 ```
 
@@ -265,13 +381,17 @@ All endpoints are prefixed with `/api/v1/`.
 | Method | Endpoint | Description |
 |---|---|---|
 | `GET` | `/health` | Health check |
-| `GET` | `/regions/{id}` | Get region metadata + indicators |
+| `GET` | `/regions/synced-states` | States with pipeline data |
+| `GET` | `/regions/{id}` | Region metadata + indicators |
 | `POST` | `/regions/query` | Find nearest region by lat/lon |
 | `GET` | `/similarity/{region_id}` | Top-K analog ecosystems |
 | `GET` | `/temporal/{region_id}` | NDVI / NDWI / NBR time-series |
 | `GET` | `/forecast/{region_id}` | 5-year analog-based forecast |
 | `POST` | `/report` | Enqueue PDF report generation |
-| `GET` | `/report/{report_id}` | Poll report status / get PDF URL |
+| `GET` | `/report/{report_id}` | Poll report status / download URL |
+| `GET` | `/sync/states` | List all 36 India states + centroids |
+| `POST` | `/sync/start` | Start a data sync for up to 3 states |
+| `GET` | `/sync/status/{job_id}` | Live Celery task status for a sync job |
 
 ### Example: Find region by coordinates
 
@@ -301,8 +421,11 @@ ruff check app/ --fix
 # Type checking
 mypy app/
 
-# Monitor Celery tasks (Flower)
+# Monitor Celery tasks in browser
 celery -A app.workers.celery_app flower --port=5555
+
+# Watch pipeline worker logs (Docker)
+docker compose logs -f pipeline_worker
 ```
 
 ---

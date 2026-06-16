@@ -7,7 +7,7 @@ from app.core.config import settings
 from app.core.exceptions import EmbeddingNotFoundException, RegionNotFoundException
 from app.repositories.embedding_repository import EmbeddingRepository
 from app.repositories.region_repository import RegionRepository
-from app.schemas.similarity import AnalogResult, SimilaritySearchResponse
+from app.schemas.similarity import AnalogResult, SimilarityMethod, SimilaritySearchResponse
 
 logger = structlog.get_logger(__name__)
 
@@ -27,6 +27,7 @@ class SimilarityService:
         year: Optional[int] = None,
         top_k: int = 10,
         exclude_same_region: bool = True,
+        method: SimilarityMethod = SimilarityMethod.COSINE,
     ) -> SimilaritySearchResponse:
         region = await self._region_repo.get_by_id(region_id)
         if not region:
@@ -48,12 +49,14 @@ class SimilarityService:
             top_k=min(top_k, settings.MAX_TOP_K),
             exclude_region_id=exclude_id,
             year=year,
+            method=method,
         )
 
         logger.info(
             "Similarity search completed",
             region_id=str(region_id),
             year=query_year,
+            method=method.value,
             results=len(raw_results),
             latency_ms=round(latency_ms, 1),
         )
@@ -75,4 +78,5 @@ class SimilarityService:
             query_year=query_year,
             analogs=analogs,
             search_latency_ms=round(latency_ms, 2),
+            method=method,
         )

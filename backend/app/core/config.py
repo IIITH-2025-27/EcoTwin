@@ -58,7 +58,19 @@ class Settings(BaseSettings):
     S3_REGION: str = "us-east-1"
     AWS_ACCESS_KEY_ID: str = ""
     AWS_SECRET_ACCESS_KEY: str = ""
-
+    # ── ML Pipeline ───────────────────────────────────────────────────────────
+    # Path to a local Prithvi-100M .pt checkpoint; falls back to HuggingFace hub
+    PRITHVI_MODEL_PATH: str = "/app/models/prithvi_100m.pt"
+    # When True, Prithvi inference returns a deterministic stub embedding
+    # (no GPU / model weights required).  Automatically True when DEBUG=true.
+    PRITHVI_USE_STUB: bool = False
+    # GEE service-account JSON key; leave empty to use user credentials
+    # (run `earthengine authenticate` once for user-credential flow)
+    GEE_SERVICE_ACCOUNT_KEY_PATH: str = ""
+    GEE_SERVICE_ACCOUNT_EMAIL: str = ""
+    # Optional path to a serialised sklearn classifier (.pkl) for ecosystem
+    # classification.  Leave empty to use the built-in rule-based classifier.
+    CLASSIFIER_MODEL_PATH: str = ""
     # ── Computed properties ───────────────────────────────────────
     @property
     def DATABASE_URL(self) -> str:  # noqa: N802

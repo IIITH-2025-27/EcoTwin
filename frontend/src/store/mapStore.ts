@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
-import type { SidebarTab } from '@/types';
+import type { SidebarTab, SimilarityMethod } from '@/types';
 
 interface MapState {
   // ── Selected region ──────────────────────────────────────────────────────
@@ -38,6 +38,7 @@ export const useMapStore = create<MapState>()(
       selectedRegionLon: null,
       activeTab: 'overview',
       topK: 10,
+      similarityMethod: 'cosine' as SimilarityMethod,
       highlightedAnalogId: null,
       mapClickLoading: false,
       isSidebarCollapsed: false,
@@ -66,6 +67,9 @@ export const useMapStore = create<MapState>()(
       setActiveTab: (tab) => set({ activeTab: tab }, false, 'setActiveTab'),
 
       setTopK: (k) => set({ topK: k }, false, 'setTopK'),
+
+      setSimilarityMethod: (method) =>
+        set({ similarityMethod: method }, false, 'setSimilarityMethod'),
 
       setHighlightedAnalogId: (id) =>
         set({ highlightedAnalogId: id }, false, 'setHighlightedAnalogId'),
