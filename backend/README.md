@@ -180,11 +180,14 @@ docker compose exec backend alembic upgrade head
 
 ### 3. Verify services
 
-| Service | URL |
-|---|---|
-| API | http://localhost:8000/api/v1/health |
-| API Docs (dev) | http://localhost:8000/api/docs |
-| Flower (Celery) | http://localhost:5555 |
+| Service | URL | Port | Description |
+|----------|-----|------|-------------|
+| API | http://localhost:8000/api/v1/health | 8000 | Backend health check endpoint |
+| API Docs (Swagger UI) | http://localhost:8000/api/docs | 8000 | API documentation |
+| Flower (Celery Monitoring) | http://localhost:5555 | 5555 | Celery task monitoring dashboard |
+| pgAdmin | http://localhost:8080 | 8080 | PostgreSQL administration UI |
+| PostgreSQL | localhost:5432 | 5432 | PostgreSQL + PostGIS + pgvector database |
+| Redis | localhost:6379 | 6379 | Redis cache and Celery broker |
 
 ### 4. Stop all services
 
