@@ -1,0 +1,96 @@
+services:
+
+  # ── PostgreSQL + PostGIS + pgvector ────────────────────────────────────────
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: ecotwin_postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-ecotwin}
+      POSTGRES_USER: ${POSTGRES_USER:-ecotwin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init_db.sql:/docker-entrypoint-initdb.d/init_db.sql:ro
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ecotwin} -d ${POSTGRES_DB:-ecotwin}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # ── Redis ──────────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7.4-alpine
+    container_name: ecotwin_redis
+    command: >
+      redis-server
+      ${REDIS_PASSWORD:+--requirepass ${REDIS_PASSWORD}}
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # ── FastAPI Backend ────────────────────────────────────────────────────────
+  backend:
+    build:
+      context: .
+      target: production
+    container_name: ecotwin_backend
+    env_file: .env
+    ports:
+      - "8000:8000"
+    volumes:
+      - report_storage:/app/reports
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ── Celery Worker (report generation) ─────────────────────────────────────
+  celery_worker:
+    build:
+      context: .
+      target: production
+    container_name: ecotwin_celery
+    env_file: .env
+    command: >
+      celery -A app.workers.celery_app worker
+      --loglevel=info
+      --queues=reports
+      --concurrency=2
+    volumes:
+      - report_storage:/app/reports
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ── Flower (Celery monitoring) ─────────────────────────────────────────────
+  flower:
+    build:
+      context: .
+      target: production
+    container_name: ecotwin_flower
+    env_file: .env
+    command: >
+      celery -A app.workers.celery_app flower --port=5555
+    ports:
+      - "5555:5555"
+    depends_on:
+      - celery_worker
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
+  report_storage:
