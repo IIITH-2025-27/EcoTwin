@@ -3,7 +3,7 @@
 @tailwind utilities;
 
 /* Leaflet CSS must be imported here for Vite to process it */
-@import 'leaflet/dist/leaflet.css';
+/* @import 'leaflet/dist/leaflet.css'; */
 
 /* ── Base reset ──────────────────────────────────────────────────────────── */
 @layer base {

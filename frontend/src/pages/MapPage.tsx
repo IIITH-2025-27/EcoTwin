@@ -126,7 +126,7 @@ export default function MapPage() {
   const { isSidebarCollapsed } = useMapStore();
 
   return (
-    <div className="flex h-full flex-col bg-surface-900">
+    <div className="flex min-h-screen flex-col bg-surface-900">
       {/* Navbar */}
       <Navbar />
 
