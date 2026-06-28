@@ -88,4 +88,4 @@ PIPELINE_RETRY_DELAY_SEC: Final[int] = 60
 # Bulk-ingestion settings (used by management scripts)
 PIPELINE_BATCH_SIZE: Final[int] = 50     # number of regions per bulk-enqueue call
 PIPELINE_YEAR_START: Final[int] = 2017   # earliest Sentinel-2 SR year
-PIPELINE_YEAR_END:   Final[int] = 2024   # inclusive (update annually)
+PIPELINE_YEAR_END:   Final[int] = 2025   # inclusive (update annually)

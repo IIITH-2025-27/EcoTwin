@@ -204,7 +204,12 @@ def start_sync(request: SyncRequest) -> SyncJobResponse:
             log.warning("Could not create region row", state=r["state"], error=str(exc))
 
     # ── 5. Dispatch Celery chains ──────────────────────────────────────────
-    from app.ML_pipeline.pipeline import run_full_pipeline_task  # noqa: PLC0415
+    from celery import chain  # noqa: PLC0415
+    from app.ML_pipeline.pipeline import (  # noqa: PLC0415
+        classify_region_task,
+        compute_region_embedding_task,
+        ingest_region_features_task,
+    )
 
     tasks_dispatched = 0
     # task_meta: list of dicts stored in Redis for the status endpoint
@@ -212,13 +217,20 @@ def start_sync(request: SyncRequest) -> SyncJobResponse:
     for r in state_regions:
         for year in years:
             try:
-                async_result = run_full_pipeline_task.apply_async(
-                    args=[r["region_id"], r["lat"], r["lon"], year],
-                    queue=PIPELINE_QUEUE,
+                ingest_sig = ingest_region_features_task.s(
+                    r["region_id"], r["lat"], r["lon"], year,
                 )
+                pipeline = chain(
+                    ingest_sig,
+                    compute_region_embedding_task.s(),
+                    classify_region_task.s(),
+                )
+                async_result = pipeline.apply_async(queue=PIPELINE_QUEUE)
                 tasks_dispatched += 1
                 task_meta.append({
-                    "task_id":   async_result.id,
+                    # Track Phase 1 so status reflects ingest progress/failures
+                    "task_id":   ingest_sig.id,
+                    "chain_id":  async_result.id,
                     "state":     r["state"],
                     "region_id": r["region_id"],
                     "year":      year,

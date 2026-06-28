@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   AlertTriangle,
   CheckCircle2,
@@ -31,8 +32,8 @@ import {
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const MAX_STATES = 3;
-const CURRENT_YEAR = new Date().getFullYear();
-const YEAR_START = 2017;
+const DEFAULT_YEAR_START = 2017;
+const DEFAULT_YEAR_END = 2025;
 const MONTHS = [
   'January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December',
@@ -118,6 +119,8 @@ type Step = 'configure' | 'confirm' | 'result';
 export default function SyncModal({ onClose }: SyncModalProps) {
   // ── Remote state ─────────────────────────────────────────────
   const [allStates, setAllStates] = useState<IndiaState[]>([]);
+  const [yearStart, setYearStart] = useState(DEFAULT_YEAR_START);
+  const [yearEnd, setYearEnd] = useState(DEFAULT_YEAR_END);
   const [loadingStates, setLoadingStates] = useState(true);
   const [stateLoadError, setStateLoadError] = useState<string | null>(null);
 
@@ -127,10 +130,10 @@ export default function SyncModal({ onClose }: SyncModalProps) {
   const [showDropdown, setShowDropdown]       = useState(false);
 
   const [durMode, setDurMode]         = useState<'year' | 'duration'>('year');
-  const [singleYear, setSingleYear]   = useState<number>(CURRENT_YEAR);
-  const [startYear, setStartYear]     = useState<number>(CURRENT_YEAR - 1);
+  const [singleYear, setSingleYear]   = useState<number>(DEFAULT_YEAR_END);
+  const [startYear, setStartYear]     = useState<number>(DEFAULT_YEAR_END - 1);
   const [startMonth, setStartMonth]   = useState<number>(1);
-  const [endYear, setEndYear]         = useState<number>(CURRENT_YEAR);
+  const [endYear, setEndYear]         = useState<number>(DEFAULT_YEAR_END);
   const [endMonth, setEndMonth]       = useState<number>(12);
 
   const [syncMode, setSyncMode] = useState<SyncMode>('wipe');
@@ -151,7 +154,14 @@ export default function SyncModal({ onClose }: SyncModalProps) {
   // ── Load states from backend ──────────────────────────────────
   useEffect(() => {
     fetchStates()
-      .then((res) => setAllStates(res.states))
+      .then((res) => {
+        setAllStates(res.states);
+        setYearStart(res.year_start);
+        setYearEnd(res.year_end);
+        setSingleYear(res.year_end);
+        setStartYear(Math.max(res.year_start, res.year_end - 1));
+        setEndYear(res.year_end);
+      })
       .catch(() => setStateLoadError('Could not load state list from server.'))
       .finally(() => setLoadingStates(false));
   }, []);
@@ -166,6 +176,22 @@ export default function SyncModal({ onClose }: SyncModalProps) {
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, []);
+
+  // ── Lock body scroll while modal is open ─────────────────────
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = prev; };
+  }, []);
+
+  // ── Close on Escape ──────────────────────────────────────────
+  useEffect(() => {
+    function handler(e: KeyboardEvent) {
+      if (e.key === 'Escape') onClose();
+    }
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [onClose]);
 
   // ── Start polling when result step is entered ─────────────────
   useEffect(() => {
@@ -246,16 +272,18 @@ export default function SyncModal({ onClose }: SyncModalProps) {
 
   // ── Year / Month option arrays ────────────────────────────────
   const yearOptions = Array.from(
-    { length: CURRENT_YEAR - YEAR_START + 1 },
-    (_, i) => ({ value: YEAR_START + i, label: String(YEAR_START + i) }),
+    { length: yearEnd - yearStart + 1 },
+    (_, i) => ({ value: yearStart + i, label: String(yearStart + i) }),
   );
   const monthOptions = MONTHS.map((m, i) => ({ value: i + 1, label: m }));
 
-  // ── Render ────────────────────────────────────────────────────
-  return (
-    /* Overlay */
+  // ── Render (portal keeps modal above Leaflet map panes) ───────
+  return createPortal(
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+      className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="sync-modal-title"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
       <div className="relative w-full max-w-lg rounded-2xl bg-surface-900 border border-slate-700/60 shadow-2xl flex flex-col max-h-[90vh]">
@@ -267,7 +295,7 @@ export default function SyncModal({ onClose }: SyncModalProps) {
               <RefreshCw className="h-4 w-4 text-primary-400" />
             </div>
             <div>
-              <h2 className="text-sm font-semibold text-slate-100">Sync Data</h2>
+              <h2 id="sync-modal-title" className="text-sm font-semibold text-slate-100">Sync Data</h2>
               <p className="text-xs text-slate-500">Trigger ML pipeline for selected states</p>
             </div>
           </div>
@@ -654,7 +682,8 @@ export default function SyncModal({ onClose }: SyncModalProps) {
           )}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

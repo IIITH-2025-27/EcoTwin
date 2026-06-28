@@ -93,6 +93,7 @@ services:
       - prithvi_model:/app/models
       - hf_cache:/root/.cache/huggingface
       - sync_backups:/app/backups
+      - ./app/secrets:/app/secrets
     depends_on:
       postgres:
         condition: service_healthy

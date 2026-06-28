@@ -11,6 +11,8 @@ export interface IndiaState {
 export interface StatesResponse {
   states: IndiaState[];
   max_selection: number;
+  year_start: number;
+  year_end: number;
 }
 
 export type SyncMode = 'wipe' | 'backup';

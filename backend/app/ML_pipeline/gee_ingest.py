@@ -78,15 +78,19 @@ class GEECompositeResult:
 # ── GEE helpers ────────────────────────────────────────────────────────────────
 
 def _require_ee():
-    """Import earthengine-api or raise a clear error."""
+    """Import earthengine-api and ensure it is initialized."""
     try:
         import ee  # noqa: PLC0415
-        return ee
     except ImportError as exc:
         raise RuntimeError(
             "earthengine-api is not installed. "
             "Run: pip install earthengine-api  then  earthengine authenticate"
         ) from exc
+
+    from app.ML_pipeline.gee_init import ensure_gee_initialized  # noqa: PLC0415
+
+    ensure_gee_initialized()
+    return ee
 
 
 def _build_aoi(ee, center_lat: float, center_lon: float):
@@ -215,6 +219,42 @@ def _download_band_array(ee, composite, aoi) -> Optional[np.ndarray]:
 
 # ── Public API ─────────────────────────────────────────────────────────────────
 
+def _fetch_composite_stub(
+    region_id: str,
+    center_lat: float,
+    center_lon: float,
+    year: int,
+) -> GEECompositeResult:
+    """Deterministic synthetic stats for local dev (PRITHVI_USE_STUB=true)."""
+    import hashlib  # noqa: PLC0415
+
+    seed = int(hashlib.sha256(f"{region_id}:{year}".encode()).hexdigest()[:8], 16)
+    rng = np.random.default_rng(seed)
+    base = 0.35 + (center_lat % 10) / 100
+
+    def _stats(offset: float) -> IndexStats:
+        mean = float(np.clip(base + offset + rng.uniform(-0.05, 0.05), 0.05, 0.85))
+        std = float(rng.uniform(0.02, 0.08))
+        return IndexStats(
+            mean=mean,
+            std=std,
+            median=mean,
+            min=max(0.0, mean - std * 2),
+            max=min(1.0, mean + std * 2),
+        )
+
+    logger.info("GEE stub composite (PRITHVI_USE_STUB)", region_id=region_id, year=year)
+    return GEECompositeResult(
+        region_id=region_id,
+        year=year,
+        ndvi=_stats(0.15),
+        ndwi=_stats(-0.05),
+        nbr=_stats(0.05),
+        band_array=None,
+        pixel_count=50_000,
+    )
+
+
 def fetch_composite(
     region_id: str,
     center_lat: float,
@@ -236,6 +276,11 @@ def fetch_composite(
     Raises:
         RuntimeError: if earthengine-api is not installed or not authenticated.
     """
+    from app.core.config import settings  # noqa: PLC0415
+
+    if settings.PRITHVI_USE_STUB:
+        return _fetch_composite_stub(region_id, center_lat, center_lon, year)
+
     ee = _require_ee()
     log = logger.bind(region_id=region_id, year=year)
     log.info("GEE composite fetch started")

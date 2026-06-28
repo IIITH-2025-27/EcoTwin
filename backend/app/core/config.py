@@ -1,5 +1,6 @@
 from functools import lru_cache
 from typing import List
+from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -29,6 +30,7 @@ class Settings(BaseSettings):
     POSTGRES_USER: str = "ecotwin"
     POSTGRES_PASSWORD: str = "changeme"
 
+    backup_dir: Path = Path("/app/backups")
     # ── Redis ─────────────────────────────────────────────────────
     REDIS_HOST: str = "localhost"
     REDIS_PORT: int = 6379

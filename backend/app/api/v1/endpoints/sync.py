@@ -11,6 +11,7 @@ import asyncio
 import structlog
 from fastapi import APIRouter, HTTPException, status
 
+from app.ML_pipeline.constants import PIPELINE_YEAR_END, PIPELINE_YEAR_START
 from app.schemas.sync import (
     INDIA_STATE_CENTROIDS,
     MAX_STATES_PER_SYNC,
@@ -35,6 +36,8 @@ async def list_states() -> dict:
             for name, (lat, lon) in sorted(INDIA_STATE_CENTROIDS.items())
         ],
         "max_selection": MAX_STATES_PER_SYNC,
+        "year_start": PIPELINE_YEAR_START,
+        "year_end": PIPELINE_YEAR_END,
     }
 
 
