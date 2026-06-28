@@ -121,3 +121,55 @@ docker compose logs -f pipeline_worker
 - **Do NOT run** `docker compose down -v` unless you intentionally want to delete the database.
 - The pgvector installation is required **only once** per machine.
 - Do **not** commit `.env` or `app/secrets/gee_key.json`.
+
+===============================================================
+
+# Clean Start (Only if you previously ran an older setup)
+
+If you have previously run EcoTwin and encountered Docker errors, reset your local environment before following the setup guide.
+
+## 1. Stop all running containers
+
+```bash
+docker compose down
+```
+
+---
+
+## 2. Remove old EcoTwin containers
+
+```bash
+docker compose down --remove-orphans
+```
+
+---
+
+## 3. Remove old Docker images (EcoTwin only)
+
+```bash
+docker compose down --rmi local
+```
+
+---
+
+## 4. Remove old volumes (Deletes the database)
+
+> **Warning:** This permanently deletes your local PostgreSQL database.
+
+```bash
+docker compose down -v
+```
+
+---
+
+## 5. Remove unused Docker resources
+
+```bash
+docker system prune -f
+```
+
+(Optional)
+
+```bash
+docker volume prune -f
+```
