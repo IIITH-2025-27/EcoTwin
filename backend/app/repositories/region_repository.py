@@ -42,6 +42,14 @@ class RegionRepository(BaseRepository[Region]):
         )
         return result.scalar_one_or_none()
 
+    async def list_by_country(self, country: str) -> list[Region]:
+        result = await self.session.execute(
+            select(Region)
+            .where(func.lower(Region.country) == country.lower())
+            .order_by(Region.name.asc())
+        )
+        return list(result.scalars().all())
+
     async def count(self) -> int:
         result = await self.session.execute(select(func.count(Region.region_id)))
         return result.scalar_one()

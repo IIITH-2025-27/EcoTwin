@@ -2,10 +2,19 @@
 
 export interface Region {
   region_id: string;
+  hydrolake_id: string;
+  name: string;
+  country: string;
   center_lat: number;
   center_lon: number;
-  area_km: number;
+  area_sqkm: number;
+  bbox: Record<string, number> | null;
   created_at: string;
+  updated_at: string;
+}
+
+export interface RegionMapFeature extends Region {
+  geometry: GeoJSON.Geometry | null;
 }
 
 export interface RegionFeature {
@@ -44,6 +53,34 @@ export interface RegionQueryResult {
   center_lat: number;
   center_lon: number;
   distance_km: number;
+}
+
+export interface LakeRegionResponse {
+  region_id: string;
+  hydrolake_id: string;
+  name: string;
+  country: string;
+  center_lat: number;
+  center_lon: number;
+  area_sqkm: number;
+  bbox: Record<string, number> | null;
+  geometry: GeoJSON.Geometry | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface LakeSearchResult {
+  lake_id: number;
+  display_name: string;
+  state: string | null;
+  area_sqkm: number | null;
+}
+
+export interface LakeGeometry extends LakeSearchResult {
+  country: string;
+  center_lat: number | null;
+  center_lon: number | null;
+  geometry: GeoJSON.Geometry | null;
 }
 
 // ── Similarity ────────────────────────────────────────────────────────────
@@ -124,6 +161,13 @@ export interface ReportRequest {
   include_forecast: boolean;
   include_analogs: boolean;
   top_k_analogs: number;
+}
+
+export interface LakeSyncRequest {
+  country: string;
+  duration: import('@/api/sync').SyncDuration;
+  sync_mode: import('@/api/sync').SyncMode;
+  confirmed: true;
 }
 
 // ── Common ────────────────────────────────────────────────────────────────

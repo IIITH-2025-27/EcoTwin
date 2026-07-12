@@ -12,7 +12,7 @@ External dependency:
                      service-account key via GEE_SERVICE_ACCOUNT_KEY_PATH env.
 
 Nothing in this module touches the database — all persistence is handled
-by the Celery tasks in pipeline.py.
+by the pipeline in pipeline.py.
 """
 
 from __future__ import annotations
@@ -93,8 +93,13 @@ def _require_ee():
     return ee
 
 
-def _build_aoi(ee, center_lat: float, center_lon: float):
-    """Return a GEE BBox geometry centred on the region (~5 km × 5 km)."""
+def _build_aoi(ee, center_lat: float, center_lon: float, geom_wkt: Optional[str] = None):
+    """Return the exact sub-region polygon, or the legacy centre-based AOI."""
+    if geom_wkt:
+        from shapely import wkt as shapely_wkt  # noqa: PLC0415
+
+        return ee.Geometry(shapely_wkt.loads(geom_wkt).__geo_interface__)
+
     half = GEE_BBOX_HALF_DEG
     return ee.Geometry.BBox(
         center_lon - half,
@@ -188,8 +193,7 @@ def _download_band_array(ee, composite, aoi) -> Optional[np.ndarray]:
     """
     Download the Prithvi input bands as a (C, H, W) float32 array.
 
-    Returns None on any failure — the pipeline can still proceed to the
-    DB insert; Phase 2 will re-fetch when needed.
+    Returns None on any failure — Phase 2 will fall back to a stub embedding.
     """
     try:
         url = composite.select(S2_BANDS_PRITHVI).getThumbURL({
@@ -203,10 +207,25 @@ def _download_band_array(ee, composite, aoi) -> Optional[np.ndarray]:
         with urllib.request.urlopen(url, timeout=GEE_REQUEST_TIMEOUT_SEC) as resp:
             raw_bytes = resp.read()
 
-        arr = np.load(io.BytesIO(raw_bytes))                 # (H, W, C)
-        arr = arr.astype(np.float32) / PRITHVI_REFLECTANCE_SCALE
+        arr = np.load(io.BytesIO(raw_bytes))   # may be structured dtype
+
+        # GEE sometimes returns a structured array with named band fields
+        # e.g. dtype([('B2', 'u1'), ('B3', 'u1'), ...])
+        # Convert by stacking each field into a plain (H, W, C) array.
+        if arr.dtype.names:                    # structured array
+            arr = np.stack(
+                [arr[name].astype(np.float32) for name in arr.dtype.names],
+                axis=-1,
+            )                                  # → (H, W, C)
+        else:
+            arr = arr.astype(np.float32)       # plain numeric array
+
+        arr = arr / PRITHVI_REFLECTANCE_SCALE
         arr = np.clip(arr, 0.0, 1.0)
-        arr = np.transpose(arr, (2, 0, 1))                   # → (C, H, W)
+        if arr.ndim == 2:                      # single band edge-case → (1, H, W)
+            arr = arr[np.newaxis, ...]
+        else:
+            arr = np.transpose(arr, (2, 0, 1)) # (H, W, C) → (C, H, W)
         return arr
 
     except Exception as exc:
@@ -224,6 +243,7 @@ def _fetch_composite_stub(
     center_lat: float,
     center_lon: float,
     year: int,
+    geom_wkt: Optional[str] = None,
 ) -> GEECompositeResult:
     """Deterministic synthetic stats for local dev (PRITHVI_USE_STUB=true)."""
     import hashlib  # noqa: PLC0415
@@ -260,6 +280,7 @@ def fetch_composite(
     center_lat: float,
     center_lon: float,
     year: int,
+    geom_wkt: Optional[str] = None,
 ) -> GEECompositeResult:
     """
     Fetch a Sentinel-2 annual composite and compute spectral index statistics.
@@ -279,13 +300,13 @@ def fetch_composite(
     from app.core.config import settings  # noqa: PLC0415
 
     if settings.PRITHVI_USE_STUB:
-        return _fetch_composite_stub(region_id, center_lat, center_lon, year)
+        return _fetch_composite_stub(region_id, center_lat, center_lon, year, geom_wkt)
 
     ee = _require_ee()
     log = logger.bind(region_id=region_id, year=year)
     log.info("GEE composite fetch started")
 
-    aoi = _build_aoi(ee, center_lat, center_lon)
+    aoi = _build_aoi(ee, center_lat, center_lon, geom_wkt)
     composite = _build_composite(ee, aoi, year)
 
     stats_raw    = _reduce_indices(ee, composite, aoi)

@@ -10,6 +10,7 @@ class Settings(BaseSettings):
         env_file=".env",
         env_file_encoding="utf-8",
         case_sensitive=False,
+        extra="ignore",
     )
 
     # ── Application ───────────────────────────────────────────────
@@ -30,12 +31,6 @@ class Settings(BaseSettings):
     POSTGRES_USER: str = "ecotwin"
     POSTGRES_PASSWORD: str = "changeme"
 
-    backup_dir: Path = Path("/app/backups")
-    # ── Redis ─────────────────────────────────────────────────────
-    REDIS_HOST: str = "localhost"
-    REDIS_PORT: int = 6379
-    REDIS_PASSWORD: str = ""
-    REDIS_TTL: int = 86_400  # 24 hours
 
     # ── JWT ───────────────────────────────────────────────────────
     SECRET_KEY: str = "CHANGE_THIS_IN_PRODUCTION"
@@ -50,16 +45,26 @@ class Settings(BaseSettings):
     # ── CORS ──────────────────────────────────────────────────────
     ALLOWED_ORIGINS: List[str] = ["http://localhost:3000", "http://localhost:5173"]
 
-    # ── Celery ────────────────────────────────────────────────────
-    CELERY_BROKER_URL: str = "redis://localhost:6379/0"
-    CELERY_RESULT_BACKEND: str = "redis://localhost:6379/1"
-
     # ── Object Storage (PDF reports) ──────────────────────────────
     REPORTS_STORAGE_PATH: str = "/app/reports"
     S3_BUCKET: str = ""
     S3_REGION: str = "us-east-1"
     AWS_ACCESS_KEY_ID: str = ""
     AWS_SECRET_ACCESS_KEY: str = ""
+
+    # ── Data-sync boundary sources ───────────────────────────────────────────
+    HYDROLAKES_SOURCE_PATH: str = ""
+    HYDROLAKES_SHAPEFILE_PATH: str = ""
+    INDIA_STATES_SOURCE_PATH: str = ""
+
+    # ── Lake processing grid ────────────────────────────────────────────────
+    # Grid dimensions are metres in an equal-area CRS (EPSG:6933).
+    LAKE_GRID_CELL_SIZE_METRES: int = 1_000
+    # Ignore a grid cell when less than this percentage is covered by lake.
+    LAKE_GRID_MIN_COVERAGE_PERCENT: float = 15.0
+    # Maximum years a single sync job can span
+    SYNC_MAX_YEAR_RANGE: int = 10
+
     # ── ML Pipeline ───────────────────────────────────────────────────────────
     # Path to a local Prithvi-100M .pt checkpoint; falls back to HuggingFace hub
     PRITHVI_MODEL_PATH: str = "/app/models/prithvi_100m.pt"
@@ -87,12 +92,6 @@ class Settings(BaseSettings):
             f"postgresql+psycopg2://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}"
             f"@{self.POSTGRES_HOST}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
         )
-
-    @property
-    def REDIS_URL(self) -> str:  # noqa: N802
-        if self.REDIS_PASSWORD:
-            return f"redis://:{self.REDIS_PASSWORD}@{self.REDIS_HOST}:{self.REDIS_PORT}"
-        return f"redis://{self.REDIS_HOST}:{self.REDIS_PORT}"
 
 
 @lru_cache()

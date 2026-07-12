@@ -11,6 +11,7 @@ interface MapState {
   // ── UI State ─────────────────────────────────────────────────────────────
   activeTab: SidebarTab;
   topK: number;
+  similarityMethod: SimilarityMethod;
   highlightedAnalogId: string | null;
   mapClickLoading: boolean;
   isSidebarCollapsed: boolean;
@@ -24,6 +25,7 @@ interface MapState {
   clearRegion: () => void;
   setActiveTab: (tab: SidebarTab) => void;
   setTopK: (k: number) => void;
+  setSimilarityMethod: (method: SimilarityMethod) => void;
   setHighlightedAnalogId: (id: string | null) => void;
   setMapClickLoading: (loading: boolean) => void;
   toggleSidebar: () => void;

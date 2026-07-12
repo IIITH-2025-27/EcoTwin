@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 
 from geoalchemy2 import Geometry
 from sqlalchemy import Column, DateTime, Float, ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
@@ -13,13 +14,21 @@ class Region(Base):
     __tablename__ = "regions"
 
     region_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    hydrolake_id = Column(String(64), nullable=False, unique=True, index=True)
+    name = Column(String(255), nullable=False, index=True)
+    country = Column(String(100), nullable=False, index=True)
     center_lat = Column(Float, nullable=False)
     center_lon = Column(Float, nullable=False)
-    area_km = Column(Float, default=25.0)
-    geom = Column(Geometry("POLYGON", srid=4326), nullable=True)
-    state_name = Column(String(100), nullable=True, index=True)
+    area_sqkm = Column(Float, default=25.0)
+    bbox = Column(JSONB, nullable=True)
+    geom = Column(Geometry("MULTIPOLYGON", srid=4326), nullable=True)
     created_at = Column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+    updated_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
     )
 
     # Relationships
@@ -37,7 +46,7 @@ class Region(Base):
     )
 
     def __repr__(self) -> str:
-        return f"<Region id={self.region_id} lat={self.center_lat} lon={self.center_lon}>"
+        return f"<Region id={self.region_id} lake={self.hydrolake_id} name={self.name}>"
 
 
 class RegionFeature(Base):

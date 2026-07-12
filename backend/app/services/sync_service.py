@@ -1,84 +1,102 @@
-"""
-Sync service — orchestrates DB wipe / backup then ML pipeline dispatch.
-
-Wipe mode  : truncate region_features, region_embeddings, temporal_profiles,
-             and region_embeddings for the requested states, then re-ingest.
-Backup mode: pg_dump the full DB to /app/backups/<job_id>.dump before wiping.
-
-Uses a synchronous SQLAlchemy engine (same pattern as report_tasks / ML pipeline
-Celery tasks) so it can be called safely from the async FastAPI endpoint via
-asyncio.to_thread.
-"""
+"""Sync service for importing lake regions and starting downstream processing."""
 
 from __future__ import annotations
 
-import json
 import os
 import subprocess
+import threading
+import unicodedata
 import uuid
+from pathlib import Path
 from typing import List
 
 import structlog
+from shapely import wkt as shapely_wkt
+from shapely.geometry import shape
 
-from app.ML_pipeline.constants import PIPELINE_QUEUE
+from app.core.config import settings
 from app.schemas.sync import (
-    INDIA_STATE_CENTROIDS,
+    HydroLakeBoundaryResponse,
     SyncJobResponse,
     SyncMode,
     SyncRequest,
+    SyncSource,
 )
 
 logger = structlog.get_logger(__name__)
 
-# Where backups are written inside the container
+APP_DIR = Path(__file__).resolve().parents[1]
+
 BACKUP_DIR: str = os.environ.get("BACKUP_DIR", "/app/backups")
+HYDROLAKES_SOURCE_PATH: str = settings.HYDROLAKES_SOURCE_PATH
+HYDROLAKES_SHAPEFILE_PATH: str = (
+    settings.HYDROLAKES_SHAPEFILE_PATH
+    or str(APP_DIR / "HydroLAKES_polys_v10_shp/HydroLAKES_polys_v10_shp/HydroLAKES_polys_v10.shp")
+)
+INDIA_STATES_SOURCE_PATH: str = settings.INDIA_STATES_SOURCE_PATH
 
-# Redis key template: stores task metadata for this job for 24 h
-_SYNC_JOB_KEY = "sync_job:{job_id}"
-_SYNC_JOB_TTL = 86_400  # 24 hours
+# ── Single global sync progress (no job IDs needed) ────────────────────────
+# Shape: {status, total_lakes, processed, success, failed, current_lake, current_year, errors}
+_SYNC_PROGRESS: dict = {
+    "status": "idle",          # idle | running | done | failed
+    "total_lakes": 0,
+    "processed": 0,
+    "success": 0,
+    "failed": 0,
+    "current_lake": None,
+    "current_year": None,
+    "errors": [],
+}
+_SYNC_LOCK = threading.Lock()
+
+LAKE_IMPORT_BATCH_SIZE = 250
+# ``shapeName`` is the field used by geoBoundaries ADM1 GeoJSON files.
+INDIA_STATE_NAME_FIELDS = (
+    "state_name",
+    "state",
+    "st_nm",
+    "name_1",
+    "name",
+    "shapename",
+)
 
 
-# ── DB helpers ────────────────────────────────────────────────────────────────
+def _normalize_lake_label(value: object) -> str:
+    """Convert accented Latin characters in source labels to their plain form.
+
+    Boundary data can spell names such as ``Bihār`` with a macron.  Lake
+    display names are intended for the English UI, so persist the plain form
+    (``Bihar``) instead.
+    """
+    return "".join(
+        character
+        for character in unicodedata.normalize("NFKD", str(value).strip())
+        if not unicodedata.combining(character)
+    )
+
 
 def _sync_engine():
     from sqlalchemy import create_engine  # noqa: PLC0415
+
     from app.core.config import settings  # noqa: PLC0415
+
     return create_engine(settings.SYNC_DATABASE_URL, pool_pre_ping=True)
 
 
-def _wipe_state_data(region_ids: List[str]) -> None:
-    """
-    Delete all ML-pipeline-owned rows for the given region UUIDs.
-    Cascades handled by FK ON DELETE CASCADE on child tables — only
-    region_features, region_embeddings, and temporal_profiles need
-    explicit deletes here (reports are user data; left untouched).
-    """
-    if not region_ids:
-        return
-
+def _wipe_country_data(country: str) -> None:
     from sqlalchemy import text  # noqa: PLC0415
 
-    placeholders = ", ".join(f"'{rid}'" for rid in region_ids)
     engine = _sync_engine()
     with engine.begin() as conn:
-        for table in ("region_embeddings", "temporal_profiles", "region_features"):
-            conn.execute(
-                text(f"DELETE FROM {table} WHERE region_id IN ({placeholders})")
-            )
-        # Remove the region rows themselves — all children cascade-delete
         conn.execute(
-            text(f"DELETE FROM regions WHERE region_id::text IN ({placeholders})")
+            text("DELETE FROM regions WHERE lower(country) = lower(:country)"),
+            {"country": country},
         )
     engine.dispose()
-    logger.info("DB wipe completed", region_count=len(region_ids))
+    logger.info("Country lake regions wiped", country=country)
 
 
 def _pg_dump(job_id: str) -> str:
-    """
-    Run pg_dump in Fc (custom) format and return the backup file path.
-    Requires pg_dump to be on PATH (available in the postgres Docker image
-    or install postgresql-client in the backend image).
-    """
     from app.core.config import settings  # noqa: PLC0415
 
     os.makedirs(BACKUP_DIR, exist_ok=True)
@@ -90,10 +108,14 @@ def _pg_dump(job_id: str) -> str:
     cmd = [
         "pg_dump",
         "--format=custom",
-        "--file", backup_path,
-        "--host",   settings.POSTGRES_HOST,
-        "--port",   str(settings.POSTGRES_PORT),
-        "--username", settings.POSTGRES_USER,
+        "--file",
+        backup_path,
+        "--host",
+        settings.POSTGRES_HOST,
+        "--port",
+        str(settings.POSTGRES_PORT),
+        "--username",
+        settings.POSTGRES_USER,
         settings.POSTGRES_DB,
     ]
 
@@ -105,66 +127,651 @@ def _pg_dump(job_id: str) -> str:
     return backup_path
 
 
-def _ensure_region_row(region_id: str, lat: float, lon: float, state_name: str = "") -> None:
-    """Insert a region row if one doesn't exist yet for this centroid."""
+def _load_lake_records(country: str) -> list[dict]:
+    source_path = HYDROLAKES_SOURCE_PATH
+    if not source_path:
+        logger.warning(
+            "HydroLAKES source path not configured; no lakes imported",
+            country=country,
+        )
+        return []
+
+    with open(source_path, "r", encoding="utf-8") as handle:
+        data = json.load(handle)
+
+    features = data.get("features", []) if isinstance(data, dict) else data
+    lakes: list[dict] = []
+    for feature in features:
+        props = feature.get("properties", {}) if isinstance(feature, dict) else {}
+        geometry = feature.get("geometry") if isinstance(feature, dict) else None
+        lake_country = str(props.get("country") or props.get("COUNTRY") or "").strip()
+        if lake_country.lower() != country.lower():
+            continue
+
+        geom_obj = shape(geometry) if geometry else None
+        centroid = geom_obj.centroid if geom_obj is not None else None
+        bbox = list(geom_obj.bounds) if geom_obj is not None else None
+
+        hydrolake_id = str(
+            props.get("Hylak_id")
+            or props.get("HYLAK_ID")
+            or props.get("hydrolake_id")
+            or props.get("id")
+        )
+        name = _normalize_lake_label(props.get("Lake_name") or props.get("name") or hydrolake_id)
+        area_sqkm = float(
+            props.get("Lake_area")
+            or props.get("area_sqkm")
+            or props.get("area")
+            or 0.0
+        )
+
+        lakes.append(
+            {
+                "hydrolake_id": hydrolake_id,
+                "name": name,
+                "country": lake_country or country,
+                "center_lat": float(centroid.y if centroid is not None else props.get("lat", 0.0)),
+                "center_lon": float(centroid.x if centroid is not None else props.get("lon", 0.0)),
+                "area_sqkm": area_sqkm,
+                "bbox": bbox,
+                "geom_wkt": geom_obj.wkt if geom_obj is not None else None,
+            }
+        )
+
+    return lakes
+
+
+def list_hydrolake_boundaries(country: str = "India") -> list[HydroLakeBoundaryResponse]:
+    responses: list[HydroLakeBoundaryResponse] = []
+    for lake in _load_lake_records(country):
+        geometry = None
+        if lake.get("geom_wkt"):
+            geometry = shapely_wkt.loads(lake["geom_wkt"]).__geo_interface__
+        responses.append(
+            HydroLakeBoundaryResponse(
+                hydrolake_id=lake["hydrolake_id"],
+                name=lake["name"],
+                country=lake["country"],
+                center_lat=lake["center_lat"],
+                center_lon=lake["center_lon"],
+                area_sqkm=lake["area_sqkm"],
+                bbox=lake["bbox"],
+                geometry=geometry,
+            )
+        )
+    return responses
+
+
+def _state_name(properties: dict) -> str | None:
+    """Read the state name from common India boundary-file attribute names."""
+    normalized = {str(key).lower(): value for key, value in properties.items()}
+    for field in INDIA_STATE_NAME_FIELDS:
+        value = normalized.get(field)
+        if value is not None and str(value).strip():
+            return _normalize_lake_label(value)
+    return None
+
+
+def _load_india_state_rows(source_path: str) -> list[dict]:
+    if not os.path.exists(source_path):
+        raise FileNotFoundError(f"India states boundary file not found at {source_path}")
+
+    suffix = Path(source_path).suffix.lower()
+    rows: list[dict] = []
+    if suffix in {".json", ".geojson"}:
+        with open(source_path, "r", encoding="utf-8") as handle:
+            data = json.load(handle)
+        features = data.get("features", []) if isinstance(data, dict) else data
+        for feature in features:
+            if not isinstance(feature, dict):
+                continue
+            state_name = _state_name(feature.get("properties") or {})
+            geometry_data = feature.get("geometry")
+            if not state_name or not geometry_data:
+                continue
+            geometry = shape(geometry_data)
+            rows.append({"state_name": state_name, "geom_wkt": geometry.wkt})
+    elif suffix == ".shp":
+        try:
+            import shapefile  # type: ignore
+        except Exception as exc:  # pragma: no cover - dependency/runtime guard
+            raise RuntimeError(f"Shapefile reader unavailable: {exc}") from exc
+        reader = shapefile.Reader(source_path, encoding="cp1252", encodingErrors="replace")
+        fields = [field[0] for field in reader.fields[1:]]
+        for shape_record in reader.iterShapeRecords():
+            properties = (
+                shape_record.record.as_dict()
+                if hasattr(shape_record.record, "as_dict")
+                else dict(zip(fields, shape_record.record))
+            )
+            state_name = _state_name(properties)
+            if not state_name or not shape_record.shape:
+                continue
+            geometry = shape(shape_record.shape.__geo_interface__)
+            rows.append({"state_name": state_name, "geom_wkt": geometry.wkt})
+    else:
+        raise ValueError("India state boundaries must be a .shp, .json, or .geojson file")
+
+    if not rows:
+        raise ValueError("No valid India state boundaries were found in the source file")
+    return rows
+
+
+def _refresh_lake_state_metadata(conn) -> int:
+    """Populate centroid, state, and display name from the imported boundaries."""
     from sqlalchemy import text  # noqa: PLC0415
-    from app.utils.geo_utils import center_to_grid_wkt  # noqa: PLC0415
 
-    geom_wkt = center_to_grid_wkt(lat, lon)
+    result = conn.execute(
+        text(
+            """
+            WITH attributed_lakes AS (
+                SELECT
+                    lake_id,
+                    ST_Centroid(geom) AS centroid,
+                    (
+                        SELECT translate(state_name, 'āĀ', 'aA') AS state_name
+                        FROM india_states
+                        WHERE ST_Covers(geom, ST_Centroid(lakes.geom))
+                        ORDER BY state_name
+                        LIMIT 1
+                    ) AS state
+                FROM lakes
+                WHERE lower(country) = 'india'
+            )
+            UPDATE lakes AS lake
+            SET
+                centroid = attributed.centroid,
+                state = attributed.state,
+                display_name = CASE
+                    WHEN lake.lake_name IS NOT NULL AND btrim(lake.lake_name) <> ''
+                         AND btrim(lake.lake_name) <> lake.lake_id::text
+                        THEN lake.lake_name
+                    WHEN attributed.state IS NOT NULL
+                        THEN format('Unnamed Lake #%s (%s)', lake.lake_id, attributed.state)
+                    ELSE format('Unnamed Lake #%s', lake.lake_id)
+                END,
+                updated_at = NOW()
+            FROM attributed_lakes AS attributed
+            WHERE lake.lake_id = attributed.lake_id
+            """
+        )
+    )
+    return result.rowcount
+
+
+def import_india_states(source_path: str | None = None) -> dict:
+    """Store India state/UT boundaries and backfill state metadata for existing lakes."""
+    from sqlalchemy import text  # noqa: PLC0415
+
+    path = source_path or INDIA_STATES_SOURCE_PATH
+    if not path:
+        raise FileNotFoundError(
+            "INDIA_STATES_SOURCE_PATH is not configured; set it to an India states GeoJSON or shapefile."
+        )
+
+    state_rows = _load_india_state_rows(path)
+    upsert_statement = text(
+        """
+        INSERT INTO india_states (state_name, geom)
+        SELECT state_name, ST_Multi(ST_GeomFromText(geom_wkt, 4326))
+        FROM jsonb_to_recordset(CAST(:state_rows AS jsonb)) AS source(
+            state_name text,
+            geom_wkt text
+        )
+        ON CONFLICT (state_name) DO UPDATE SET
+            geom = EXCLUDED.geom,
+            updated_at = NOW()
+        """
+    )
     engine = _sync_engine()
-    with engine.begin() as conn:
-        conn.execute(text("""
-            INSERT INTO regions (region_id, center_lat, center_lon, geom, state_name)
-            VALUES (:region_id, :lat, :lon, ST_GeomFromText(:wkt, 4326), :state_name)
-            ON CONFLICT (region_id) DO UPDATE SET state_name = EXCLUDED.state_name
-        """), {"region_id": region_id, "lat": lat, "lon": lon, "wkt": geom_wkt, "state_name": state_name})
-    engine.dispose()
+    try:
+        with engine.begin() as conn:
+            for start in range(0, len(state_rows), LAKE_IMPORT_BATCH_SIZE):
+                conn.execute(
+                    upsert_statement,
+                    {"state_rows": json.dumps(state_rows[start : start + LAKE_IMPORT_BATCH_SIZE])},
+                )
+            lakes_updated = _refresh_lake_state_metadata(conn)
+    finally:
+        engine.dispose()
+
+    return {
+        "source_path": path,
+        "states_stored": len(state_rows),
+        "lakes_updated": lakes_updated,
+    }
 
 
-# ── Public service function ───────────────────────────────────────────────────
+def _ensure_india_states_available() -> None:
+    from sqlalchemy import text  # noqa: PLC0415
 
-def start_sync(request: SyncRequest) -> SyncJobResponse:
+    engine = _sync_engine()
+    try:
+        with engine.connect() as conn:
+            states_exist = conn.execute(text("SELECT EXISTS (SELECT 1 FROM india_states)")).scalar()
+    finally:
+        engine.dispose()
+
+    if not states_exist:
+        import_india_states()
+
+
+def import_lakes_table(country: str = "India") -> dict:
+    try:
+        import shapefile  # type: ignore
+    except Exception as exc:  # pragma: no cover - dependency/runtime guard
+        raise RuntimeError(f"Shapefile reader unavailable: {exc}") from exc
+
+    source_path = HYDROLAKES_SHAPEFILE_PATH
+    if not os.path.exists(source_path):
+        raise FileNotFoundError(f"HydroLAKES shapefile not found at {source_path}")
+    if country.lower() == "india":
+        _ensure_india_states_available()
+
+    # HydroLAKES DBF attributes use Windows-1252 characters (for example,
+    # curly apostrophes), rather than UTF-8.
+    reader = shapefile.Reader(source_path, encoding="cp1252", encodingErrors="replace")
+    total_records = len(reader)
+    inserted_records = 0
+    updated_records = 0
+    skipped_records = 0
+    lake_rows: list[dict] = []
+
+    # The HydroLAKES geometry file is more than 1 GB.  Reading every shape
+    # before checking its country is what made India imports exceed the client
+    # timeout.  Scan the much smaller DBF attributes first, then seek directly
+    # to geometries belonging to the requested country.
+    fields = [field[0] for field in reader.fields[1:]]
+    for record_index, source_record in enumerate(reader.iterRecords()):
+        try:
+            record = (
+                source_record.as_dict()
+                if hasattr(source_record, "as_dict")
+                else dict(zip(fields, source_record))
+            )
+            normalized = {str(key).lower(): value for key, value in record.items()}
+            record_country = str(normalized.get("country") or normalized.get("COUNTRY") or "").strip()
+            if country and record_country.lower() != country.lower():
+                continue
+
+            lake_id_value = normalized.get("hylak_id") or normalized.get("lake_id") or normalized.get("id")
+            if lake_id_value in (None, ""):
+                skipped_records += 1
+                continue
+
+            source_shape = reader.shape(record_index)
+            geometry = shape(source_shape.__geo_interface__) if source_shape else None
+            lake_rows.append(
+                {
+                    "lake_id": int(float(lake_id_value)),
+                    "lake_name": _normalize_lake_label(
+                        normalized.get("lake_name") or normalized.get("name") or ""
+                    )
+                    or None,
+                    "country": record_country or country,
+                    "area_sqkm": float(normalized.get("lake_area") or normalized.get("area_sqkm") or normalized.get("area") or 0.0),
+                    "elevation": float(normalized.get("elevation") or 0.0) if normalized.get("elevation") not in (None, "") else None,
+                    "pour_lat": float(normalized.get("pour_lat") or normalized.get("lat") or 0.0) if normalized.get("pour_lat") not in (None, "") or normalized.get("lat") not in (None, "") else None,
+                    "pour_long": float(normalized.get("pour_long") or normalized.get("lon") or 0.0) if normalized.get("pour_long") not in (None, "") or normalized.get("lon") not in (None, "") else None,
+                    "lake_type": str(normalized.get("lake_type") or normalized.get("type") or "").strip() or None,
+                    "depth_avg": float(normalized.get("depth_avg") or 0.0) if normalized.get("depth_avg") not in (None, "") else None,
+                    "vol_total": float(normalized.get("vol_total") or 0.0) if normalized.get("vol_total") not in (None, "") else None,
+                    "wshd_area": float(normalized.get("wshd_area") or 0.0) if normalized.get("wshd_area") not in (None, "") else None,
+                    "geom_wkt": geometry.wkt if geometry is not None else None,
+                }
+            )
+        except Exception:
+            skipped_records += 1
+
+    from sqlalchemy import text  # noqa: PLC0415
+
+    # Importing one lake at a time previously issued a SELECT and an INSERT for
+    # every record.  India has enough HydroLAKES polygons for that N+1 pattern
+    # to exceed the frontend's request timeout.  Send each batch to Postgres as
+    # one JSON recordset and let the database perform the upsert set-wise.
+    upsert_statement = text(
+        """
+        WITH source_rows AS (
+            SELECT *
+            FROM jsonb_to_recordset(CAST(:lake_rows AS jsonb)) AS source(
+                lake_id bigint,
+                lake_name text,
+                country text,
+                area_sqkm double precision,
+                elevation double precision,
+                pour_lat double precision,
+                pour_long double precision,
+                lake_type text,
+                depth_avg double precision,
+                vol_total double precision,
+                wshd_area double precision,
+                geom_wkt text
+            )
+        ),
+        lake_geometries AS (
+            SELECT
+                *,
+                CASE WHEN geom_wkt IS NULL THEN NULL ELSE ST_Multi(ST_GeomFromText(geom_wkt, 4326)) END AS geom
+            FROM source_rows
+        ),
+        centroids AS MATERIALIZED (
+            SELECT *, ST_Centroid(geom) AS centroid
+            FROM lake_geometries
+        ),
+        attributed_rows AS (
+            SELECT centroids.*, matched_state.state_name AS state
+            FROM centroids
+            LEFT JOIN LATERAL (
+                SELECT translate(state_name, 'āĀ', 'aA') AS state_name
+                FROM india_states
+                WHERE lower(centroids.country) = 'india'
+                  AND geom && centroids.centroid
+                  AND ST_Covers(geom, centroids.centroid)
+                ORDER BY state_name
+                LIMIT 1
+            ) AS matched_state ON TRUE
+        ),
+        upserted AS (
+            INSERT INTO lakes (
+                lake_id, lake_name, country, area_sqkm, elevation,
+                pour_lat, pour_long, lake_type, depth_avg, vol_total,
+                wshd_area, geom, centroid, state, display_name
+            )
+            SELECT
+                lake_id, lake_name, country, area_sqkm, elevation,
+                pour_lat, pour_long, lake_type, depth_avg, vol_total,
+                wshd_area, geom, centroid, state,
+                CASE
+                    WHEN lake_name IS NOT NULL AND btrim(lake_name) <> ''
+                         AND btrim(lake_name) <> lake_id::text THEN lake_name
+                    WHEN state IS NOT NULL THEN format('Unnamed Lake #%s (%s)', lake_id, state)
+                    ELSE format('Unnamed Lake #%s', lake_id)
+                END
+            FROM attributed_rows
+            ON CONFLICT (lake_id) DO UPDATE SET
+                lake_name = EXCLUDED.lake_name,
+                country = EXCLUDED.country,
+                area_sqkm = EXCLUDED.area_sqkm,
+                elevation = EXCLUDED.elevation,
+                pour_lat = EXCLUDED.pour_lat,
+                pour_long = EXCLUDED.pour_long,
+                lake_type = EXCLUDED.lake_type,
+                depth_avg = EXCLUDED.depth_avg,
+                vol_total = EXCLUDED.vol_total,
+                wshd_area = EXCLUDED.wshd_area,
+                geom = EXCLUDED.geom,
+                centroid = EXCLUDED.centroid,
+                state = EXCLUDED.state,
+                display_name = EXCLUDED.display_name,
+                updated_at = NOW()
+            RETURNING xmax = 0 AS inserted
+        )
+        SELECT
+            COUNT(*) FILTER (WHERE inserted) AS inserted_records,
+            COUNT(*) FILTER (WHERE NOT inserted) AS updated_records
+        FROM upserted
+        """
+    )
+
+    engine = _sync_engine()
+    try:
+        with engine.begin() as conn:
+            for start in range(0, len(lake_rows), LAKE_IMPORT_BATCH_SIZE):
+                batch = lake_rows[start : start + LAKE_IMPORT_BATCH_SIZE]
+                counts = conn.execute(
+                    upsert_statement,
+                    {"lake_rows": json.dumps(batch)},
+                ).mappings().one()
+                inserted_records += int(counts["inserted_records"])
+                updated_records += int(counts["updated_records"])
+    finally:
+        engine.dispose()
+
+    return {
+        "source_path": source_path,
+        "country": country,
+        "total_records": total_records,
+        "inserted_records": inserted_records,
+        "updated_records": updated_records,
+        "skipped_records": skipped_records,
+        "message": f"Stored {inserted_records + updated_records} lake record(s) for {country}.",
+    }
+
+
+def _wipe_country_sub_regions(country: str) -> None:
+    """Remove generated processing cells for a country before a refresh."""
+    from sqlalchemy import text  # noqa: PLC0415
+
+    engine = _sync_engine()
+    try:
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    """
+                    DELETE FROM sub_regions AS sub_region
+                    USING lakes AS lake
+                    WHERE sub_region.lake_id = lake.lake_id
+                      AND lower(lake.country) = lower(:country)
+                    """
+                ),
+                {"country": country},
+            )
+    finally:
+        engine.dispose()
+
+
+def _create_lake_sub_regions(country: str, years: list[int], states: list[str] | None = None) -> list[dict]:
+    """Create valid 1 km processing cells and return one row per cell/year.
+
+    The grid is built in EPSG:6933 (a metre-based equal-area CRS), then
+    transformed back to WGS84 for storage and the GEE request.  Coverage is
+    the percentage of each full grid cell occupied by the lake polygon.
     """
-    Synchronous service logic — called via asyncio.to_thread from the endpoint.
+    from sqlalchemy import text  # noqa: PLC0415
 
-    Steps:
-        1. Derive stable region UUIDs from state centroids (deterministic UUIDv5).
-        2. [BACKUP mode] pg_dump before any destructive operation.
-        3. Wipe existing rows for the requested states.
-        4. Ensure region rows exist.
-        5. Dispatch one Celery chain (Phase 1 → 2 → 3) per (state × year).
-        6. Return SyncJobResponse.
-    """
-    import hashlib  # noqa: PLC0415
+    if not years:
+        return []
 
-    job_id = str(uuid.uuid4())
-    years  = request.duration.resolved_years()
-    log    = logger.bind(job_id=job_id, states=request.states, years=years)
+    statement = text(
+        """
+        WITH lake_cells AS (
+            SELECT
+                lake.lake_id,
+                grid.geom AS metric_geom,
+                ST_Transform(lake.geom, 6933) AS lake_metric_geom
+            FROM lakes AS lake
+            CROSS JOIN LATERAL ST_SquareGrid(
+                :cell_size_metres, ST_Transform(lake.geom, 6933)
+            ) AS grid
+            WHERE lower(lake.country) = lower(:country)
+              AND lake.is_active = true
+              AND lake.geom IS NOT NULL
+              AND (:states IS NULL OR lake.state = ANY(CAST(:states AS text[])))
+        ),
+        valid_cells AS (
+            SELECT
+                lake_id,
+                metric_geom,
+                100.0 * ST_Area(ST_Intersection(metric_geom, lake_metric_geom))
+                    / NULLIF(ST_Area(metric_geom), 0) AS coverage_percent
+            FROM lake_cells
+            WHERE ST_Intersects(metric_geom, lake_metric_geom)
+        ),
+        numbered_cells AS (
+            SELECT
+                lake_id,
+                ROW_NUMBER() OVER (
+                    PARTITION BY lake_id
+                    ORDER BY ST_Y(ST_Centroid(metric_geom)), ST_X(ST_Centroid(metric_geom))
+                )::integer AS cell_number,
+                ST_Transform(metric_geom, 4326) AS geom,
+                coverage_percent
+            FROM valid_cells
+            WHERE coverage_percent >= :minimum_coverage_percent
+        ),
+        inserted AS (
+            INSERT INTO sub_regions (
+                sub_region_id, lake_id, cell_number, year, coverage_percent,
+                center_lat, center_lon, geom
+            )
+            SELECT
+                gen_random_uuid(), numbered_cells.lake_id, numbered_cells.cell_number,
+                requested_year.year, numbered_cells.coverage_percent,
+                ST_Y(ST_Centroid(numbered_cells.geom)),
+                ST_X(ST_Centroid(numbered_cells.geom)),
+                numbered_cells.geom
+            FROM numbered_cells
+            CROSS JOIN unnest(CAST(:years AS integer[])) AS requested_year(year)
+            ON CONFLICT (lake_id, cell_number, year) DO UPDATE SET
+                coverage_percent = EXCLUDED.coverage_percent,
+                center_lat = EXCLUDED.center_lat,
+                center_lon = EXCLUDED.center_lon,
+                geom = EXCLUDED.geom,
+                updated_at = NOW()
+            RETURNING sub_region_id, lake_id, cell_number, year, center_lat, center_lon,
+                      coverage_percent, ST_AsText(geom) AS geom_wkt
+        )
+        SELECT * FROM inserted
+        ORDER BY lake_id, cell_number, year
+        """
+    )
+    engine = _sync_engine()
+    try:
+        with engine.begin() as conn:
+            rows = conn.execute(
+                statement,
+                {
+                    "country": country,
+                    "years": years,
+                    "states": states,
+                    "cell_size_metres": settings.LAKE_GRID_CELL_SIZE_METRES,
+                    "minimum_coverage_percent": settings.LAKE_GRID_MIN_COVERAGE_PERCENT,
+                },
+            ).mappings().all()
+        return [
+            {
+                "sub_region_id": str(row["sub_region_id"]),
+                "lake_id": int(row["lake_id"]),
+                "cell_number": int(row["cell_number"]),
+                "year": int(row["year"]),
+                "center_lat": float(row["center_lat"]),
+                "center_lon": float(row["center_lon"]),
+                "coverage_percent": float(row["coverage_percent"]),
+                "geom_wkt": row["geom_wkt"],
+            }
+            for row in rows
+        ]
+    finally:
+        engine.dispose()
+
+
+def _load_selected_regions(region_ids: list[str]) -> list[dict]:
+    from sqlalchemy import text  # noqa: PLC0415
+
+    if not region_ids:
+        return []
+
+    engine = _sync_engine()
+    try:
+        with engine.begin() as conn:
+            rows = conn.execute(
+                text(
+                    """
+                    SELECT region_id, hydrolake_id, name, country, center_lat, center_lon,
+                           area_sqkm, bbox, ST_AsText(geom) AS geom_wkt
+                    FROM regions
+                    WHERE region_id = ANY(:region_ids)
+                    ORDER BY name ASC
+                    """
+                ),
+                {"region_ids": region_ids},
+            ).mappings().all()
+
+        regions: list[dict] = []
+        for row in rows:
+            regions.append(
+                {
+                    "region_id": str(row["region_id"]),
+                    "hydrolake_id": row["hydrolake_id"],
+                    "name": row["name"],
+                    "country": row["country"],
+                    "center_lat": float(row["center_lat"]),
+                    "center_lon": float(row["center_lon"]),
+                    "area_sqkm": float(row["area_sqkm"] or 0.0),
+                    "bbox": row["bbox"],
+                    "geom_wkt": row["geom_wkt"],
+                }
+            )
+        return regions
+    finally:
+        engine.dispose()
+
+
+def _upsert_region_row(lake: dict) -> tuple[str, bool]:
+    from sqlalchemy import text  # noqa: PLC0415
+
+    engine = _sync_engine()
+    try:
+        with engine.begin() as conn:
+            existing = conn.execute(
+                text("SELECT region_id FROM regions WHERE hydrolake_id = :hydrolake_id"),
+                {"hydrolake_id": lake["hydrolake_id"]},
+            ).scalar_one_or_none()
+            region_id = existing or str(uuid.uuid5(uuid.NAMESPACE_URL, f"hydrolakes:{lake['hydrolake_id']}"))
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO regions (
+                        region_id, hydrolake_id, name, country,
+                        center_lat, center_lon, area_sqkm, bbox, geom
+                    )
+                    VALUES (
+                        :region_id, :hydrolake_id, :name, :country,
+                        :center_lat, :center_lon, :area_sqkm, CAST(:bbox AS jsonb),
+                        CASE WHEN :geom_wkt IS NULL THEN NULL ELSE ST_GeomFromText(:geom_wkt, 4326) END
+                    )
+                    ON CONFLICT (hydrolake_id) DO UPDATE SET
+                        name = EXCLUDED.name,
+                        country = EXCLUDED.country,
+                        center_lat = EXCLUDED.center_lat,
+                        center_lon = EXCLUDED.center_lon,
+                        area_sqkm = EXCLUDED.area_sqkm,
+                        bbox = EXCLUDED.bbox,
+                        geom = EXCLUDED.geom,
+                        updated_at = NOW()
+                    """
+                ),
+                {
+                    "region_id": region_id,
+                    "hydrolake_id": lake["hydrolake_id"],
+                    "name": lake["name"],
+                    "country": lake["country"],
+                    "center_lat": lake["center_lat"],
+                    "center_lon": lake["center_lon"],
+                    "area_sqkm": lake["area_sqkm"],
+                    "bbox": json.dumps(lake["bbox"]) if lake.get("bbox") is not None else None,
+                    "geom_wkt": lake.get("geom_wkt"),
+                },
+            )
+        return region_id, existing is None
+    finally:
+        engine.dispose()
+
+
+def start_sync(request: SyncRequest, job_id: str | None = None) -> SyncJobResponse:
+    if not job_id:
+        job_id = str(uuid.uuid4())
+    years = request.duration.resolved_years()
+    log = logger.bind(job_id=job_id, country=request.country, years=years)
     log.info("Sync job started", sync_mode=request.sync_mode)
 
-    # ── 1. Derive deterministic region UUIDs from state name ──────────────
-    # Using UUIDv5 (SHA-1 namespace) so the same state always maps to the
-    # same UUID — idempotent across re-runs.
-    state_regions: List[dict] = []
-    for state in request.states:
-        lat, lon = INDIA_STATE_CENTROIDS[state]
-        name_bytes = state.encode()
-        raw = hashlib.sha1(name_bytes).digest()[:16]
-        # Manually set version=5 bits
-        raw = bytearray(raw)
-        raw[6] = (raw[6] & 0x0F) | 0x50
-        raw[8] = (raw[8] & 0x3F) | 0x80
-        region_id = str(uuid.UUID(bytes=bytes(raw)))
-        state_regions.append({
-            "state":     state,
-            "region_id": region_id,
-            "lat":       lat,
-            "lon":       lon,
-        })
+    source_regions = (
+        _load_selected_regions(request.region_ids or [])
+        if request.source_type == SyncSource.STORED_REGIONS
+        else []
+    )
 
-    region_ids = [r["region_id"] for r in state_regions]
-
-    # ── 2. Optional backup ─────────────────────────────────────────────────
     backup_path: str | None = None
     if request.sync_mode == SyncMode.BACKUP:
         try:
@@ -172,218 +779,180 @@ def start_sync(request: SyncRequest) -> SyncJobResponse:
         except Exception as exc:
             log.error("Backup failed — aborting sync", error=str(exc))
             return SyncJobResponse(
-                job_id           = job_id,
-                status           = "failed",
-                states           = request.states,
-                years            = years,
-                sync_mode        = request.sync_mode,
-                tasks_dispatched = 0,
-                message          = f"Backup failed: {exc}",
+                job_id=job_id,
+                status="failed",
+                source_type=request.source_type,
+                country=request.country,
+                region_ids=request.region_ids or [],
+                years=years,
+                sync_mode=request.sync_mode,
+                tasks_dispatched=0,
+                total_regions=0,
+                inserted_regions=0,
+                updated_regions=0,
+                skipped_regions=0,
+                message=f"Backup failed: {exc}",
+                backup_path=None,
             )
 
-    # ── 3. Wipe existing data ──────────────────────────────────────────────
     try:
-        _wipe_state_data(region_ids)
+        if request.sync_mode == SyncMode.REFRESH:
+            if request.source_type == SyncSource.HYDROLAKES:
+                _wipe_country_sub_regions(request.country)
+            else:
+                _wipe_country_data(request.country)
     except Exception as exc:
         log.error("DB wipe failed", error=str(exc))
         return SyncJobResponse(
-            job_id           = job_id,
-            status           = "failed",
-            states           = request.states,
-            years            = years,
-            sync_mode        = request.sync_mode,
-            tasks_dispatched = 0,
-            message          = f"DB wipe failed: {exc}",
+            job_id=job_id,
+            status="failed",
+            source_type=request.source_type,
+            country=request.country,
+            region_ids=request.region_ids or [],
+            years=years,
+            sync_mode=request.sync_mode,
+            tasks_dispatched=0,
+            total_regions=len(source_regions),
+            inserted_regions=0,
+            updated_regions=0,
+            skipped_regions=0,
+            message=f"DB wipe failed: {exc}",
+            backup_path=backup_path,
         )
 
-    # ── 4. Ensure region rows exist ────────────────────────────────────────
-    for r in state_regions:
+    inserted_regions = 0
+    updated_regions = 0
+    skipped_regions = 0
+    region_jobs: list[dict] = []
+    if request.source_type == SyncSource.HYDROLAKES:
         try:
-            _ensure_region_row(r["region_id"], r["lat"], r["lon"], r["state"])
+            region_jobs = _create_lake_sub_regions(request.country, years, states=request.states)
+            inserted_regions = len(region_jobs)
         except Exception as exc:
-            log.warning("Could not create region row", state=r["state"], error=str(exc))
+            log.error("Could not create lake sub-regions", error=str(exc))
+            return SyncJobResponse(
+                job_id=job_id,
+                status="failed",
+                source_type=request.source_type,
+                country=request.country,
+                region_ids=[],
+                years=years,
+                sync_mode=request.sync_mode,
+                tasks_dispatched=0,
+                total_regions=0,
+                inserted_regions=0,
+                updated_regions=0,
+                skipped_regions=0,
+                message=f"Could not create lake sub-regions: {exc}",
+                backup_path=backup_path,
+            )
+    else:
+        region_jobs = source_regions
 
-    # ── 5. Dispatch Celery chains ──────────────────────────────────────────
-    from celery import chain  # noqa: PLC0415
-    from app.ML_pipeline.pipeline import (  # noqa: PLC0415
-        classify_region_task,
-        compute_region_embedding_task,
-        ingest_region_features_task,
-    )
+    for lake in region_jobs:
+        try:
+            if request.source_type == SyncSource.STORED_REGIONS and not lake.get("region_id"):
+                raise ValueError("Stored region selection missing region_id")
+        except Exception as exc:
+            skipped_regions += 1
+            log.warning("Could not prepare selected region", error=str(exc))
+
+    from app.ML_pipeline.pipeline import run_full_pipeline  # noqa: PLC0415
+
+    # Build deduplicated list of (sub_region_id, lake_label, center_lat, center_lon, geom_wkt, years)
+    # so we process one lake at a time across all its years
+    lake_lookup: dict[str, dict] = {}
+    lake_year_map: dict[str, list[int]] = {}
+    for lake in region_jobs:
+        key = lake.get("sub_region_id") or lake["region_id"]
+        lake_lookup[key] = lake
+        job_years = [lake["year"]] if request.source_type == SyncSource.HYDROLAKES else years
+        lake_year_map.setdefault(key, []).extend(job_years)
+
+    total_lake_year_pairs = sum(len(yrs) for yrs in lake_year_map.values())
+
+    # ── Initialise global progress ────────────────────────────────────────────
+    with _SYNC_LOCK:
+        _SYNC_PROGRESS.update({
+            "status": "running",
+            "total_lakes": total_lake_year_pairs,
+            "processed": 0,
+            "success": 0,
+            "failed": 0,
+            "current_lake": None,
+            "current_year": None,
+            "errors": [],
+        })
 
     tasks_dispatched = 0
-    # task_meta: list of dicts stored in Redis for the status endpoint
-    task_meta: List[dict] = []
-    for r in state_regions:
-        for year in years:
+    for region_id, region_years in lake_year_map.items():
+        lake = lake_lookup[region_id]
+        lake_label = lake.get("lake_id") or lake.get("hydrolake_id") or region_id
+
+        for year in region_years:
+            # Mark this lake/year as currently running
+            with _SYNC_LOCK:
+                _SYNC_PROGRESS["current_lake"] = str(lake_label)
+                _SYNC_PROGRESS["current_year"] = year
+
             try:
-                ingest_sig = ingest_region_features_task.s(
-                    r["region_id"], r["lat"], r["lon"], year,
+                run_full_pipeline(
+                    region_id,
+                    lake["center_lat"],
+                    lake["center_lon"],
+                    year,
+                    lake.get("geom_wkt"),
                 )
-                pipeline = chain(
-                    ingest_sig,
-                    compute_region_embedding_task.s(),
-                    classify_region_task.s(),
-                )
-                async_result = pipeline.apply_async(queue=PIPELINE_QUEUE)
+                with _SYNC_LOCK:
+                    _SYNC_PROGRESS["success"] += 1
+                    _SYNC_PROGRESS["processed"] += 1
                 tasks_dispatched += 1
-                task_meta.append({
-                    # Track Phase 1 so status reflects ingest progress/failures
-                    "task_id":   ingest_sig.id,
-                    "chain_id":  async_result.id,
-                    "state":     r["state"],
-                    "region_id": r["region_id"],
-                    "year":      year,
-                })
             except Exception as exc:
-                log.warning(
-                    "Task dispatch failed",
-                    state=r["state"],
-                    year=year,
-                    error=str(exc),
-                )
+                err_msg = f"Lake {lake_label} / {year}: {exc}"
+                log.warning("Pipeline failed", lake_id=lake_label, year=year, error=str(exc))
+                with _SYNC_LOCK:
+                    _SYNC_PROGRESS["failed"] += 1
+                    _SYNC_PROGRESS["processed"] += 1
+                    _SYNC_PROGRESS["errors"].append(err_msg)
 
-    # ── 5b. Persist task metadata in Redis ────────────────────────────────
-    _store_job_meta(job_id, request.states, years, task_meta)
+    # ── Mark done ───────────────────────────────────────────────────────────
+    with _SYNC_LOCK:
+        _SYNC_PROGRESS["status"] = "done"
+        _SYNC_PROGRESS["current_lake"] = None
+        _SYNC_PROGRESS["current_year"] = None
 
-    log.info("Sync job dispatched", tasks_dispatched=tasks_dispatched)
+    log.info(
+        "Lake regions imported",
+        total_regions=len(region_jobs),
+        inserted_regions=inserted_regions,
+        updated_regions=updated_regions,
+        skipped_regions=skipped_regions,
+        tasks_dispatched=tasks_dispatched,
+    )
 
     return SyncJobResponse(
-        job_id           = job_id,
-        status           = "queued",
-        states           = request.states,
-        years            = years,
-        sync_mode        = request.sync_mode,
-        tasks_dispatched = tasks_dispatched,
-        backup_path      = backup_path,
-        message          = (
-            f"Pipeline started for {len(request.states)} state(s) "
-            f"× {len(years)} year(s) = {tasks_dispatched} task(s) dispatched."
+        job_id=job_id,
+        status="completed",
+        source_type=request.source_type,
+        country=request.country,
+        region_ids=[lake.get("sub_region_id") or lake["region_id"] for lake in region_jobs],
+        years=years,
+        sync_mode=request.sync_mode,
+        tasks_dispatched=tasks_dispatched,
+        total_regions=len(region_jobs),
+        inserted_regions=inserted_regions,
+        updated_regions=updated_regions,
+        skipped_regions=skipped_regions,
+        backup_path=backup_path,
+        message=(
+            f"Created and processed {len(region_jobs)} valid lake sub-region(s) for {request.country}."
+            if request.source_type == SyncSource.HYDROLAKES
+            else f"Processed embeddings for {len(region_jobs)} stored region(s)."
         ),
     )
 
 
-# ── Redis helpers (synchronous — called from Celery-context or to_thread) ─────
-
-def _redis_sync_client():
-    """Return a synchronous redis client."""
-    import redis  # noqa: PLC0415
-    from app.core.config import settings  # noqa: PLC0415
-    return redis.from_url(settings.REDIS_URL, socket_connect_timeout=3, decode_responses=True)
-
-
-def _store_job_meta(
-    job_id: str,
-    states: List[str],
-    years: List[int],
-    task_meta: List[dict],
-) -> None:
-    """Persist job → task mapping in Redis so the status endpoint can query it."""
-    payload = json.dumps({
-        "states":     states,
-        "years":      years,
-        "task_meta":  task_meta,   # [{task_id, state, region_id, year}, ...]
-    })
-    try:
-        r = _redis_sync_client()
-        r.setex(_SYNC_JOB_KEY.format(job_id=job_id), _SYNC_JOB_TTL, payload)
-        r.close()
-    except Exception as exc:
-        logger.warning("Could not store job meta in Redis", job_id=job_id, error=str(exc))
-
-
-# ── Status query (called via asyncio.to_thread) ───────────────────────────────
-
-# Celery task states we surface to the frontend
-_CELERY_STATE_MAP = {
-    "PENDING":  "pending",
-    "RECEIVED": "pending",
-    "STARTED":  "running",
-    "RETRY":    "running",
-    "SUCCESS":  "success",
-    "FAILURE":  "failed",
-    "REVOKED":  "failed",
-}
-
-
-def get_job_status(job_id: str) -> dict:
-    """
-    Read stored task IDs from Redis, query Celery result backend for each,
-    and return an aggregated status dict.
-
-    Returns:
-        {
-          "job_id": str,
-          "states": [...],
-          "years":  [...],
-          "overall": "pending" | "running" | "success" | "failed" | "partial",
-          "total":   int,
-          "counts":  {"pending": int, "running": int, "success": int, "failed": int},
-          "tasks":   [{"task_id", "state", "year", "status", "error"}, ...]
-        }
-    """
-    try:
-        r = _redis_sync_client()
-        raw = r.get(_SYNC_JOB_KEY.format(job_id=job_id))
-        r.close()
-    except Exception as exc:
-        return {"error": f"Redis unavailable: {exc}"}
-
-    if raw is None:
-        return {"error": "Job not found (expired or never started)"}
-
-    data       = json.loads(raw)
-    task_meta  = data.get("task_meta", [])
-    states_val = data.get("states", [])
-    years_val  = data.get("years", [])
-
-    from celery.result import AsyncResult  # noqa: PLC0415
-    from app.workers.celery_app import celery_app  # noqa: PLC0415
-
-    tasks_out = []
-    counts    = {"pending": 0, "running": 0, "success": 0, "failed": 0}
-
-    for meta in task_meta:
-        tid = meta["task_id"]
-        try:
-            result = AsyncResult(tid, app=celery_app)
-            celery_state = result.state          # str like "PENDING", "SUCCESS" …
-            status = _CELERY_STATE_MAP.get(celery_state, "pending")
-            error  = str(result.info) if status == "failed" and result.info else None
-        except Exception:
-            status = "pending"
-            error  = None
-
-        counts[status] = counts.get(status, 0) + 1
-        tasks_out.append({
-            "task_id":   tid,
-            "state":     meta["state"],
-            "year":      meta["year"],
-            "status":    status,
-            "error":     error,
-        })
-
-    total = len(tasks_out)
-    if total == 0:
-        overall = "pending"
-    elif counts["success"] == total:
-        overall = "success"
-    elif counts["failed"] == total:
-        overall = "failed"
-    elif counts["failed"] > 0 and counts["pending"] == 0 and counts["running"] == 0:
-        overall = "partial"
-    elif counts["running"] > 0 or counts["success"] > 0:
-        overall = "running"
-    else:
-        overall = "pending"
-
-    return {
-        "job_id":   job_id,
-        "states":   states_val,
-        "years":    years_val,
-        "overall":  overall,
-        "total":    total,
-        "counts":   counts,
-        "tasks":    tasks_out,
-    }
-
+def get_sync_progress() -> dict:
+    """Return a snapshot of the current (or last completed) sync progress."""
+    with _SYNC_LOCK:
+        return dict(_SYNC_PROGRESS)

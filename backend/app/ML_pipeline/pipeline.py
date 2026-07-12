@@ -1,27 +1,23 @@
 """
-ML Pipeline Celery tasks — three-phase ingestion orchestrator.
+ML Pipeline — three-phase ingestion orchestrator.
 
-Phase 1 — ``ingest_region_features_task``
+Phase 1 — ``ingest_region_features``
     GEE → Sentinel-2 composite → NDVI / NDWI / NBR stats
-    → UPSERT region_features + temporal_profiles
+    → UPSERT sub_region_features
 
-Phase 2 — ``compute_region_embedding_task``
+Phase 2 — ``compute_region_embedding``
     GEE band array → Prithvi encoder → 768-dim vector
-    → UPSERT region_embeddings
-    → Invalidate Redis similarity / forecast cache
+    → UPDATE sub_regions.embedding
 
-Phase 3 — ``classify_region_task``
-    region_features stats (+ optional embedding) → ecosystem label
-    → UPDATE region_features.dominant_ecosystem + ecosystem_confidence
-    → Invalidate Redis cache
+Phase 3 — ``classify_region``
+    sub_region_features stats (+ optional embedding) → ecosystem label
+    → UPDATE sub_region_features.dominant_ecosystem + ecosystem_confidence
 
-Orchestrator — ``run_full_pipeline_task``
-    Dispatches a Celery chain: Phase 1 → Phase 2 → Phase 3 for a single
-    (region_id, year) pair.  Use this from management scripts or Celery beat.
+Orchestrator — ``run_full_pipeline``
+    Runs Phase 1 → Phase 2 → Phase 3 for a single (sub_region_id, year) pair.
 
-All DB helpers use a synchronous SQLAlchemy engine (same pattern as
-report_tasks.py) because Celery workers run in separate OS processes, not
-async event loops.
+All DB helpers use a synchronous SQLAlchemy engine because the ingestion
+pipeline runs outside the API's async database session.
 """
 
 from __future__ import annotations
@@ -29,13 +25,6 @@ from __future__ import annotations
 from typing import Optional
 
 import structlog
-
-from app.workers.celery_app import celery_app
-from app.ML_pipeline.constants import (
-    PIPELINE_MAX_RETRIES,
-    PIPELINE_QUEUE,
-    PIPELINE_RETRY_DELAY_SEC,
-)
 
 logger = structlog.get_logger(__name__)
 
@@ -49,58 +38,21 @@ def _sync_engine():
     return create_engine(settings.SYNC_DATABASE_URL, pool_pre_ping=True)
 
 
-def _invalidate_redis_for_region(region_id: str) -> None:
-    """
-    Synchronously remove all cached similarity and forecast keys for the
-    region.  Non-fatal: a warning is logged and the pipeline continues.
-    """
-    try:
-        import redis as sync_redis  # noqa: PLC0415
-        from app.core.config import settings  # noqa: PLC0415
-
-        client = sync_redis.from_url(settings.REDIS_URL, socket_connect_timeout=3)
-        keys = (
-            client.keys(f"similarity:{region_id}:*")
-            + client.keys(f"forecast:{region_id}")
-        )
-        if keys:
-            client.delete(*keys)
-            logger.info(
-                "Redis cache invalidated",
-                region_id=region_id,
-                keys_deleted=len(keys),
-            )
-        client.close()
-    except Exception as exc:
-        logger.warning(
-            "Redis invalidation failed (non-fatal)",
-            region_id=region_id,
-            error=str(exc),
-        )
-
 
 # ── Phase 1 ───────────────────────────────────────────────────────────────────
 
-@celery_app.task(
-    name="app.ML_pipeline.pipeline.ingest_region_features_task",
-    bind=True,
-    max_retries=PIPELINE_MAX_RETRIES,
-    default_retry_delay=PIPELINE_RETRY_DELAY_SEC,
-    acks_late=True,
-    queue=PIPELINE_QUEUE,
-)
-def ingest_region_features_task(
-    self,
+def ingest_region_features(
     region_id: str,
     center_lat: float,
     center_lon: float,
     year: int,
+    geom_wkt: Optional[str] = None,
 ) -> dict:
     """
-    Phase 1: fetch GEE composite → upsert region_features + temporal_profiles.
+    Phase 1: fetch GEE composite → upsert sub-region features.
 
-    Returns a result dict that is forwarded automatically to Phase 2 when
-    tasks are chained with ``.s()``.
+    Returns a result dict that is forwarded automatically to Phase 2.
+    The raw band_array is included so Phase 2 does NOT need a second GEE call.
     """
     log = logger.bind(task="ingest_features", region_id=region_id, year=year)
     log.info("Phase 1 started")
@@ -113,113 +65,100 @@ def ingest_region_features_task(
             center_lat = center_lat,
             center_lon = center_lon,
             year       = year,
+            geom_wkt   = geom_wkt,
         )
 
         _upsert_region_features(region_id, year, result.ndvi, result.ndwi, result.nbr)
-        _upsert_temporal_profile(
-            region_id,
-            year,
-            ndvi_mean = result.ndvi.mean,
-            ndwi_mean = result.ndwi.mean,
-            nbr_mean  = result.nbr.mean,
-        )
 
-        log.info("Phase 1 completed", pixel_count=result.pixel_count)
+        log.info("Phase 1 completed", pixel_count=result.pixel_count,
+                 band_array="ok" if result.band_array is not None else "missing")
         return {
-            "region_id":  region_id,
-            "year":       year,
-            "center_lat": center_lat,
-            "center_lon": center_lon,
-            "ndvi_mean":  result.ndvi.mean,
-            "ndwi_mean":  result.ndwi.mean,
-            "nbr_mean":   result.nbr.mean,
+            "region_id":   region_id,
+            "year":        year,
+            "center_lat":  center_lat,
+            "center_lon":  center_lon,
+            "geom_wkt":    geom_wkt,
+            "ndvi_mean":   result.ndvi.mean,
+            "ndwi_mean":   result.ndwi.mean,
+            "nbr_mean":    result.nbr.mean,
             "pixel_count": result.pixel_count,
+            # Pass band_array to Phase 2 so GEE is only called ONCE per region/year
+            "band_array":  result.band_array,
         }
 
     except Exception as exc:
         log.error("Phase 1 failed", error=str(exc))
-        raise self.retry(exc=exc)
+        raise
 
 
 # ── Phase 2 ───────────────────────────────────────────────────────────────────
 
-@celery_app.task(
-    name="app.ML_pipeline.pipeline.compute_region_embedding_task",
-    bind=True,
-    max_retries=PIPELINE_MAX_RETRIES,
-    default_retry_delay=PIPELINE_RETRY_DELAY_SEC,
-    acks_late=True,
-    queue=PIPELINE_QUEUE,
-)
-def compute_region_embedding_task(
-    self,
+def compute_region_embedding(
     phase1_result: Optional[dict] = None,
     *,
     region_id: Optional[str] = None,
     center_lat: Optional[float] = None,
     center_lon: Optional[float] = None,
     year: Optional[int] = None,
+    geom_wkt: Optional[str] = None,
 ) -> dict:
     """
-    Phase 2: download GEE band array → Prithvi inference → upsert embedding.
+    Phase 2: Prithvi inference → upsert embedding.
 
-    Can be called standalone (pass keyword args) or chained from Phase 1
-    (``phase1_result`` received automatically as positional arg).
+    Reuses the band_array from Phase 1 when available — no second GEE call.
+    Falls back to a fresh GEE fetch only when called standalone.
     """
-    # Support Celery chain: phase1_result is the first positional arg
+    band_array = None
     if phase1_result is not None:
         region_id  = phase1_result["region_id"]
         center_lat = phase1_result["center_lat"]
         center_lon = phase1_result["center_lon"]
         year       = phase1_result["year"]
+        geom_wkt   = phase1_result.get("geom_wkt")
+        # Reuse the band_array already downloaded in Phase 1 (← no second GEE call)
+        band_array = phase1_result.get("band_array")
 
     log = logger.bind(task="compute_embedding", region_id=region_id, year=year)
     log.info("Phase 2 started")
 
     try:
-        from app.ML_pipeline.gee_ingest import fetch_composite  # noqa: PLC0415
         from app.ML_pipeline.prithvi_inference import get_embedding  # noqa: PLC0415
         from app.core.config import settings  # noqa: PLC0415
 
-        gee_result = fetch_composite(
-            region_id  = region_id,
-            center_lat = center_lat,
-            center_lon = center_lon,
-            year       = year,
-        )
+        if band_array is None:
+            # Standalone call or Phase 1 band_array was missing — fetch from GEE
+            from app.ML_pipeline.gee_ingest import fetch_composite  # noqa: PLC0415
+            log.info("Phase 2: fetching GEE composite (no band_array from Phase 1)")
+            gee_result = fetch_composite(
+                region_id  = region_id,
+                center_lat = center_lat,
+                center_lon = center_lon,
+                year       = year,
+                geom_wkt   = geom_wkt,
+            )
+            band_array = gee_result.band_array
 
-        # Use stub embeddings in DEBUG / development mode to skip GPU requirement
-        embedding = get_embedding(gee_result.band_array, use_stub=settings.DEBUG)
+        embedding = get_embedding(band_array, use_stub=settings.DEBUG)
 
         _upsert_region_embedding(region_id, year, embedding)
-        _invalidate_redis_for_region(region_id)
 
         log.info("Phase 2 completed", embedding_dim=len(embedding))
         return {
-            "region_id":   region_id,
-            "year":        year,
-            "center_lat":  center_lat,
-            "center_lon":  center_lon,
+            "region_id":     region_id,
+            "year":          year,
+            "center_lat":    center_lat,
+            "center_lon":    center_lon,
             "embedding_dim": len(embedding),
         }
 
     except Exception as exc:
         log.error("Phase 2 failed", error=str(exc))
-        raise self.retry(exc=exc)
+        raise
 
 
 # ── Phase 3 ───────────────────────────────────────────────────────────────────
 
-@celery_app.task(
-    name="app.ML_pipeline.pipeline.classify_region_task",
-    bind=True,
-    max_retries=PIPELINE_MAX_RETRIES,
-    default_retry_delay=PIPELINE_RETRY_DELAY_SEC,
-    acks_late=True,
-    queue=PIPELINE_QUEUE,
-)
-def classify_region_task(
-    self,
+def classify_region(
     phase2_result: Optional[dict] = None,
     *,
     region_id: Optional[str] = None,
@@ -248,7 +187,6 @@ def classify_region_task(
         label, confidence = classify_region(ndvi_mean, ndwi_mean, nbr_mean, embedding)
 
         _update_dominant_ecosystem(region_id, year, label, confidence)
-        _invalidate_redis_for_region(region_id)
 
         log.info("Phase 3 completed", label=label, confidence=confidence)
         return {
@@ -260,66 +198,50 @@ def classify_region_task(
 
     except Exception as exc:
         log.error("Phase 3 failed", error=str(exc))
-        raise self.retry(exc=exc)
+        raise
 
 
 # ── Orchestrator ───────────────────────────────────────────────────────────────
 
-@celery_app.task(
-    name="app.ML_pipeline.pipeline.run_full_pipeline_task",
-    queue=PIPELINE_QUEUE,
-)
-def run_full_pipeline_task(
+def run_full_pipeline(
     region_id: str,
     center_lat: float,
     center_lon: float,
     year: int,
+    geom_wkt: Optional[str] = None,
 ) -> None:
     """
-    Dispatch Phase 1 → Phase 2 → Phase 3 as a Celery chain for one region/year.
-
-    Use this task from management scripts or Celery beat for bulk ingestion.
-    Each phase receives the previous phase's return dict automatically.
-
-    Example (from a management script)::
-
-        from app.ML_pipeline.pipeline import run_full_pipeline_task
-        run_full_pipeline_task.delay(region_id, lat, lon, year)
+    Run Phase 1 → Phase 2 → Phase 3 for one region/year.
     """
-    from celery import chain  # noqa: PLC0415
-
-    pipeline_chain = chain(
-        ingest_region_features_task.s(region_id, center_lat, center_lon, year),
-        compute_region_embedding_task.s(),
-        classify_region_task.s(),
-    )
-    pipeline_chain.apply_async()
+    phase1_result = ingest_region_features(region_id, center_lat, center_lon, year, geom_wkt)
+    phase2_result = compute_region_embedding(phase1_result)
+    classify_region(phase2_result)
     logger.info(
-        "Full pipeline chain dispatched",
+        "Full pipeline completed",
         region_id=region_id,
         year=year,
     )
 
 
-# ── Synchronous DB helpers (Celery worker context) ────────────────────────────
+# ── Synchronous DB helpers ───────────────────────────────────────────────────
 
 def _upsert_region_features(region_id, year, ndvi, ndwi, nbr) -> None:
     from sqlalchemy import text  # noqa: PLC0415
 
     engine = _sync_engine()
     sql = text("""
-        INSERT INTO region_features (
-            id, region_id, year,
+        INSERT INTO sub_region_features (
+            id, sub_region_id, year,
             ndvi_mean, ndvi_std, ndvi_median, ndvi_min, ndvi_max,
             ndwi_mean, ndwi_std, ndwi_median, ndwi_min, ndwi_max,
             nbr_mean,  nbr_std,  nbr_median,  nbr_min,  nbr_max
         ) VALUES (
-            gen_random_uuid(), :region_id, :year,
+            gen_random_uuid(), :sub_region_id, :year,
             :ndvi_mean, :ndvi_std, :ndvi_median, :ndvi_min, :ndvi_max,
             :ndwi_mean, :ndwi_std, :ndwi_median, :ndwi_min, :ndwi_max,
             :nbr_mean,  :nbr_std,  :nbr_median,  :nbr_min,  :nbr_max
         )
-        ON CONFLICT (region_id, year) DO UPDATE SET
+        ON CONFLICT (sub_region_id, year) DO UPDATE SET
             ndvi_mean   = EXCLUDED.ndvi_mean,
             ndvi_std    = EXCLUDED.ndvi_std,
             ndvi_median = EXCLUDED.ndvi_median,
@@ -338,7 +260,7 @@ def _upsert_region_features(region_id, year, ndvi, ndwi, nbr) -> None:
     """)
     with engine.begin() as conn:
         conn.execute(sql, {
-            "region_id":   region_id, "year": year,
+            "sub_region_id": region_id, "year": year,
             "ndvi_mean":   ndvi.mean,   "ndvi_std":  ndvi.std,
             "ndvi_median": ndvi.median, "ndvi_min":  ndvi.min,  "ndvi_max": ndvi.max,
             "ndwi_mean":   ndwi.mean,   "ndwi_std":  ndwi.std,
@@ -389,13 +311,12 @@ def _upsert_region_embedding(
     # Build the pgvector literal inline (same approach as EmbeddingRepository)
     vec_literal = "[" + ",".join(map(str, embedding)) + "]"
     sql = text(f"""
-        INSERT INTO region_embeddings (id, region_id, year, embedding)
-        VALUES (gen_random_uuid(), :region_id, :year, '{vec_literal}'::vector)
-        ON CONFLICT (region_id, year) DO UPDATE SET
-            embedding = EXCLUDED.embedding
+        UPDATE sub_regions
+        SET embedding = '{vec_literal}'::vector, updated_at = NOW()
+        WHERE sub_region_id = :sub_region_id
     """)
     with engine.begin() as conn:
-        conn.execute(sql, {"region_id": region_id, "year": year})
+        conn.execute(sql, {"sub_region_id": region_id})
     engine.dispose()
 
 
@@ -407,24 +328,24 @@ def _update_dominant_ecosystem(
 ) -> None:
     """
     Update dominant_ecosystem and ecosystem_confidence on the existing
-    region_features row.  Requires migration 002_add_ecosystem_confidence.
+    sub_region_features row.
     """
     from sqlalchemy import text  # noqa: PLC0415
 
     engine = _sync_engine()
     sql = text("""
-        UPDATE region_features
+        UPDATE sub_region_features
         SET
             dominant_ecosystem   = :label,
             ecosystem_confidence = :confidence
-        WHERE region_id = :region_id
+        WHERE sub_region_id = :sub_region_id
           AND year      = :year
     """)
     with engine.begin() as conn:
         conn.execute(sql, {
             "label":      label,
             "confidence": confidence,
-            "region_id":  region_id,
+            "sub_region_id": region_id,
             "year":       year,
         })
     engine.dispose()
@@ -437,12 +358,12 @@ def _load_index_means(region_id: str, year: int) -> tuple[float, float, float]:
     engine = _sync_engine()
     sql = text("""
         SELECT ndvi_mean, ndwi_mean, nbr_mean
-        FROM   region_features
-        WHERE  region_id = :region_id
+        FROM   sub_region_features
+        WHERE  sub_region_id = :sub_region_id
           AND  year      = :year
     """)
     with engine.connect() as conn:
-        row = conn.execute(sql, {"region_id": region_id, "year": year}).one()
+        row = conn.execute(sql, {"sub_region_id": region_id, "year": year}).one()
     engine.dispose()
     return (
         float(row.ndvi_mean or 0.0),
@@ -461,14 +382,16 @@ def _load_embedding_vector(region_id: str, year: int) -> Optional[list]:
     engine = _sync_engine()
     sql = text("""
         SELECT embedding::text
-        FROM   region_embeddings
-        WHERE  region_id = :region_id
+        FROM   sub_regions
+        WHERE  sub_region_id = :sub_region_id
           AND  year      = :year
         LIMIT 1
     """)
     try:
         with engine.connect() as conn:
-            row = conn.execute(sql, {"region_id": region_id, "year": year}).one_or_none()
+            row = conn.execute(
+                sql, {"sub_region_id": region_id, "year": year}
+            ).one_or_none()
         if row is None:
             return None
         # pgvector returns the vector as a string like "[0.1,0.2,...]"

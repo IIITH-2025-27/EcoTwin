@@ -48,76 +48,25 @@ services:
       target: production
     container_name: ecotwin_backend
     env_file: .env
+    environment:
+      HYDROLAKES_SOURCE_PATH: ${HYDROLAKES_SOURCE_PATH:-/app/data/hydrolakes_india.geojson}
+      HYDROLAKES_SHAPEFILE_PATH: ${HYDROLAKES_SHAPEFILE_PATH:-/app/app/HydroLAKES_polys_v10_shp/HydroLAKES_polys_v10_shp/HydroLAKES_polys_v10.shp}
     ports:
       - "8000:8000"
-    volumes:
-      - report_storage:/app/reports
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    restart: unless-stopped
-
-  # ── Celery Worker (report generation) ─────────────────────────────────────
-  celery_worker:
-    build:
-      context: .
-      target: production
-    container_name: ecotwin_celery
-    env_file: .env
-    command: >
-      celery -A app.workers.celery_app worker
-      --loglevel=info
-      --queues=reports
-      --concurrency=2
-    volumes:
-      - report_storage:/app/reports
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    restart: unless-stopped
-  # ── Celery Worker (ML pipeline) ──────────────────────────────────────────────
-  pipeline_worker:
-    build:
-      context: .
-      target: production
-    container_name: ecotwin_pipeline
-    env_file: .env
-    command: >
-      celery -A app.workers.celery_app worker
-      --loglevel=info
-      --queues=pipeline
-      --concurrency=2
     volumes:
       - report_storage:/app/reports
       - prithvi_model:/app/models
       - hf_cache:/root/.cache/huggingface
       - sync_backups:/app/backups
-      - ./app/secrets:/app/secrets
+      - ./data:/app/data:ro
+      - ./app/HydroLAKES_polys_v10_shp:/app/app/HydroLAKES_polys_v10_shp:ro
+      - ./app/secrets:/app/secrets:ro
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
     restart: unless-stopped
-  # ── Flower (Celery monitoring) ─────────────────────────────────────────────
-  flower:
-    build:
-      context: .
-      target: production
-    container_name: ecotwin_flower
-    env_file: .env
-    command: >
-      celery -A app.workers.celery_app flower --port=5555
-    ports:
-      - "5555:5555"
-    depends_on:
-      - celery_worker
-    restart: unless-stopped
-
 
   # pgAdmin for database management
   pgadmin:
@@ -136,8 +85,5 @@ volumes:
   redis_data:
   report_storage:
   sync_backups:
-  # Persists the Prithvi-100M .pt checkpoint across container restarts.
-  # On first start the worker downloads ~400 MB from HuggingFace hub;
-  # subsequent starts load from this volume in ~15 s.
   prithvi_model:
   hf_cache:

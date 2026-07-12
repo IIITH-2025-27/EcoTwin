@@ -13,6 +13,11 @@ export default defineConfig({
   server: {
     port: 5173,
     host: true,
+    // Polling avoids Linux inotify watcher exhaustion on developer machines.
+    watch: {
+      usePolling: true,
+      interval: 500,
+    },
     proxy: {
       '/api': {
         target: 'http://localhost:8000',

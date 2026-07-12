@@ -14,7 +14,7 @@ Load order
    deterministic unit-norm stub vector for local development.
 
 The encoder is cached in a module-level variable so it is loaded only once
-per Celery worker process.
+per backend process.
 """
 
 from __future__ import annotations

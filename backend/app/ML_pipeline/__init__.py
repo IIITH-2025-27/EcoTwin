@@ -9,6 +9,6 @@ Phases
 2. Prithvi      (prithvi_inference.py)  — 768-dim embedding via Prithvi-100M
 3. Classification (classifier.py)       — ecosystem label from rules or model
 
-Celery tasks and orchestration live in pipeline.py.
+Pipeline orchestration lives in pipeline.py.
 All tuneable constants are in constants.py.
 """

@@ -7,7 +7,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import List, Literal, Optional
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.ML_pipeline.constants import (
     PIPELINE_BATCH_SIZE,
@@ -18,8 +18,13 @@ from app.ML_pipeline.constants import (
 
 class SyncMode(str, Enum):
     """How the sync should handle existing data."""
-    WIPE = "wipe"      # truncate all ML-pipeline tables then ingest fresh
-    BACKUP = "backup"  # pg_dump to /app/backups/ then wipe + ingest
+    REFRESH = "refresh"
+    BACKUP = "backup"
+
+
+class SyncSource(str, Enum):
+    HYDROLAKES = "hydrolakes"
+    STORED_REGIONS = "stored_regions"
 
 
 class DurationUnit(str, Enum):
@@ -61,77 +66,39 @@ class SyncDuration(BaseModel):
         return list(range(start, end + 1))
 
 
-# ── Central bounding boxes for each Indian state (lat, lon of centroid) ───────
-# Used by the pipeline to seed region rows if they don't already exist.
-INDIA_STATE_CENTROIDS: dict[str, tuple[float, float]] = {
-    "Andhra Pradesh":         (15.9129,  79.7400),
-    "Arunachal Pradesh":      (28.2180,  94.7278),
-    "Assam":                  (26.2006,  92.9376),
-    "Bihar":                  (25.0961,  85.3131),
-    "Chhattisgarh":           (21.2787,  81.8661),
-    "Goa":                    (15.2993,  74.1240),
-    "Gujarat":                (22.2587,  71.1924),
-    "Haryana":                (29.0588,  76.0856),
-    "Himachal Pradesh":       (31.1048,  77.1734),
-    "Jharkhand":              (23.6102,  85.2799),
-    "Karnataka":              (15.3173,  75.7139),
-    "Kerala":                 (10.8505,  76.2711),
-    "Madhya Pradesh":         (22.9734,  78.6569),
-    "Maharashtra":            (19.7515,  75.7139),
-    "Manipur":                (24.6637,  93.9063),
-    "Meghalaya":              (25.4670,  91.3662),
-    "Mizoram":                (23.1645,  92.9376),
-    "Nagaland":               (26.1584,  94.5624),
-    "Odisha":                 (20.9517,  85.0985),
-    "Punjab":                 (31.1471,  75.3412),
-    "Rajasthan":              (27.0238,  74.2179),
-    "Sikkim":                 (27.5330,  88.5122),
-    "Tamil Nadu":             (11.1271,  78.6569),
-    "Telangana":              (18.1124,  79.0193),
-    "Tripura":                (23.9408,  91.9882),
-    "Uttar Pradesh":          (26.8467,  80.9462),
-    "Uttarakhand":            (30.0668,  79.0193),
-    "West Bengal":            (22.9868,  87.8550),
-    "Andaman and Nicobar":    (11.7401,  92.6586),
-    "Chandigarh":             (30.7333,  76.7794),
-    "Dadra and Nagar Haveli": (20.1809,  73.0169),
-    "Daman and Diu":          (20.4283,  72.8397),
-    "Delhi":                  (28.7041,  77.1025),
-    "Jammu and Kashmir":      (33.7782,  76.5762),
-    "Ladakh":                 (34.1526,  77.5770),
-    "Lakshadweep":            (10.5667,  72.6417),
-    "Puducherry":             (11.9416,  79.8083),
-}
-
-MAX_STATES_PER_SYNC: int = 3   # hard limit enforced on both frontend and backend
-
-
 class SyncRequest(BaseModel):
     """Request body for POST /sync/start."""
 
-    states: List[str] = Field(
-        ...,
+    source_type: SyncSource = Field(
+        default=SyncSource.HYDROLAKES,
+        description="Where to read regions from: HydroLAKES boundaries or stored regions.",
+    )
+    country: str = Field(
+        default="India",
         min_length=1,
-        max_length=MAX_STATES_PER_SYNC,
-        description="Indian state / UT names. Maximum 3.",
+        description="Country whose lake regions should be synchronized.",
+    )
+    region_ids: Optional[List[str]] = Field(
+        default=None,
+        description="Selected stored region IDs when source_type='stored_regions'.",
+    )
+    states: Optional[List[str]] = Field(
+        default=None,
+        description="If set, only lakes whose state field matches one of these values are processed.",
     )
     duration: SyncDuration
-    sync_mode: SyncMode = SyncMode.WIPE
-    # Set by frontend when user explicitly accepted the warning dialog
+    sync_mode: SyncMode = SyncMode.REFRESH
     confirmed: bool = Field(
         ...,
         description="Must be True — confirms the user acknowledged the data-loss warning.",
     )
 
-    @field_validator("states")
+    @field_validator("country")
     @classmethod
-    def _validate_state_names(cls, v: List[str]) -> List[str]:
-        unknown = [s for s in v if s not in INDIA_STATE_CENTROIDS]
-        if unknown:
-            raise ValueError(f"Unknown state(s): {unknown}")
-        if len(v) > MAX_STATES_PER_SYNC:
-            raise ValueError(f"Maximum {MAX_STATES_PER_SYNC} states allowed per sync.")
-        return v
+    def _validate_country(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("country must not be empty")
+        return v.strip()
 
     @field_validator("confirmed")
     @classmethod
@@ -140,15 +107,54 @@ class SyncRequest(BaseModel):
             raise ValueError("You must confirm the data-loss warning to proceed.")
         return v
 
+    @model_validator(mode="after")
+    def _validate_source_selection(self) -> "SyncRequest":
+        if self.source_type == SyncSource.STORED_REGIONS and not self.region_ids:
+            raise ValueError("region_ids are required when source_type='stored_regions'")
+        return self
+
+
+class HydroLakeBoundaryResponse(BaseModel):
+    hydrolake_id: str
+    name: str
+    country: str
+    center_lat: float
+    center_lon: float
+    area_sqkm: float
+    bbox: Optional[List[float]] = None
+    geometry: Optional[dict] = None
+
+
+class LakeImportResponse(BaseModel):
+    source_path: str
+    country: str
+    total_records: int
+    inserted_records: int
+    updated_records: int
+    skipped_records: int
+    message: str
+
+
+class IndiaStateImportResponse(BaseModel):
+    source_path: str
+    states_stored: int
+    lakes_updated: int
+
 
 class SyncJobResponse(BaseModel):
     """Returned immediately after the sync is triggered."""
 
     job_id: str
-    status: Literal["queued", "failed"]
-    states: List[str]
+    status: Literal["queued", "failed", "completed"]
+    source_type: SyncSource
+    country: str
+    region_ids: List[str]
     years: List[int]
     sync_mode: SyncMode
     tasks_dispatched: int
+    total_regions: int
+    inserted_regions: int
+    updated_regions: int
+    skipped_regions: int
     message: str
     backup_path: Optional[str] = None

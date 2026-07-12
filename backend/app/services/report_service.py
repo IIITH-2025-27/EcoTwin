@@ -1,3 +1,4 @@
+import asyncio
 import uuid
 from uuid import UUID
 
@@ -26,32 +27,32 @@ class ReportService:
         report = Report(
             report_id=uuid.uuid4(),
             region_id=request.region_id,
-            status=ReportStatus.PENDING,
+            status=ReportStatus.PROCESSING,
         )
         self._session.add(report)
         await self._session.flush()
-        await self._session.refresh(report)
 
-        # Dispatch async Celery task
-        from app.workers.tasks.report_tasks import generate_report_task  # noqa: PLC0415
+        from app.services.report_generator import build_pdf, persist_pdf
 
-        task = generate_report_task.delay(
-            str(report.report_id),
-            str(request.region_id),
-            request.include_forecast,
-            request.include_analogs,
-            request.top_k_analogs,
-        )
+        try:
+            pdf_bytes = await asyncio.to_thread(
+                build_pdf,
+                str(report.report_id),
+                str(request.region_id),
+                request.include_forecast,
+                request.include_analogs,
+            )
+            report.pdf_url = await asyncio.to_thread(
+                persist_pdf, str(report.report_id), pdf_bytes
+            )
+            report.status = ReportStatus.COMPLETED
+            logger.info("Report generation completed", report_id=str(report.report_id))
+        except Exception as exc:
+            report.status = ReportStatus.FAILED
+            report.error_message = str(exc)
+            logger.exception("Report generation failed", report_id=str(report.report_id))
 
-        report.celery_task_id = task.id
-        report.status = ReportStatus.PROCESSING
         await self._session.flush()
-
-        logger.info(
-            "Report job created",
-            report_id=str(report.report_id),
-            celery_task=task.id,
-        )
         return ReportResponse.model_validate(report)
 
     async def get_report(self, report_id: UUID) -> ReportResponse:

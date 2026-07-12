@@ -16,14 +16,13 @@ def _service(db: DatabaseDep) -> ReportService:
     return ReportService(region_repo=RegionRepository(db), session=db)
 
 
-@router.post("", response_model=ReportResponse, status_code=202)
+@router.post("", response_model=ReportResponse)
 async def generate_report(
     body: ReportGenerateRequest,
     svc: ReportService = Depends(_service),
 ) -> ReportResponse:
     """
-    Enqueue an asynchronous PDF ecosystem report for the given region.
-    Returns immediately with status=processing; poll GET /report/{id} for completion.
+    Generate a PDF ecosystem report for the given region.
     """
     return await svc.create_report_job(body)
 

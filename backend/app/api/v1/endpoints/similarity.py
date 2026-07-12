@@ -53,6 +53,6 @@ async def search_analog_ecosystems(
     result = await svc.search_analogs(region_id, year=year, top_k=top_k, method=method)
 
     if cache:
-        await cache.set(cache_key, result.model_dump_json(), ttl=settings.REDIS_TTL)
+        await cache.set(cache_key, result.model_dump_json())
 
     return result

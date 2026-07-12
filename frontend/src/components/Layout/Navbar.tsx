@@ -1,13 +1,15 @@
 import { useState } from 'react';
-import { Leaf, PanelLeftClose, PanelLeftOpen, RefreshCw } from 'lucide-react';
+import { Database, Leaf, PanelLeftClose, PanelLeftOpen, RefreshCw } from 'lucide-react';
 import { useMapStore } from '@/store/mapStore';
 import { useRegion } from '@/hooks/useRegion';
 import SyncModal from '@/components/SyncModal/SyncModal';
+import SyncLakesModal from '@/components/SyncModal/SyncLakesModal';
 
 export default function Navbar() {
   const { selectedRegionId, isSidebarCollapsed, toggleSidebar } = useMapStore();
   const { data: regionData } = useRegion(selectedRegionId);
   const [showSync, setShowSync] = useState(false);
+  const [showLakesSync, setShowLakesSync] = useState(false);
 
   return (
     <header className="flex h-14 items-center justify-between border-b border-slate-700/60 bg-surface-800/95 px-4 backdrop-blur-sm">
@@ -67,8 +69,18 @@ export default function Navbar() {
         </div>
       )}
 
-      {/* Right: Sync button + version tag */}
+      {/* Right: sync actions + version tag */}
       <div className="flex items-center gap-3">
+        <button
+          onClick={() => setShowLakesSync(true)}
+          className="flex items-center gap-1.5 rounded-lg border border-primary-600/40 bg-primary-600/15 px-3 py-1.5
+                     text-xs font-medium text-primary-300 hover:bg-primary-600/25 hover:text-primary-200
+                     transition-colors"
+          title="Import HydroLAKES records into the lakes table"
+        >
+          <Database className="h-3.5 w-3.5" />
+          <span className="hidden sm:inline">Sync Lakes</span>
+        </button>
         <button
           onClick={() => setShowSync(true)}
           className="flex items-center gap-1.5 rounded-lg border border-primary-600/40 bg-primary-600/15 px-3 py-1.5
@@ -91,6 +103,7 @@ export default function Navbar() {
       </div>
 
       {showSync && <SyncModal onClose={() => setShowSync(false)} />}
+      {showLakesSync && <SyncLakesModal onClose={() => setShowLakesSync(false)} />}
     </header>
   );
 }

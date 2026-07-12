@@ -154,7 +154,7 @@ export default function RegionPanel() {
             </div>
             <div>
               <p className="text-xs text-slate-500">Cell Area</p>
-              <p className="text-sm text-slate-200">{region.area_km} km²</p>
+              <p className="text-sm text-slate-200">{region.area_sqkm} km²</p>
             </div>
             {f && (
               <div>

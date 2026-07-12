@@ -4,6 +4,7 @@ from app.schemas.region import (
     RegionFeatureResponse,
     RegionQueryRequest,
     RegionQueryResponse,
+    RegionMapResponse,
     RegionResponse,
     RegionSummaryResponse,
 )

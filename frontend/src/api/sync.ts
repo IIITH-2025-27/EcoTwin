@@ -2,20 +2,16 @@ import { apiClient } from './client';
 
 // ── Types (mirrored from backend schemas/sync.py) ─────────────────────────
 
-export interface IndiaState {
-  name: string;
-  lat: number;
-  lon: number;
-}
-
-export interface StatesResponse {
-  states: IndiaState[];
-  max_selection: number;
+export interface SyncCountryResponse {
+  country: string;
   year_start: number;
   year_end: number;
+  max_year_range: number;
 }
 
-export type SyncMode = 'wipe' | 'backup';
+export type SyncSource = 'hydrolakes' | 'stored_regions';
+
+export type SyncMode = 'refresh' | 'backup';
 
 export interface SyncDurationYear {
   mode: 'year';
@@ -33,7 +29,10 @@ export interface SyncDurationRange {
 export type SyncDuration = SyncDurationYear | SyncDurationRange;
 
 export interface SyncRequest {
-  states: string[];
+  source_type: SyncSource;
+  country: string;
+  region_ids?: string[];
+  states?: string[];
   duration: SyncDuration;
   sync_mode: SyncMode;
   confirmed: true;
@@ -41,47 +40,78 @@ export interface SyncRequest {
 
 export interface SyncJobResponse {
   job_id: string;
-  status: 'queued' | 'failed';
-  states: string[];
+  status: 'queued' | 'failed' | 'completed';
+  source_type: SyncSource;
+  country: string;
+  region_ids: string[];
   years: number[];
   sync_mode: SyncMode;
   tasks_dispatched: number;
+  total_regions: number;
+  inserted_regions: number;
+  updated_regions: number;
+  skipped_regions: number;
   message: string;
   backup_path: string | null;
 }
 
-// ── Status polling types ───────────────────────────────────────────────────
+// ── Global progress response (from GET /sync/status) ─────────────────────
 
-export type TaskStatus = 'pending' | 'running' | 'success' | 'failed';
-export type OverallStatus = 'pending' | 'running' | 'success' | 'failed' | 'partial';
+export type SyncStatus = 'idle' | 'running' | 'done' | 'failed';
 
-export interface TaskItem {
-  task_id: string;
-  state: string;    // Indian state name
-  year: number;
-  status: TaskStatus;
-  error: string | null;
+export interface SyncProgressResponse {
+  status: SyncStatus;
+  total_lakes: number;
+  processed: number;
+  success: number;
+  failed: number;
+  current_lake: string | null;
+  current_year: number | null;
+  errors: string[];
 }
 
-export interface JobStatusResponse {
-  job_id: string;
-  states: string[];
-  years: number[];
-  overall: OverallStatus;
-  total: number;
-  counts: {
-    pending: number;
-    running: number;
-    success: number;
-    failed: number;
-  };
-  tasks: TaskItem[];
+export interface HydroLakeBoundary {
+  hydrolake_id: string;
+  name: string;
+  country: string;
+  center_lat: number;
+  center_lon: number;
+  area_sqkm: number;
+  bbox: number[] | null;
+  geometry: GeoJSON.Geometry | null;
+}
+
+export interface LakeImportResponse {
+  source_path: string;
+  country: string;
+  total_records: number;
+  inserted_records: number;
+  updated_records: number;
+  skipped_records: number;
+  message: string;
 }
 
 // ── API calls ─────────────────────────────────────────────────────────────
 
-export async function fetchStates(): Promise<StatesResponse> {
-  const { data } = await apiClient.get<StatesResponse>('/sync/states');
+export async function fetchSyncCountry(): Promise<SyncCountryResponse> {
+  const { data } = await apiClient.get<SyncCountryResponse>('/sync/country');
+  return data;
+}
+
+export async function fetchHydrolakeBoundaries(
+  country = 'India',
+): Promise<HydroLakeBoundary[]> {
+  const { data } = await apiClient.get<HydroLakeBoundary[]>('/sync/hydrolakes/boundaries', {
+    params: { country },
+  });
+  return data;
+}
+
+export async function importLakesTable(country = 'India'): Promise<LakeImportResponse> {
+  const { data } = await apiClient.post<LakeImportResponse>('/sync/lakes/import', null, {
+    params: { country },
+    timeout: 300_000,
+  });
   return data;
 }
 
@@ -90,7 +120,13 @@ export async function startSync(request: SyncRequest): Promise<SyncJobResponse> 
   return data;
 }
 
-export async function getJobStatus(jobId: string): Promise<JobStatusResponse> {
-  const { data } = await apiClient.get<JobStatusResponse>(`/sync/status/${jobId}`);
+/** Poll current/last sync progress — no job ID needed. */
+export async function getSyncProgress(): Promise<SyncProgressResponse> {
+  const { data } = await apiClient.get<SyncProgressResponse>('/sync/status');
+  return data;
+}
+
+export async function fetchLakeStates(country = 'India'): Promise<string[]> {
+  const { data } = await apiClient.get<string[]>('/lakes/states', { params: { country } });
   return data;
 }

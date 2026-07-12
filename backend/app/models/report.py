@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime, timezone
 from enum import Enum as PyEnum
 
-from sqlalchemy import Column, DateTime, Enum, ForeignKey, String, Text
+from sqlalchemy import Column, DateTime, Enum, ForeignKey, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
@@ -35,7 +35,6 @@ class Report(Base):
         default=ReportStatus.PENDING,
         nullable=False,
     )
-    celery_task_id = Column(String(255), nullable=True)
     error_message = Column(Text, nullable=True)
 
     region = relationship("Region", back_populates="reports")

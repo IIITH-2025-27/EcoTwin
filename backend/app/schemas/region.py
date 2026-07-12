@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Optional
+from typing import Any, Optional
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -7,12 +7,31 @@ from pydantic import BaseModel, Field
 
 class RegionResponse(BaseModel):
     region_id: UUID
+    hydrolake_id: str
+    name: str
+    country: str
     center_lat: float
     center_lon: float
-    area_km: float
+    area_sqkm: float
+    bbox: Optional[dict[str, float]] = None
     created_at: datetime
+    updated_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class RegionMapResponse(BaseModel):
+    region_id: UUID
+    hydrolake_id: str
+    name: str
+    country: str
+    center_lat: float
+    center_lon: float
+    area_sqkm: float
+    bbox: Optional[dict[str, float]] = None
+    geometry: Optional[dict[str, Any]] = None
+    created_at: datetime
+    updated_at: datetime
 
 
 class RegionFeatureResponse(BaseModel):

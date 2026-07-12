@@ -77,7 +77,6 @@ CREATE TABLE IF NOT EXISTS reports (
     generated_at    TIMESTAMPTZ DEFAULT NOW(),
     pdf_url         TEXT,
     status          report_status_enum NOT NULL DEFAULT 'pending',
-    celery_task_id  VARCHAR(255),
     error_message   TEXT
 );
 

@@ -144,7 +144,6 @@ def upgrade() -> None:
         ),
         sa.Column("pdf_url", sa.Text),
         sa.Column("status", sa.String(20), nullable=False, server_default="pending"),
-        sa.Column("celery_task_id", sa.String(255)),
         sa.Column("error_message", sa.Text),
     )
     op.create_index("idx_reports_region_id", "reports", ["region_id"])

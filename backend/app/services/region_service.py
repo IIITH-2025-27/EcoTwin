@@ -2,11 +2,13 @@ import math
 from uuid import UUID
 
 import structlog
+from geoalchemy2.shape import to_shape
 
 from app.core.exceptions import RegionNotFoundException
 from app.repositories.region_repository import RegionRepository
 from app.schemas.region import (
     RegionFeatureResponse,
+    RegionMapResponse,
     RegionQueryResponse,
     RegionResponse,
     RegionSummaryResponse,
@@ -37,6 +39,10 @@ class RegionService:
             latest_features=feature_response,
         )
 
+    async def list_regions(self, country: str = "India") -> list[RegionMapResponse]:
+        regions = await self._repo.list_by_country(country)
+        return [_map_region(region) for region in regions]
+
     async def find_region_by_coordinates(
         self, lat: float, lon: float
     ) -> RegionQueryResponse:
@@ -51,6 +57,26 @@ class RegionService:
             center_lon=region.center_lon,
             distance_km=distance_km,
         )
+
+
+def _map_region(region) -> RegionMapResponse:
+    geometry = None
+    if region.geom is not None:
+        geometry = to_shape(region.geom).__geo_interface__
+
+    return RegionMapResponse(
+        region_id=region.region_id,
+        hydrolake_id=region.hydrolake_id,
+        name=region.name,
+        country=region.country,
+        center_lat=region.center_lat,
+        center_lon=region.center_lon,
+        area_sqkm=region.area_sqkm,
+        bbox=region.bbox,
+        geometry=geometry,
+        created_at=region.created_at,
+        updated_at=region.updated_at,
+    )
 
 
 def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:

@@ -3,7 +3,6 @@ from uuid import UUID
 import structlog
 from fastapi import APIRouter, Depends
 
-from app.core.config import settings
 from app.core.dependencies import CacheDep, DatabaseDep
 from app.repositories.embedding_repository import EmbeddingRepository
 from app.repositories.region_repository import RegionRepository
@@ -43,6 +42,6 @@ async def get_ecosystem_forecast(
     result = await svc.generate_forecast(region_id)
 
     if cache:
-        await cache.set(cache_key, result.model_dump_json(), ttl=settings.REDIS_TTL)
+        await cache.set(cache_key, result.model_dump_json())
 
     return result
