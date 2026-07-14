@@ -26,8 +26,8 @@ S2_BAND_NIR:   Final[str] = "B8"
 S2_BAND_SWIR1: Final[str] = "B11"
 S2_BAND_SWIR2: Final[str] = "B12"
 
-# Band order fed to Prithvi (must match model training config)
-S2_BANDS_PRITHVI: Final[List[str]] = ["B2", "B3", "B4", "B8A", "B11", "B12"]
+# Band order fed to Prithvi (must match model training config — B02..B07)
+S2_BANDS_PRITHVI: Final[List[str]] = ["B2", "B3", "B4", "B5", "B6", "B7"]
 
 # ── Spectral Index Formulas ────────────────────────────────────────────────────
 # NDVI = (NIR - RED)   / (NIR + RED)
@@ -47,11 +47,30 @@ PRITHVI_EMBEDDING_DIM: Final[int] = 768
 PRITHVI_PATCH_SIZE_PX: Final[int] = 224       # spatial crop (H, W) fed to model
 PRITHVI_NUM_FRAMES:    Final[int] = 1          # single annual composite
 PRITHVI_NUM_BANDS:     Final[int] = 6
+PRITHVI_DEPTH:         Final[int] = 12         # transformer encoder depth
+PRITHVI_NUM_HEADS:     Final[int] = 12         # attention heads
 PRITHVI_HF_REPO:       Final[str] = "ibm-nasa-geospatial/Prithvi-100M"
-# Overridden at runtime by PRITHVI_MODEL_PATH env var; see config.py
-PRITHVI_LOCAL_WEIGHTS: Final[str] = "/app/models/prithvi_100m.pt"
-# Sentinel-2 DN scale factor (reflectance = DN / PRITHVI_REFLECTANCE_SCALE)
-PRITHVI_REFLECTANCE_SCALE: Final[float] = 10_000.0
+# Prefer the locally cloned Prithvi repository when available.
+PRITHVI_LOCAL_WEIGHTS: Final[str] = "/home/cypher/EcoTwin/EcoTwin/Prithvi-EO-1.0-100M"
+
+# Per-band normalisation (from Prithvi config.yaml train_params).
+# Order matches S2_BANDS_PRITHVI: B02, B03, B04, B05, B06, B07
+PRITHVI_BAND_MEAN: Final[List[float]] = [
+    775.2290211032589,
+    1080.992780391705,
+    1228.5855250417867,
+    2497.2022620507532,
+    2204.2139147975554,
+    1610.8324823273745,
+]
+PRITHVI_BAND_STD: Final[List[float]] = [
+    1281.526139861424,
+    1270.0297974547493,
+    1399.4802505642526,
+    1368.3446143747644,
+    1291.6764008585435,
+    1154.505683480695,
+]
 
 # ── Ecosystem Classification ───────────────────────────────────────────────────
 # Rule-based decision thresholds (applied to annual NDVI / NDWI / NBR means).

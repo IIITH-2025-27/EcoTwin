@@ -3,6 +3,7 @@ from typing import List
 from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from sqlalchemy.engine import URL
 
 
 class Settings(BaseSettings):
@@ -28,8 +29,8 @@ class Settings(BaseSettings):
     POSTGRES_HOST: str = "localhost"
     POSTGRES_PORT: int = 5432
     POSTGRES_DB: str = "ecotwin"
-    POSTGRES_USER: str = "ecotwin"
-    POSTGRES_PASSWORD: str = "changeme"
+    POSTGRES_USER: str = "postgres"
+    POSTGRES_PASSWORD: str = "1234567890"
 
 
     # ── JWT ───────────────────────────────────────────────────────
@@ -53,8 +54,9 @@ class Settings(BaseSettings):
     AWS_SECRET_ACCESS_KEY: str = ""
 
     # ── Data-sync boundary sources ───────────────────────────────────────────
-    HYDROLAKES_SOURCE_PATH: str = ""
-    HYDROLAKES_SHAPEFILE_PATH: str = ""
+    HYDROLAKES_SOURCE_PATH: str = "" 
+
+    HYDROLAKES_SHAPEFILE_PATH: str = "" 
     INDIA_STATES_SOURCE_PATH: str = ""
 
     # ── Lake processing grid ────────────────────────────────────────────────
@@ -66,8 +68,8 @@ class Settings(BaseSettings):
     SYNC_MAX_YEAR_RANGE: int = 10
 
     # ── ML Pipeline ───────────────────────────────────────────────────────────
-    # Path to a local Prithvi-100M .pt checkpoint; falls back to HuggingFace hub
-    PRITHVI_MODEL_PATH: str = "/app/models/prithvi_100m.pt"
+    # Path to a local Prithvi-100M directory/checkpoint within the workspace
+    PRITHVI_MODEL_PATH: str = ""
     # When True, Prithvi inference returns a deterministic stub embedding
     # (no GPU / model weights required).  Automatically True when DEBUG=true.
     PRITHVI_USE_STUB: bool = False
@@ -81,17 +83,25 @@ class Settings(BaseSettings):
     # ── Computed properties ───────────────────────────────────────
     @property
     def DATABASE_URL(self) -> str:  # noqa: N802
-        return (
-            f"postgresql+asyncpg://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}"
-            f"@{self.POSTGRES_HOST}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
-        )
+        return URL.create(
+            drivername="postgresql+asyncpg",
+            username=self.POSTGRES_USER,
+            password=self.POSTGRES_PASSWORD,
+            host=self.POSTGRES_HOST,
+            port=self.POSTGRES_PORT,
+            database=self.POSTGRES_DB,
+        ).render_as_string(hide_password=False)
 
     @property
     def SYNC_DATABASE_URL(self) -> str:  # noqa: N802
-        return (
-            f"postgresql+psycopg2://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}"
-            f"@{self.POSTGRES_HOST}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
-        )
+        return URL.create(
+            drivername="postgresql+psycopg2",
+            username=self.POSTGRES_USER,
+            password=self.POSTGRES_PASSWORD,
+            host=self.POSTGRES_HOST,
+            port=self.POSTGRES_PORT,
+            database=self.POSTGRES_DB,
+        ).render_as_string(hide_password=False)
 
 
 @lru_cache()

@@ -1,175 +1,173 @@
 """
 Prithvi-100M encoder interface.
 
-This module defines ``PrithviEncoder`` — a thin wrapper used when loading
-the model from a local ``.pt`` / ``.pth`` checkpoint (the
-``_load_from_checkpoint`` path in prithvi_inference.py).
+This module defines ``PrithviEncoder`` — a wrapper around the locally cloned
+PrithviMAE model at ``PRITHVI_LOCAL_WEIGHTS``.
+
+Loading follows the official Prithvi inference.py pattern:
+    1. Read ``config.json`` → extract ``pretrained_cfg``
+    2. Instantiate ``PrithviMAE(**cfg)``
+    3. ``torch.load(checkpoint.pt)`` → discard ``pos_embed`` → ``load_state_dict``
 
 Architecture overview
 ─────────────────────
-Prithvi-100M is a Vision Transformer (ViT-Large) pre-trained as a Masked
-Autoencoder (MAE) on multi-temporal Sentinel-2 imagery.
+Prithvi-100M is a ViT pre-trained as a Masked Autoencoder on Sentinel-2.
 
-    Input  : (B, T, C, H, W)  — batch × time-steps × bands × height × width
-    Output : (B, num_tokens, embed_dim=768)  — patch token embeddings
+    Input  : (B, C, T, H, W)  — batch × bands × time-steps × height × width
+    Output : (B, 1+num_tokens, 768)  — CLS + spatial patch embeddings
 
-The encoder patch-embeds the input, adds position + temporal embeddings,
-then passes through 24 transformer blocks.  The decoder is discarded at
-inference time; only the encoder trunk is needed here.
-
-Reference implementation
-────────────────────────
-IBM/NASA open-source model card:
-    https://huggingface.co/ibm-nasa-geospatial/Prithvi-100M
-
-For production use, load directly from the HuggingFace hub (the default
-code path in prithvi_inference.py) instead of using this stub.  This file
-is only needed when you have a local checkpoint and want to instantiate the
-architecture manually.
+We call the encoder with ``mask_ratio=0.0`` so every token is kept.
 
 Usage
 ─────
     from app.ML_pipeline._prithvi_model import PrithviEncoder
 
-    encoder = PrithviEncoder(
-        img_size=224,
-        num_frames=1,
-        in_chans=6,
-        embed_dim=768,
-    )
-    encoder.load_state_dict(torch.load("prithvi_100m.pt")["model"], strict=False)
+    encoder = PrithviEncoder()
     encoder.eval()
 
-    x = torch.randn(1, 1, 6, 224, 224)   # (B, T, C, H, W)
-    tokens = encoder(x)                   # (1, num_tokens, 768)
+    x = torch.randn(1, 6, 1, 224, 224)   # (B, C, T, H, W)
+    hidden, mask, ids = encoder(x)        # hidden: (1, 1+196, 768)
 """
 
 from __future__ import annotations
 
-from typing import Optional
+import json
+import os
+import sys
+from pathlib import Path
 
 import structlog
 
 logger = structlog.get_logger(__name__)
 
+DEFAULT_LOCAL_MODEL_DIR = "local_prithvi_model"  # relative to backend/app/ML_pipeline
+DEFAULT_CHECKPOINT_NAME = "Prithvi_EO_V1_100M.pt"
+
 
 class PrithviEncoder:
-    """
-    Minimal interface stub for the Prithvi-100M encoder trunk.
-
-    Replace the body of ``forward()`` with the real ViT encoder from
-    IBM/NASA's open-source repository when loading local weights.
-
-    When loading from HuggingFace (the recommended path), this class is
-    never instantiated — ``transformers.AutoModel.from_pretrained`` handles
-    everything.
-    """
+    """Wrapper around the locally cloned PrithviMAE repository."""
 
     def __init__(
         self,
-        img_size: int = 224,
-        patch_size: int = 16,
-        num_frames: int = 1,
-        in_chans: int = 6,
-        embed_dim: int = 768,
-        depth: int = 24,
-        num_heads: int = 16,
-        mlp_ratio: float = 4.0,
-        tubelet_size: int = 1,
+        model_name_or_path: str | None = None,
     ) -> None:
-        self.img_size    = img_size
-        self.patch_size  = patch_size
-        self.num_frames  = num_frames
-        self.in_chans    = in_chans
-        self.embed_dim   = embed_dim
-        self.depth       = depth
-        self.num_heads   = num_heads
-        self.mlp_ratio   = mlp_ratio
-        self.tubelet_size = tubelet_size
+        self.model_name_or_path = model_name_or_path or os.environ.get(
+            "PRITHVI_MODEL_PATH",
+            DEFAULT_LOCAL_MODEL_DIR,
+        )
+        self._backbone = None  # PrithviMAE instance
+        self._encoder = None   # PrithviViT (encoder only)
+        self._ready = False
+        self._build()
 
-        # Derived
-        self.num_patches = (img_size // patch_size) ** 2
-
-        try:
-            self._build()
-        except Exception as exc:  # torch may not be installed in non-GPU envs
-            logger.warning("PrithviEncoder build skipped", error=str(exc))
-            self._ready = False
-        else:
-            self._ready = True
-
-    # ------------------------------------------------------------------
-    # Override this method with the real ViT trunk from IBM/NASA's repo.
-    # ------------------------------------------------------------------
     def _build(self) -> None:
-        """
-        Instantiate the ViT trunk layers.
-
-        ┌─────────────────────────────────────────────────────────────┐
-        │  Replace this stub with the actual architecture once you    │
-        │  have the IBM/NASA Prithvi source code available locally.   │
-        │                                                             │
-        │  The simplest approach is to install their package:         │
-        │    pip install git+https://github.com/NASA-IMPACT/hls-foundation-os.git │
-        │  and import ``TemporalViTEncoder`` from there.              │
-        └─────────────────────────────────────────────────────────────┘
-        """
-        import torch.nn as nn  # noqa: PLC0415
-        # Placeholder linear layer — produces correct output shape but
-        # meaningless values.  Replaced by the real encoder in production.
-        flat_dim = self.num_frames * self.in_chans * self.img_size * self.img_size
-        self._stub_proj = nn.Linear(flat_dim, self.embed_dim)
-
-    def forward(self, x):
-        """
-        Args:
-            x: Tensor of shape (B, T, C, H, W).
-
-        Returns:
-            Tensor of shape (B, num_patches, embed_dim).
-        """
         import torch  # noqa: PLC0415
 
+        model_dir = Path(self.model_name_or_path)
+        if not model_dir.exists():
+            msg = f"Prithvi model directory not found: {model_dir}"
+            logger.error(msg)
+            raise FileNotFoundError(msg)
+
+        # ── 1. Read config.json to get model params ─────────────────────
+        config_path = model_dir / "config.json"
+        if not config_path.exists():
+            msg = f"config.json not found in {model_dir}"
+            logger.error(msg)
+            raise FileNotFoundError(msg)
+
+        with open(config_path, "r") as f:
+            config = json.load(f)["pretrained_cfg"]
+
+        logger.info(
+            "Loaded config from prithvi model",
+            path=str(config_path),
+            embed_dim=config.get("embed_dim"),
+            depth=config.get("depth"),
+            num_heads=config.get("num_heads"),
+        )
+
+        # ── 2. Add repo to sys.path and import PrithviMAE ───────────────
+        repo_str = str(model_dir)
+        if repo_str not in sys.path:
+            sys.path.insert(0, repo_str)
+
+        from prithvi_mae import PrithviMAE  # noqa: PLC0415
+
+        # Override num_frames for single-timestep inference
+        config["num_frames"] = 1
+        config["in_chans"] = config.get("in_chans", 6)
+
+        # Remove non-model keys that PrithviMAE.__init__ doesn't accept
+        for key in ["bands", "mean", "std", "origin_url", "paper_ids", "mask_ratio"]:
+            config.pop(key, None)
+
+        logger.info("Instantiating PrithviMAE", config=config)
+        self._backbone = PrithviMAE(**config)
+
+        # ── 3. Load checkpoint weights ──────────────────────────────────
+        checkpoint_path = model_dir / DEFAULT_CHECKPOINT_NAME
+        if not checkpoint_path.exists():
+            # Try alternate name
+            checkpoint_path = model_dir / "Prithvi_100M.pt"
+        if not checkpoint_path.exists():
+            msg = f"No .pt checkpoint found in {model_dir}"
+            logger.error(msg)
+            raise FileNotFoundError(msg)
+
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        state_dict = torch.load(str(checkpoint_path), map_location=device, weights_only=False)
+
+        # Discard pos_embed keys — they are recomputed from the grid size
+        for k in list(state_dict.keys()):
+            if "pos_embed" in k:
+                del state_dict[k]
+
+        self._backbone.load_state_dict(state_dict, strict=False)
+        self._encoder = self._backbone.encoder
+        self._ready = True
+
+        total_params = sum(p.numel() for p in self._backbone.parameters())
+        logger.info(
+            "PrithviMAE loaded",
+            checkpoint=str(checkpoint_path),
+            params=total_params,
+            device=device,
+        )
+        logger.info("PrithviMAE loaded successfully",
+                     checkpoint=str(checkpoint_path), params=total_params)
+
+    def forward(self, x):
+        """Run encoder forward pass with mask_ratio=0.0 (keep all tokens).
+
+        Args:
+            x: Tensor of shape (B, C, T, H, W).
+
+        Returns:
+            Tuple (hidden_states, mask, ids_restore) where hidden_states
+            has shape (B, 1+num_tokens, embed_dim).
+        """
         if not self._ready:
-            # Return a zero tensor so callers can still proceed in stub mode
-            B = x.shape[0]
-            return torch.zeros(B, self.num_patches, self.embed_dim, device=x.device)
-
-        B = x.shape[0]
-        flat = x.reshape(B, -1)
-        out = self._stub_proj(flat)                    # (B, embed_dim)
-        # Expand to (B, num_patches, embed_dim) so callers can mean-pool
-        return out.unsqueeze(1).expand(-1, self.num_patches, -1)
-
-    # Make the class behave like a torch.nn.Module for load_state_dict / to()
-    def load_state_dict(self, state_dict: dict, strict: bool = True):
-        try:
-            self._stub_proj.load_state_dict(
-                {k: v for k, v in state_dict.items() if k.startswith("_stub_proj")},
-                strict=False,
-            )
-        except Exception:
-            pass  # silently ignore mismatched keys
+            msg = "PrithviEncoder was not built successfully"
+            logger.error(msg)
+            raise RuntimeError(msg)
+        return self._encoder(x, mask_ratio=0.0)
 
     def eval(self):
-        try:
-            self._stub_proj.eval()
-        except Exception:
-            pass
+        if self._backbone is not None:
+            self._backbone.eval()
         return self
 
     def to(self, device):
-        try:
-            self._stub_proj = self._stub_proj.to(device)
-        except Exception:
-            pass
+        if self._backbone is not None:
+            self._backbone = self._backbone.to(device)
+            self._encoder = self._backbone.encoder
         return self
 
     def parameters(self):
-        try:
-            return self._stub_proj.parameters()
-        except Exception:
-            return iter([])
+        if self._backbone is None:
+            return iter(())
+        return self._backbone.parameters()
 
     def __call__(self, x):
         return self.forward(x)

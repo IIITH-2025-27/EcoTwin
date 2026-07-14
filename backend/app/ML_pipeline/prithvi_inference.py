@@ -2,16 +2,15 @@
 Phase 2 — Prithvi-100M encoder inference.
 
 Produces a 768-dimensional embedding vector from a Sentinel-2 multi-band
-patch.  The embedding is stored in ``region_embeddings`` and drives the
+patch. The embedding is stored in ``sub_regions.embedding`` and drives the
 pgvector cosine similarity search.
 
 Load order
 ──────────
-1. If a local ``.pt`` / ``.pth`` checkpoint exists at ``PRITHVI_MODEL_PATH``
-   (env var) → load with ``_prithvi_model.PrithviEncoder``.
-2. Otherwise → download from HuggingFace hub (``PRITHVI_HF_REPO``).
-3. If neither succeeds and ``use_stub=True`` (or DEBUG mode) → return a
-   deterministic unit-norm stub vector for local development.
+1. If the local Prithvi repository exists at ``PRITHVI_LOCAL_WEIGHTS``
+   → load with ``_prithvi_model.PrithviEncoder``.
+2. If loading or inference fails, raise the underlying exception so the
+   caller can handle the error explicitly.
 
 The encoder is cached in a module-level variable so it is loaded only once
 per backend process.
@@ -19,6 +18,7 @@ per backend process.
 
 from __future__ import annotations
 
+import math
 import os
 from pathlib import Path
 from typing import List, Optional
@@ -28,10 +28,7 @@ import structlog
 
 from app.ML_pipeline.constants import (
     PRITHVI_EMBEDDING_DIM,
-    PRITHVI_HF_REPO,
     PRITHVI_LOCAL_WEIGHTS,
-    PRITHVI_NUM_BANDS,
-    PRITHVI_NUM_FRAMES,
     PRITHVI_PATCH_SIZE_PX,
 )
 
@@ -54,37 +51,6 @@ def _get_device() -> str:
         return "cpu"
 
 
-def _load_from_checkpoint(path: Path, device: str):
-    """Load PrithviEncoder from a local checkpoint file."""
-    import torch  # noqa: PLC0415
-    from app.ML_pipeline._prithvi_model import PrithviEncoder  # noqa: PLC0415
-
-    model = PrithviEncoder(
-        img_size   = PRITHVI_PATCH_SIZE_PX,
-        num_frames = PRITHVI_NUM_FRAMES,
-        in_chans   = PRITHVI_NUM_BANDS,
-        embed_dim  = PRITHVI_EMBEDDING_DIM,
-    )
-    checkpoint = torch.load(str(path), map_location=device)
-    # Checkpoints may wrap weights under a "model" key
-    state_dict = checkpoint.get("model", checkpoint)
-    model.load_state_dict(state_dict, strict=False)
-    return model.to(device)
-
-
-def _load_from_hub(device: str):
-    """Download Prithvi encoder from HuggingFace hub."""
-    try:
-        from transformers import AutoModel  # noqa: PLC0415
-        model = AutoModel.from_pretrained(PRITHVI_HF_REPO, trust_remote_code=True)
-        return model.to(device)
-    except Exception as exc:
-        raise RuntimeError(
-            f"Could not load Prithvi from HuggingFace ({PRITHVI_HF_REPO}). "
-            f"Ensure `transformers` is installed and the hub is reachable. Error: {exc}"
-        ) from exc
-
-
 def _load_encoder():
     """
     Lazy-load the encoder exactly once per worker process.
@@ -95,23 +61,17 @@ def _load_encoder():
         return _encoder
 
     device = _get_device()
-    local_path = Path(_MODEL_PATH)
 
-    if local_path.exists():
-        logger.info(
-            "Loading Prithvi from local checkpoint",
-            path=str(local_path),
-            device=device,
-        )
-        _encoder = _load_from_checkpoint(local_path, device)
-    else:
-        logger.info(
-            "Local checkpoint not found — downloading from HuggingFace",
-            repo=PRITHVI_HF_REPO,
-            device=device,
-        )
-        _encoder = _load_from_hub(device)
+    logger.info(
+        "Loading Prithvi from local repository",
+        path=_MODEL_PATH,
+        device=device,
+    )
 
+    from app.ML_pipeline._prithvi_model import PrithviEncoder  # noqa: PLC0415
+
+    _encoder = PrithviEncoder(model_name_or_path=_MODEL_PATH)
+    _encoder = _encoder.to(device)
     _encoder.eval()
     logger.info("Prithvi encoder ready", device=device)
     return _encoder
@@ -143,31 +103,59 @@ def _resize_to_model_input(arr: np.ndarray, target: int) -> np.ndarray:
         return out
 
 
-def _pool_to_vector(output) -> "np.ndarray":
+def _is_valid_embedding(vec) -> bool:
+    if vec is None:
+        return False
+    try:
+        array = np.asarray(vec, dtype=np.float32).reshape(-1)
+    except Exception:
+        return False
+    return array.size == PRITHVI_EMBEDDING_DIM and np.isfinite(array).all()
+
+
+def _pool_to_vector(encoder_output) -> "np.ndarray":
     """
-    Extract a 1-D (embed_dim,) float32 vector from the encoder output.
-    Handles HuggingFace ModelOutput, raw tensors, and tuples.
+    Extract a 1-D (embed_dim,) float32 vector from the PrithviViT encoder.
+
+    The encoder returns (hidden_states, mask, ids_restore).
+    hidden_states shape: (B, 1+num_tokens, D)  — index 0 is CLS token.
+    We skip CLS and mean-pool the spatial tokens.
     """
     import torch  # noqa: PLC0415
 
-    if hasattr(output, "last_hidden_state"):
-        hidden = output.last_hidden_state          # (B, num_tokens, D)
-    elif isinstance(output, torch.Tensor):
-        hidden = output
-    elif isinstance(output, (tuple, list)):
-        hidden = output[0]
+    # encoder.forward() returns (hidden_states, mask, ids_restore)
+    if isinstance(encoder_output, (tuple, list)):
+        hidden = encoder_output[0]
+    elif isinstance(encoder_output, torch.Tensor):
+        hidden = encoder_output
+    elif hasattr(encoder_output, "last_hidden_state"):
+        hidden = encoder_output.last_hidden_state
     else:
-        hidden = output
+        hidden = encoder_output
 
-    # Collapse to (D,)
+    # hidden shape: (B, 1+num_spatial_tokens, D)
+    # Skip CLS token at index 0 and mean-pool spatial tokens
     if hidden.dim() == 3:
-        vec = hidden.squeeze(0).mean(dim=0)        # mean-pool over spatial tokens
+        spatial_tokens = hidden[:, 1:, :]          # skip CLS → (B, num_tokens, D)
+        vec = spatial_tokens.squeeze(0).mean(dim=0) # mean-pool → (D,)
     elif hidden.dim() == 2:
-        vec = hidden.squeeze(0)                    # CLS token
+        vec = hidden.squeeze(0)
     else:
         vec = hidden.reshape(-1)[:PRITHVI_EMBEDDING_DIM]
 
     return vec.float().cpu().numpy()
+
+
+def _validate_embedding_array(embedding: object) -> np.ndarray:
+    """Ensure embeddings are finite, one-dimensional, and match the expected size."""
+    arr = np.asarray(embedding, dtype=np.float32)
+    if arr.ndim != 1:
+        raise ValueError(f"Embedding must be 1-D, got shape {arr.shape}")
+    if arr.size != PRITHVI_EMBEDDING_DIM:
+        raise ValueError(f"Embedding size mismatch: expected {PRITHVI_EMBEDDING_DIM}, got {arr.size}")
+    if not np.isfinite(arr).all():
+        raise ValueError("Embedding contains NaN/Inf values")
+    return arr
 
 
 def compute_embedding(band_array: np.ndarray) -> List[float]:
@@ -175,7 +163,8 @@ def compute_embedding(band_array: np.ndarray) -> List[float]:
     Run the Prithvi encoder on a (C, H, W) float32 Sentinel-2 patch.
 
     Args:
-        band_array: Shape (num_bands, H, W), values already normalised to [0, 1].
+        band_array: Shape (num_bands, H, W), already normalised per-band
+                    using the Prithvi training mean/std.
 
     Returns:
         List of ``PRITHVI_EMBEDDING_DIM`` floats.
@@ -190,11 +179,11 @@ def compute_embedding(band_array: np.ndarray) -> List[float]:
 
     arr = _resize_to_model_input(band_array, PRITHVI_PATCH_SIZE_PX)
 
-    # Prithvi expects (B, T, C, H, W)
+    # PrithviViT PatchEmbed expects (B, C, T, H, W)
     tensor = (
         torch.from_numpy(arr)   # (C, H, W)
         .unsqueeze(0)            # (1, C, H, W)
-        .unsqueeze(1)            # (1, T=1, C, H, W)
+        .unsqueeze(2)            # (1, C, T=1, H, W)
         .float()
         .to(device)
     )
@@ -203,36 +192,28 @@ def compute_embedding(band_array: np.ndarray) -> List[float]:
         output = encoder(tensor)
 
     vec = _pool_to_vector(output)
+    if not _is_valid_embedding(vec):
+        raise RuntimeError("Prithvi returned an invalid embedding")
 
     # L2-normalise so cosine similarity = dot product (simplifies pgvector queries)
     norm = np.linalg.norm(vec) + 1e-8
-    vec  = (vec / norm).astype(np.float32)
+    if not np.isfinite(norm) or norm <= 0:
+        raise RuntimeError("Prithvi returned a zero-norm embedding")
+    vec = (vec / norm).astype(np.float32)
+    if not _is_valid_embedding(vec):
+        raise RuntimeError("Prithvi embedding became invalid after normalization")
 
-    return vec.tolist()
-
-
-# ── Development stub ───────────────────────────────────────────────────────────
-
-def compute_embedding_stub(band_array: Optional[np.ndarray] = None) -> List[float]:
-    """
-    Return a deterministic unit-norm vector for local development and tests.
-
-    The vector is seeded from the band statistics so it is unique per region
-    without requiring model weights or GPU hardware.
-    """
-    if band_array is not None and band_array.size > 0:
-        seed = int(abs(float(band_array.mean())) * 1e6) % (2 ** 31)
-    else:
-        seed = 42
-
-    rng = np.random.default_rng(seed)
-    vec = rng.standard_normal(PRITHVI_EMBEDDING_DIM).astype(np.float32)
-    norm = np.linalg.norm(vec) + 1e-8
-    vec /= norm
     return vec.tolist()
 
 
 # ── Public entry point ─────────────────────────────────────────────────────────
+
+def _check_sync_cancelled() -> None:
+    from app.services import sync_service  # noqa: PLC0415
+
+    if sync_service.is_sync_cancelled():
+        raise RuntimeError("Sync cancelled")
+
 
 def get_embedding(
     band_array: Optional[np.ndarray],
@@ -244,24 +225,25 @@ def get_embedding(
 
     Args:
         band_array: (C, H, W) float32 array, or None if GEE download failed.
-        use_stub:   Force stub mode (set to True in DEBUG / test environments).
+        use_stub: Retained for compatibility; ignored because no stub fallback is used.
 
     Returns:
         List of 768 normalised floats ready for pgvector insertion.
+
+    Raises:
+        ValueError: if ``band_array`` is missing/invalid.
+        RuntimeError: if Prithvi inference fails.
     """
-    if use_stub:
-        logger.debug("Stub embedding requested")
-        return compute_embedding_stub(band_array)
-
     if band_array is None:
-        logger.warning("band_array is None — using stub embedding")
-        return compute_embedding_stub()
+        raise ValueError("band_array is required for Prithvi embedding")
 
-    try:
-        return compute_embedding(band_array)
-    except Exception as exc:
-        logger.error(
-            "Prithvi inference failed — falling back to stub embedding",
-            error=str(exc),
-        )
-        return compute_embedding_stub(band_array)
+    _check_sync_cancelled()
+    embedding = compute_embedding(band_array)
+    _check_sync_cancelled()
+    validated = _validate_embedding_array(embedding)
+    logger.info(
+        "Embedding ready for persistence",
+        embedding_dim=int(validated.size),
+        embedding_preview=validated[:8].tolist(),
+    )
+    return validated.tolist()

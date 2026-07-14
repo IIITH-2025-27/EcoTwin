@@ -40,12 +40,20 @@ from app.ML_pipeline.constants import (
     NDVI_RED_BAND,
     NDWI_GREEN_BAND,
     NDWI_NIR_BAND,
+    PRITHVI_BAND_MEAN,
+    PRITHVI_BAND_STD,
     PRITHVI_PATCH_SIZE_PX,
-    PRITHVI_REFLECTANCE_SCALE,
     S2_BANDS_PRITHVI,
 )
 
 logger = structlog.get_logger(__name__)
+
+
+def _check_sync_cancelled() -> None:
+    from app.services import sync_service  # noqa: PLC0415
+
+    if sync_service.is_sync_cancelled():
+        raise RuntimeError("Sync cancelled")
 
 
 # ── Data containers ────────────────────────────────────────────────────────────
@@ -193,24 +201,26 @@ def _download_band_array(ee, composite, aoi) -> Optional[np.ndarray]:
     """
     Download the Prithvi input bands as a (C, H, W) float32 array.
 
-    Returns None on any failure — Phase 2 will fall back to a stub embedding.
+    The array is normalised per-band using the Prithvi training mean/std so it
+    can be fed directly to the encoder. Returns None on any failure.
     """
+    _check_sync_cancelled()
     try:
         url = composite.select(S2_BANDS_PRITHVI).getThumbURL({
-            "min": 0,
-            "max": 3000,
             "dimensions": PRITHVI_PATCH_SIZE_PX,
             "region": aoi,
             "format": "NPY",
             "crs": GEE_CRS,
         })
+        _check_sync_cancelled()
         with urllib.request.urlopen(url, timeout=GEE_REQUEST_TIMEOUT_SEC) as resp:
             raw_bytes = resp.read()
+        _check_sync_cancelled()
 
         arr = np.load(io.BytesIO(raw_bytes))   # may be structured dtype
 
         # GEE sometimes returns a structured array with named band fields
-        # e.g. dtype([('B2', 'u1'), ('B3', 'u1'), ...])
+        # e.g. dtype([('B2', '<f4'), ('B3', '<f4'), ...])
         # Convert by stacking each field into a plain (H, W, C) array.
         if arr.dtype.names:                    # structured array
             arr = np.stack(
@@ -220,17 +230,23 @@ def _download_band_array(ee, composite, aoi) -> Optional[np.ndarray]:
         else:
             arr = arr.astype(np.float32)       # plain numeric array
 
-        arr = arr / PRITHVI_REFLECTANCE_SCALE
-        arr = np.clip(arr, 0.0, 1.0)
-        if arr.ndim == 2:                      # single band edge-case → (1, H, W)
-            arr = arr[np.newaxis, ...]
-        else:
-            arr = np.transpose(arr, (2, 0, 1)) # (H, W, C) → (C, H, W)
+        # Ensure (H, W, C) layout before normalisation
+        if arr.ndim == 2:                      # single band edge-case → (H, W, 1)
+            arr = arr[:, :, np.newaxis]
+
+        # Per-band normalisation: (x - mean) / std  (from Prithvi config.yaml)
+        band_mean = np.array(PRITHVI_BAND_MEAN, dtype=np.float32)  # (C,)
+        band_std  = np.array(PRITHVI_BAND_STD,  dtype=np.float32)  # (C,)
+        arr = (arr - band_mean) / band_std     # broadcast over (H, W, C)
+
+        arr = np.transpose(arr, (2, 0, 1))     # (H, W, C) → (C, H, W)
         return arr
 
     except Exception as exc:
+        if "Sync cancelled" in str(exc):
+            raise
         logger.warning(
-            "Band array download failed — embedding will use stub in Phase 2",
+            "Band array download failed",
             error=str(exc),
         )
         return None
@@ -306,11 +322,16 @@ def fetch_composite(
     log = logger.bind(region_id=region_id, year=year)
     log.info("GEE composite fetch started")
 
+    _check_sync_cancelled()
     aoi = _build_aoi(ee, center_lat, center_lon, geom_wkt)
+    _check_sync_cancelled()
     composite = _build_composite(ee, aoi, year)
+    _check_sync_cancelled()
 
     stats_raw    = _reduce_indices(ee, composite, aoi)
+    _check_sync_cancelled()
     pixel_count  = _count_pixels(ee, composite, aoi)
+    _check_sync_cancelled()
     band_array   = _download_band_array(ee, composite, aoi)
 
     result = GEECompositeResult(

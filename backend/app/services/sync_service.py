@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import threading
@@ -48,6 +49,7 @@ _SYNC_PROGRESS: dict = {
     "errors": [],
 }
 _SYNC_LOCK = threading.Lock()
+_ACTIVE_SYNC_JOBS: dict[str, dict] = {}
 
 LAKE_IMPORT_BATCH_SIZE = 250
 # ``shapeName`` is the field used by geoBoundaries ADM1 GeoJSON files.
@@ -180,6 +182,55 @@ def _load_lake_records(country: str) -> list[dict]:
         )
 
     return lakes
+
+
+def _register_sync_job(job_id: str) -> None:
+    with _SYNC_LOCK:
+        _ACTIVE_SYNC_JOBS[job_id] = {"cancel_requested": False}
+
+
+def _clear_sync_job(job_id: str) -> None:
+    with _SYNC_LOCK:
+        _ACTIVE_SYNC_JOBS.pop(job_id, None)
+
+
+def _cancel_sync_job(job_id: str) -> bool:
+    with _SYNC_LOCK:
+        if job_id not in _ACTIVE_SYNC_JOBS:
+            return False
+        _ACTIVE_SYNC_JOBS[job_id]["cancel_requested"] = True
+        return True
+
+
+def _is_sync_cancelled(job_id: str) -> bool:
+    with _SYNC_LOCK:
+        return bool(_ACTIVE_SYNC_JOBS.get(job_id, {}).get("cancel_requested", False))
+
+
+def is_sync_cancelled(job_id: str | None = None) -> bool:
+    with _SYNC_LOCK:
+        if job_id is None:
+            return any(bool(job.get("cancel_requested", False)) for job in _ACTIVE_SYNC_JOBS.values())
+        return bool(_ACTIVE_SYNC_JOBS.get(job_id, {}).get("cancel_requested", False))
+
+
+def cancel_sync(job_id: str | None = None) -> dict:
+    """Cancel one active sync job, or all active jobs when no job ID is provided."""
+    with _SYNC_LOCK:
+        if job_id is None:
+            for active_job_id in list(_ACTIVE_SYNC_JOBS):
+                _ACTIVE_SYNC_JOBS[active_job_id]["cancel_requested"] = True
+            _SYNC_PROGRESS["status"] = "cancelled"
+            _SYNC_PROGRESS["current_lake"] = None
+            _SYNC_PROGRESS["current_year"] = None
+            return {"job_id": None, "cancelled": True, "active_jobs": len(_ACTIVE_SYNC_JOBS)}
+
+        cancelled = _cancel_sync_job(job_id)
+        if cancelled:
+            _SYNC_PROGRESS["status"] = "cancelled"
+            _SYNC_PROGRESS["current_lake"] = None
+            _SYNC_PROGRESS["current_year"] = None
+        return {"job_id": job_id, "cancelled": cancelled}
 
 
 def list_hydrolake_boundaries(country: str = "India") -> list[HydroLakeBoundaryResponse]:
@@ -762,6 +813,7 @@ def _upsert_region_row(lake: dict) -> tuple[str, bool]:
 def start_sync(request: SyncRequest, job_id: str | None = None) -> SyncJobResponse:
     if not job_id:
         job_id = str(uuid.uuid4())
+    _register_sync_job(job_id)
     years = request.duration.resolved_years()
     log = logger.bind(job_id=job_id, country=request.country, years=years)
     log.info("Sync job started", sync_mode=request.sync_mode)
@@ -886,10 +938,15 @@ def start_sync(request: SyncRequest, job_id: str | None = None) -> SyncJobRespon
 
     tasks_dispatched = 0
     for region_id, region_years in lake_year_map.items():
+        if _is_sync_cancelled(job_id):
+            break
+
         lake = lake_lookup[region_id]
         lake_label = lake.get("lake_id") or lake.get("hydrolake_id") or region_id
 
         for year in region_years:
+            if _is_sync_cancelled(job_id):
+                break
             # Mark this lake/year as currently running
             with _SYNC_LOCK:
                 _SYNC_PROGRESS["current_lake"] = str(lake_label)
@@ -908,6 +965,8 @@ def start_sync(request: SyncRequest, job_id: str | None = None) -> SyncJobRespon
                     _SYNC_PROGRESS["processed"] += 1
                 tasks_dispatched += 1
             except Exception as exc:
+                if _is_sync_cancelled(job_id):
+                    break
                 err_msg = f"Lake {lake_label} / {year}: {exc}"
                 log.warning("Pipeline failed", lake_id=lake_label, year=year, error=str(exc))
                 with _SYNC_LOCK:
@@ -915,9 +974,12 @@ def start_sync(request: SyncRequest, job_id: str | None = None) -> SyncJobRespon
                     _SYNC_PROGRESS["processed"] += 1
                     _SYNC_PROGRESS["errors"].append(err_msg)
 
-    # ── Mark done ───────────────────────────────────────────────────────────
+    # ── Mark done or cancelled ─────────────────────────────────────────────
     with _SYNC_LOCK:
-        _SYNC_PROGRESS["status"] = "done"
+        if _is_sync_cancelled(job_id):
+            _SYNC_PROGRESS["status"] = "cancelled"
+        else:
+            _SYNC_PROGRESS["status"] = "done"
         _SYNC_PROGRESS["current_lake"] = None
         _SYNC_PROGRESS["current_year"] = None
 
@@ -930,9 +992,12 @@ def start_sync(request: SyncRequest, job_id: str | None = None) -> SyncJobRespon
         tasks_dispatched=tasks_dispatched,
     )
 
+    status = "cancelled" if _is_sync_cancelled(job_id) else "completed"
+    _clear_sync_job(job_id)
+
     return SyncJobResponse(
         job_id=job_id,
-        status="completed",
+        status=status,
         source_type=request.source_type,
         country=request.country,
         region_ids=[lake.get("sub_region_id") or lake["region_id"] for lake in region_jobs],

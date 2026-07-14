@@ -19,6 +19,7 @@ import {
   fetchSyncCountry,
   fetchLakeStates,
   startSync,
+  cancelSync,
   getSyncProgress,
   type SyncProgressResponse,
 } from '@/api/sync';
@@ -161,7 +162,9 @@ export default function SyncModal({ onClose }: SyncModalProps) {
 
   // Sync state
   const [syncing, setSyncing] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
   const [started, setStarted] = useState(false);
+  const [activeJobId, setActiveJobId] = useState<string | null>(null);
   const [progress, setProgress] = useState<SyncProgressResponse | null>(null);
 
   // ── Load config + states on mount ─────────────────────────────────────
@@ -215,8 +218,12 @@ export default function SyncModal({ onClose }: SyncModalProps) {
         const p = await getSyncProgress();
         if (cancelled) return;
         setProgress(p);
-        if (p.status === 'done' || p.status === 'failed') setSyncing(false);
-        else timer = setTimeout(poll, 1500);
+        if (p.status === 'done' || p.status === 'failed' || p.status === 'cancelled') {
+          setSyncing(false);
+          setCancelling(false);
+        } else {
+          timer = setTimeout(poll, 1500);
+        }
       } catch (err: unknown) {
         if (cancelled) return;
         setError(err instanceof Error ? err.message : 'Error polling sync status.');
@@ -255,6 +262,7 @@ export default function SyncModal({ onClose }: SyncModalProps) {
     if (!yearRangeValid) return;
     setError(null);
     setSyncing(true);
+    setCancelling(false);
     setProgress(null);
     setStarted(false);
 
@@ -275,7 +283,7 @@ export default function SyncModal({ onClose }: SyncModalProps) {
         : selectedStates;
 
     try {
-      await startSync({
+      const reply = await startSync({
         source_type: 'hydrolakes',
         country,
         duration,
@@ -283,6 +291,7 @@ export default function SyncModal({ onClose }: SyncModalProps) {
         confirmed: true,
         states: statesToSend,
       });
+      setActiveJobId(reply.job_id);
       setStarted(true);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to start synchronization.');
@@ -298,7 +307,20 @@ export default function SyncModal({ onClose }: SyncModalProps) {
   const pct        = total > 0 ? Math.round((100 * processed) / total) : 0;
   const isDone     = progress?.status === 'done';
   const isFailed   = progress?.status === 'failed';
+  const isCancelled = progress?.status === 'cancelled';
   const isRunning  = progress?.status === 'running';
+
+  const handleCancel = async () => {
+    if (!started) return;
+    setError(null);
+    setCancelling(true);
+    try {
+      await cancelSync(activeJobId ?? 'global');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to cancel synchronization.');
+      setCancelling(false);
+    }
+  };
 
   return createPortal(
     <div
@@ -472,6 +494,7 @@ export default function SyncModal({ onClose }: SyncModalProps) {
                     isDone && failedCnt === 0 && 'border-emerald-500/30 bg-emerald-500/5 text-emerald-300',
                     isDone && failedCnt > 0 && 'border-amber-500/30 bg-amber-500/5 text-amber-300',
                     isFailed && 'border-rose-500/30 bg-rose-500/5 text-rose-300',
+                    isCancelled && 'border-slate-500/30 bg-slate-500/5 text-slate-300',
                     isRunning && 'border-primary-500/30 bg-primary-500/5 text-slate-200',
                     progress.status === 'idle' && 'border-slate-700/60 bg-surface-800 text-slate-400',
                   )}>
@@ -489,11 +512,13 @@ export default function SyncModal({ onClose }: SyncModalProps) {
                         {isDone && failedCnt === 0 && 'Sync Complete'}
                         {isDone && failedCnt > 0 && `Sync Finished — ${failedCnt} cell(s) failed`}
                         {isFailed && 'Sync Failed'}
+                        {isCancelled && 'Sync Cancelled'}
                         {isRunning && 'Processing Lakes...'}
                       </p>
                       <p className="truncate text-[11px] leading-relaxed text-slate-400">
                         {isDone && 'Prithvi embeddings & features have been updated.'}
                         {isFailed && 'The sync pipeline encountered a fatal error.'}
+                        {isCancelled && 'The sync pipeline was cancelled before completion.'}
                         {isRunning && progress.current_lake && (
                           <>
                             Lake <span className="font-mono text-primary-400">{progress.current_lake}</span>
@@ -588,19 +613,31 @@ export default function SyncModal({ onClose }: SyncModalProps) {
               </button>
             </>
           ) : (
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={syncing}
-              className={clsx(
-                'rounded-lg px-5 py-2 text-xs font-semibold transition-colors',
-                syncing
-                  ? 'cursor-not-allowed bg-slate-800 text-slate-500'
-                  : 'bg-primary-600 text-white hover:bg-primary-500',
+            <>
+              {(!isDone && !isFailed && !isCancelled) && (
+                <button
+                  type="button"
+                  onClick={handleCancel}
+                  disabled={syncing || cancelling}
+                  className="rounded-lg px-4 py-2 text-xs font-semibold text-slate-300 transition-colors hover:bg-slate-700/50 hover:text-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {cancelling ? 'Cancelling...' : 'Cancel Sync'}
+                </button>
               )}
-            >
-              {syncing ? 'Syncing...' : 'Done'}
-            </button>
+              <button
+                type="button"
+                onClick={onClose}
+                disabled={syncing || cancelling}
+                className={clsx(
+                  'rounded-lg px-5 py-2 text-xs font-semibold transition-colors',
+                  syncing || cancelling
+                    ? 'cursor-not-allowed bg-slate-800 text-slate-500'
+                    : 'bg-primary-600 text-white hover:bg-primary-500',
+                )}
+              >
+                {syncing || cancelling ? 'Working...' : isCancelled ? 'Close' : isDone || isFailed ? 'Close' : 'Done'}
+              </button>
+            </>
           )}
         </div>
       </div>

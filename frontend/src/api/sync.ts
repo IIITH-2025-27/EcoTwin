@@ -40,7 +40,7 @@ export interface SyncRequest {
 
 export interface SyncJobResponse {
   job_id: string;
-  status: 'queued' | 'failed' | 'completed';
+  status: 'queued' | 'failed' | 'completed' | 'cancelled';
   source_type: SyncSource;
   country: string;
   region_ids: string[];
@@ -57,7 +57,7 @@ export interface SyncJobResponse {
 
 // ── Global progress response (from GET /sync/status) ─────────────────────
 
-export type SyncStatus = 'idle' | 'running' | 'done' | 'failed';
+export type SyncStatus = 'idle' | 'running' | 'done' | 'failed' | 'cancelled';
 
 export interface SyncProgressResponse {
   status: SyncStatus;
@@ -117,6 +117,13 @@ export async function importLakesTable(country = 'India'): Promise<LakeImportRes
 
 export async function startSync(request: SyncRequest): Promise<SyncJobResponse> {
   const { data } = await apiClient.post<SyncJobResponse>('/sync/start', request);
+  return data;
+}
+
+export async function cancelSync(jobId?: string): Promise<{ job_id: string | null; cancelled: boolean; active_jobs?: number }> {
+  const { data } = await apiClient.post('/sync/cancel', null, {
+    params: jobId ? { job_id: jobId } : {},
+  });
   return data;
 }
 

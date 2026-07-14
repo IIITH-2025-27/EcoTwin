@@ -22,11 +22,24 @@ pipeline runs outside the API's async database session.
 
 from __future__ import annotations
 
+import math
+import math
 from typing import Optional
+
+from app.ML_pipeline.constants import PRITHVI_EMBEDDING_DIM
 
 import structlog
 
 logger = structlog.get_logger(__name__)
+
+
+# ── Shared DB / cache helpers ──────────────────────────────────────────────────
+
+def _check_sync_cancelled() -> None:
+    from app.services import sync_service  # noqa: PLC0415
+
+    if sync_service.is_sync_cancelled():
+        raise RuntimeError("Sync cancelled")
 
 
 # ── Shared DB / cache helpers ──────────────────────────────────────────────────
@@ -54,6 +67,7 @@ def ingest_region_features(
     Returns a result dict that is forwarded automatically to Phase 2.
     The raw band_array is included so Phase 2 does NOT need a second GEE call.
     """
+    _check_sync_cancelled()
     log = logger.bind(task="ingest_features", region_id=region_id, year=year)
     log.info("Phase 1 started")
 
@@ -118,6 +132,7 @@ def compute_region_embedding(
         # Reuse the band_array already downloaded in Phase 1 (← no second GEE call)
         band_array = phase1_result.get("band_array")
 
+    _check_sync_cancelled()
     log = logger.bind(task="compute_embedding", region_id=region_id, year=year)
     log.info("Phase 2 started")
 
@@ -140,7 +155,13 @@ def compute_region_embedding(
 
         embedding = get_embedding(band_array, use_stub=settings.DEBUG)
 
-        _upsert_region_embedding(region_id, year, embedding)
+        if not isinstance(embedding, list):
+            raise ValueError("Embedding must be returned as a list")
+        normalized_embedding = [float(value) for value in embedding]
+        if len(normalized_embedding) != PRITHVI_EMBEDDING_DIM or not all(math.isfinite(value) for value in normalized_embedding):
+            raise ValueError("Embedding is invalid or incomplete")
+
+        _upsert_region_embedding(region_id, year, normalized_embedding)
 
         log.info("Phase 2 completed", embedding_dim=len(embedding))
         return {
@@ -173,6 +194,7 @@ def classify_region(
         region_id = phase2_result["region_id"]
         year      = phase2_result["year"]
 
+    _check_sync_cancelled()
     log = logger.bind(task="classify_region", region_id=region_id, year=year)
     log.info("Phase 3 started")
 
@@ -213,8 +235,11 @@ def run_full_pipeline(
     """
     Run Phase 1 → Phase 2 → Phase 3 for one region/year.
     """
+    _check_sync_cancelled()
     phase1_result = ingest_region_features(region_id, center_lat, center_lon, year, geom_wkt)
+    _check_sync_cancelled()
     phase2_result = compute_region_embedding(phase1_result)
+    _check_sync_cancelled()
     classify_region(phase2_result)
     logger.info(
         "Full pipeline completed",
@@ -308,8 +333,13 @@ def _upsert_region_embedding(
     from sqlalchemy import text  # noqa: PLC0415
 
     engine = _sync_engine()
+    if not isinstance(embedding, list) or len(embedding) != PRITHVI_EMBEDDING_DIM:
+        raise ValueError("Embedding is invalid or incomplete")
+    normalized_embedding = [float(value) for value in embedding]
+    if not all(math.isfinite(value) for value in normalized_embedding):
+        raise ValueError("Embedding contains non-finite values")
     # Build the pgvector literal inline (same approach as EmbeddingRepository)
-    vec_literal = "[" + ",".join(map(str, embedding)) + "]"
+    vec_literal = "[" + ",".join(map(str, normalized_embedding)) + "]"
     sql = text(f"""
         UPDATE sub_regions
         SET embedding = '{vec_literal}'::vector, updated_at = NOW()

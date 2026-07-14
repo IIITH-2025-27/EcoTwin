@@ -19,6 +19,7 @@ from app.schemas.sync import (
     SyncRequest,
 )
 from app.services.sync_service import (
+    cancel_sync,
     get_sync_progress,
     import_india_states,
     import_lakes_table,
@@ -129,6 +130,25 @@ async def start_sync_job(
         skipped_regions=0,
         message="Sync started in the background. Poll /sync/status for progress.",
     )
+
+
+@router.post("/cancel")
+async def cancel_sync_job(job_id: str | None = None) -> dict:
+    """Cancel an active sync job if one is currently running."""
+    return await asyncio.to_thread(cancel_sync, job_id)
+
+
+@router.post("/cancel")
+async def cancel_sync_job(job_id: str | None = None) -> dict:
+    """Request cancellation for the active sync job, or all active jobs when no job ID is provided."""
+    try:
+        return await asyncio.to_thread(cancel_sync, job_id)
+    except Exception as exc:
+        logger.error("Sync cancel failed", error=str(exc))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(exc),
+        ) from exc
 
 
 @router.get("/status")

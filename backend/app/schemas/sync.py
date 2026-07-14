@@ -145,7 +145,7 @@ class SyncJobResponse(BaseModel):
     """Returned immediately after the sync is triggered."""
 
     job_id: str
-    status: Literal["queued", "failed", "completed"]
+    status: Literal["queued", "failed", "completed", "cancelled"]
     source_type: SyncSource
     country: str
     region_ids: List[str]
