@@ -69,7 +69,7 @@ class Settings(BaseSettings):
 
     # ── ML Pipeline ───────────────────────────────────────────────────────────
     # Path to a local Prithvi-100M directory/checkpoint within the workspace
-    PRITHVI_MODEL_PATH: str = ""
+    PRITHVI_MODEL_PATH: str = "app/ML_models/Prithvi-EO-1.0-100M/Prithvi-EO-1.0-100M"
     # When True, Prithvi inference returns a deterministic stub embedding
     # (no GPU / model weights required).  Automatically True when DEBUG=true.
     PRITHVI_USE_STUB: bool = False

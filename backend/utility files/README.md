@@ -126,7 +126,7 @@ GEE_SERVICE_ACCOUNT_KEY_PATH=/app/secrets/gee_key.json
 # ── Prithvi model ──────────────────────────────────────────────────────────
 # Leave empty to auto-download from HuggingFace on first pipeline run.
 # Set to a path if you have a local .pt checkpoint:
-PRITHVI_MODEL_PATH=/app/models/prithvi_100m.pt
+PRITHVI_MODEL_PATH="app/ML_models/Prithvi-EO-1.0-100M"
 
 # Set to true during development to skip model inference (fast stub vectors)
 PRITHVI_USE_STUB=false
@@ -182,11 +182,14 @@ alembic upgrade head
 ```
 ### 4.2 Download the data file
 
-Go to the Resource drive and download the LakeData_Polygon file(HydroLAKES_polys_v10_shp.zip), Unzip it and copy paste the whole unziped folder in the backend/app/datasets folder.
+  --> Go to the Resource drive (Link in Global README.md file)
 
-```bash
-alembic upgrade head
-```
+
+    1) download the LakeData_Polygon file(HydroLAKES_polys_v10_shp.zip), Unzip it and copy paste the whole unziped folder in the "backend/app/datasets" folder.
+
+    2) download the ML Model(Pritvi) file(Prithvi-EO-1.0-100M.zip), Unzip it and copy paste the whole unziped folder in the "backend/app/ML_models" folder. 
+
+
 
 ### 5. Start the API server
 

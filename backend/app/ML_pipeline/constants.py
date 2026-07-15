@@ -51,7 +51,7 @@ PRITHVI_DEPTH:         Final[int] = 12         # transformer encoder depth
 PRITHVI_NUM_HEADS:     Final[int] = 12         # attention heads
 PRITHVI_HF_REPO:       Final[str] = "ibm-nasa-geospatial/Prithvi-100M"
 # Prefer the locally cloned Prithvi repository when available.
-PRITHVI_LOCAL_WEIGHTS: Final[str] = "/home/cypher/EcoTwin/EcoTwin/Prithvi-EO-1.0-100M"
+PRITHVI_LOCAL_WEIGHTS: Final[str] = "app/ML_models/Prithvi-EO-1.0-100M/Prithvi-EO-1.0-100M"
 
 # Per-band normalisation (from Prithvi config.yaml train_params).
 # Order matches S2_BANDS_PRITHVI: B02, B03, B04, B05, B06, B07
