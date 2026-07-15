@@ -32,7 +32,7 @@ BACKUP_DIR: str = os.environ.get("BACKUP_DIR", "/app/backups")
 HYDROLAKES_SOURCE_PATH: str = settings.HYDROLAKES_SOURCE_PATH
 HYDROLAKES_SHAPEFILE_PATH: str = (
     settings.HYDROLAKES_SHAPEFILE_PATH
-    or str(APP_DIR / "HydroLAKES_polys_v10_shp/HydroLAKES_polys_v10_shp/HydroLAKES_polys_v10.shp")
+    or str(APP_DIR / "datasets" / "HydroLAKES_polys_v10_shp" / "HydroLAKES_polys_v10_shp" / "HydroLAKES_polys_v10.shp")
 )
 INDIA_STATES_SOURCE_PATH: str = settings.INDIA_STATES_SOURCE_PATH
 

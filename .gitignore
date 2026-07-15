@@ -14,7 +14,8 @@ backend/.env
 # backend/.env.*
 backend/.venv/
 backend/venv/
-backend/app/HydroLAKES_polys_v10_shp/
+backend/app/datasets/HydroLAKES_polys_v10_shp/
+backend/app/ML_models/Prithvi-EO-1.0-100M
 backend/.env_with_docker
 
 # Python cache

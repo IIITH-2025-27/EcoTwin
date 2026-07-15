@@ -182,7 +182,7 @@ alembic upgrade head
 ```
 ### 4.2 Download the data file
 
-Go to the Resource drive and download the LakeData_Polygon file(HydroLAKES_polys_v10_shp.zip), Unzip it and copy paste the whole unziped folder in the backend/app folder.
+Go to the Resource drive and download the LakeData_Polygon file(HydroLAKES_polys_v10_shp.zip), Unzip it and copy paste the whole unziped folder in the backend/app/datasets folder.
 
 ```bash
 alembic upgrade head
