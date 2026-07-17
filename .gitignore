@@ -52,3 +52,4 @@ Thumbs.db
 *.log
 
 backend/data/sentinel/
+.venv/
