@@ -225,12 +225,13 @@ def cancel_sync(job_id: str | None = None) -> dict:
             _SYNC_PROGRESS["current_year"] = None
             return {"job_id": None, "cancelled": True, "active_jobs": len(_ACTIVE_SYNC_JOBS)}
 
-        cancelled = _cancel_sync_job(job_id)
-        if cancelled:
+        if job_id in _ACTIVE_SYNC_JOBS:
+            _ACTIVE_SYNC_JOBS[job_id]["cancel_requested"] = True
             _SYNC_PROGRESS["status"] = "cancelled"
             _SYNC_PROGRESS["current_lake"] = None
             _SYNC_PROGRESS["current_year"] = None
-        return {"job_id": job_id, "cancelled": cancelled}
+            return {"job_id": job_id, "cancelled": True}
+        return {"job_id": job_id, "cancelled": False}
 
 
 def list_hydrolake_boundaries(country: str = "India") -> list[HydroLakeBoundaryResponse]:

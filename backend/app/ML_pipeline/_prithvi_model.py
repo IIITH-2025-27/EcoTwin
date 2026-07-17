@@ -40,7 +40,7 @@ import structlog
 
 logger = structlog.get_logger(__name__)
 
-DEFAULT_LOCAL_MODEL_DIR = "app/ML_models/Prithvi-EO-1.0-100M/Prithvi-EO-1.0-100M/"  # relative to backend/app/ML_pipeline
+DEFAULT_LOCAL_MODEL_DIR = "app/ML_models/Prithvi-EO-1.0-100M/"  # relative to backend/app/ML_pipeline
 DEFAULT_CHECKPOINT_NAME = "Prithvi_EO_V1_100M.pt"
 
 

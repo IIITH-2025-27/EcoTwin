@@ -292,6 +292,7 @@ export default function SyncModal({ onClose }: SyncModalProps) {
         states: statesToSend,
       });
       setActiveJobId(reply.job_id);
+      setSyncing(false);
       setStarted(true);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to start synchronization.');
@@ -328,7 +329,7 @@ export default function SyncModal({ onClose }: SyncModalProps) {
       role="dialog"
       aria-modal="true"
       aria-labelledby="sync-modal-title"
-      onClick={(e) => { if (e.target === e.currentTarget && !syncing) onClose(); }}
+      onClick={(e) => { if (e.target === e.currentTarget && !syncing && !isRunning && !cancelling) onClose(); }}
     >
       <div className="w-full max-w-lg rounded-2xl border border-slate-700/60 bg-surface-900 shadow-2xl">
 
@@ -336,7 +337,7 @@ export default function SyncModal({ onClose }: SyncModalProps) {
         <div className="flex items-center justify-between border-b border-slate-700/60 px-5 py-4">
           <div className="flex items-center gap-2.5">
             <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-primary-600/30 bg-primary-600/20">
-              <RefreshCw className={clsx('h-4 w-4 text-primary-400', syncing && 'animate-spin')} />
+              <RefreshCw className={clsx('h-4 w-4 text-primary-400', (syncing || isRunning) && 'animate-spin')} />
             </div>
             <div>
               <h2 id="sync-modal-title" className="text-sm font-semibold text-slate-100">
@@ -350,7 +351,7 @@ export default function SyncModal({ onClose }: SyncModalProps) {
           <button
             type="button"
             onClick={onClose}
-            disabled={syncing}
+            disabled={syncing || isRunning || cancelling}
             aria-label="Close dialog"
             className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-slate-700/50 hover:text-slate-200 disabled:cursor-not-allowed disabled:opacity-50"
           >
@@ -504,6 +505,8 @@ export default function SyncModal({ onClose }: SyncModalProps) {
                       <AlertCircle className="h-5 w-5 text-amber-400 shrink-0 mt-0.5" />
                     ) : isFailed ? (
                       <AlertCircle className="h-5 w-5 text-rose-400 shrink-0 mt-0.5" />
+                    ) : isCancelled ? (
+                      <AlertCircle className="h-5 w-5 text-slate-400 shrink-0 mt-0.5" />
                     ) : (
                       <Loader2 className="h-5 w-5 text-primary-400 shrink-0 mt-0.5 animate-spin" />
                     )}
@@ -627,15 +630,15 @@ export default function SyncModal({ onClose }: SyncModalProps) {
               <button
                 type="button"
                 onClick={onClose}
-                disabled={syncing || cancelling}
+                disabled={syncing || cancelling || isRunning}
                 className={clsx(
                   'rounded-lg px-5 py-2 text-xs font-semibold transition-colors',
-                  syncing || cancelling
+                  syncing || cancelling || isRunning
                     ? 'cursor-not-allowed bg-slate-800 text-slate-500'
                     : 'bg-primary-600 text-white hover:bg-primary-500',
                 )}
               >
-                {syncing || cancelling ? 'Working...' : isCancelled ? 'Close' : isDone || isFailed ? 'Close' : 'Done'}
+                {syncing || cancelling || isRunning ? 'Working...' : isCancelled ? 'Close' : isDone || isFailed ? 'Close' : 'Done'}
               </button>
             </>
           )}

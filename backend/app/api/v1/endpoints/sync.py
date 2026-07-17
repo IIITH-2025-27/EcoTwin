@@ -134,15 +134,9 @@ async def start_sync_job(
 
 @router.post("/cancel")
 async def cancel_sync_job(job_id: str | None = None) -> dict:
-    """Cancel an active sync job if one is currently running."""
-    return await asyncio.to_thread(cancel_sync, job_id)
-
-
-@router.post("/cancel")
-async def cancel_sync_job(job_id: str | None = None) -> dict:
     """Request cancellation for the active sync job, or all active jobs when no job ID is provided."""
     try:
-        return await asyncio.to_thread(cancel_sync, job_id)
+        return cancel_sync(job_id)
     except Exception as exc:
         logger.error("Sync cancel failed", error=str(exc))
         raise HTTPException(
@@ -166,4 +160,4 @@ async def get_sync_status() -> dict:
       current_year  — year currently being processed (null when idle/done)
       errors        — list of error strings for failed items
     """
-    return await asyncio.to_thread(get_sync_progress)
+    return get_sync_progress()
