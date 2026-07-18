@@ -80,6 +80,21 @@ class Settings(BaseSettings):
     # Optional path to a serialised sklearn classifier (.pkl) for ecosystem
     # classification.  Leave empty to use the built-in rule-based classifier.
     CLASSIFIER_MODEL_PATH: str = ""
+
+    # ── Image Acquisition Pipeline ────────────────────────────────
+    SENTINEL_DATA_DIR: str = "data/sentinel"
+    LAKE_IMAGERY_BUFFER_METRES: int = 2_000
+    IMAGERY_MAX_RETRIES: int = 3
+    IMAGERY_RETRY_DELAY_SEC: float = 5.0
+    IMAGERY_RETRY_BACKOFF: float = 2.0
+    IMAGERY_DOWNLOAD_TIMEOUT_SEC: int = 600
+    IMAGERY_BATCH_SIZE: int = 10
+    IMAGERY_TILE_SIZE_METRES: int = 8_000  # 8 km × 8 km tile grid
+
+    # ── Embedding Pipeline ────────────────────────────────────────
+    EMBEDDING_GPU_BATCH_SIZE: int = 8
+    EMBEDDING_MAX_WORKERS: int = 4
+
     # ── Computed properties ───────────────────────────────────────
     @property
     def DATABASE_URL(self) -> str:  # noqa: N802

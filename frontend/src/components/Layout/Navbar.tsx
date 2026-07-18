@@ -1,15 +1,17 @@
 import { useState } from 'react';
-import { Database, Leaf, PanelLeftClose, PanelLeftOpen, RefreshCw } from 'lucide-react';
+import { Database, Leaf, PanelLeftClose, PanelLeftOpen, RefreshCw, Satellite } from 'lucide-react';
 import { useMapStore } from '@/store/mapStore';
 import { useRegion } from '@/hooks/useRegion';
 import SyncModal from '@/components/SyncModal/SyncModal';
 import SyncLakesModal from '@/components/SyncModal/SyncLakesModal';
+import FetchImagesModal from '@/components/SyncModal/FetchImagesModal';
 
 export default function Navbar() {
   const { selectedRegionId, isSidebarCollapsed, toggleSidebar } = useMapStore();
   const { data: regionData } = useRegion(selectedRegionId);
   const [showSync, setShowSync] = useState(false);
   const [showLakesSync, setShowLakesSync] = useState(false);
+  const [showFetchImages, setShowFetchImages] = useState(false);
 
   return (
     <header className="flex h-14 items-center justify-between border-b border-slate-700/60 bg-surface-800/95 px-4 backdrop-blur-sm">
@@ -82,6 +84,16 @@ export default function Navbar() {
           <span className="hidden sm:inline">Sync Lakes</span>
         </button>
         <button
+          onClick={() => setShowFetchImages(true)}
+          className="flex items-center gap-1.5 rounded-lg border border-cyan-500/40 bg-cyan-500/15 px-3 py-1.5
+                     text-xs font-medium text-cyan-300 hover:bg-cyan-500/25 hover:text-cyan-200
+                     transition-colors"
+          title="Download Sentinel-2 GeoTIFF composites for active lakes"
+        >
+          <Satellite className="h-3.5 w-3.5" />
+          <span className="hidden sm:inline">Fetch Images</span>
+        </button>
+        <button
           onClick={() => setShowSync(true)}
           className="flex items-center gap-1.5 rounded-lg border border-primary-600/40 bg-primary-600/15 px-3 py-1.5
                      text-xs font-medium text-primary-300 hover:bg-primary-600/25 hover:text-primary-200
@@ -104,6 +116,7 @@ export default function Navbar() {
 
       {showSync && <SyncModal onClose={() => setShowSync(false)} />}
       {showLakesSync && <SyncLakesModal onClose={() => setShowLakesSync(false)} />}
+      {showFetchImages && <FetchImagesModal onClose={() => setShowFetchImages(false)} />}
     </header>
   );
 }

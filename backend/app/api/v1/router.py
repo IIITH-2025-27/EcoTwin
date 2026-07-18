@@ -1,6 +1,17 @@
 from fastapi import APIRouter
 
-from app.api.v1.endpoints import forecast, health, lakes, regions, reports, similarity, sync, temporal
+from app.api.v1.endpoints import (
+    embeddings,
+    forecast,
+    health,
+    imagery,
+    lakes,
+    regions,
+    reports,
+    similarity,
+    sync,
+    temporal,
+)
 
 api_router = APIRouter()
 
@@ -12,3 +23,5 @@ api_router.include_router(temporal.router, prefix="/temporal")
 api_router.include_router(forecast.router, prefix="/forecast")
 api_router.include_router(reports.router, prefix="/report")
 api_router.include_router(sync.router, prefix="/sync")
+api_router.include_router(imagery.router, prefix="/imagery")
+api_router.include_router(embeddings.router, prefix="/embeddings")

@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import math
 import math
+import time
 from typing import Optional
 
 from app.ML_pipeline.constants import PRITHVI_EMBEDDING_DIM
@@ -144,6 +145,7 @@ def compute_region_embedding(
             # Standalone call or Phase 1 band_array was missing — fetch from GEE
             from app.ML_pipeline.gee_ingest import fetch_composite  # noqa: PLC0415
             log.info("Phase 2: fetching GEE composite (no band_array from Phase 1)")
+            fetch_start = time.perf_counter()
             gee_result = fetch_composite(
                 region_id  = region_id,
                 center_lat = center_lat,
@@ -152,8 +154,13 @@ def compute_region_embedding(
                 geom_wkt   = geom_wkt,
             )
             band_array = gee_result.band_array
+            log.info("Sentinel Fetch/Prep", elapsed_seconds=round(time.perf_counter() - fetch_start, 2))
+        else:
+            log.info("Sentinel Fetch/Prep", elapsed_seconds=0.0, reused_phase1_band_array=True)
 
+        inference_start = time.perf_counter()
         embedding = get_embedding(band_array, use_stub=settings.DEBUG)
+        log.info("Model Inference", elapsed_seconds=round(time.perf_counter() - inference_start, 2))
 
         if not isinstance(embedding, list):
             raise ValueError("Embedding must be returned as a list")

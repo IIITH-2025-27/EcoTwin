@@ -1,0 +1,457 @@
+"""
+Embedding pipeline orchestrator.
+
+Processes locally stored GeoTIFFs through:
+  Grid generation → Cell extraction → GPU-batched Prithvi inference →
+  Cell storage → Weighted pooling → Lake embedding storage.
+
+Provides global progress state for API polling, cancellation support,
+and per-cell resumption.
+"""
+
+from __future__ import annotations
+
+import threading
+from pathlib import Path
+from typing import Dict, List, Optional, Set
+
+import numpy as np
+import structlog
+from geoalchemy2.shape import to_shape
+from sqlalchemy import create_engine, select, text
+from sqlalchemy.orm import sessionmaker
+
+from app.core.config import settings
+from app.embedding_pipeline.batch_inference import compute_embeddings_batch
+from app.embedding_pipeline.cell_extractor import CellExtractor
+from app.embedding_pipeline.config import (
+    EmbeddingPipelineConfig,
+    get_embedding_pipeline_config,
+)
+from app.embedding_pipeline.grid_generator import GridCell, GridGenerator
+from app.embedding_pipeline.storage import EmbeddingStorage
+from app.embedding_pipeline.weighted_pooling import weighted_mean_pool
+from app.models.lake import Lake
+from app.models.lake_image import LakeImage
+
+logger = structlog.get_logger(__name__)
+
+# ── Global progress state ─────────────────────────────────────────────────
+
+_lock = threading.Lock()
+
+_progress: Dict = {
+    "status": "idle",
+    "total": 0,
+    "processed": 0,
+    "success": 0,
+    "failed": 0,
+    "skipped": 0,
+    "current_lake_id": None,
+    "current_year": None,
+    "current_step": None,
+    "errors": [],
+}
+
+_cancelled = False
+
+
+def get_embedding_progress() -> Dict:
+    """Return a snapshot of the current pipeline progress."""
+    with _lock:
+        return dict(_progress)
+
+
+def cancel_embedding_pipeline() -> bool:
+    """Request cancellation of the running pipeline."""
+    global _cancelled
+    with _lock:
+        if _progress["status"] != "running":
+            return False
+        _cancelled = True
+        _progress["status"] = "cancelled"
+    logger.warning("Embedding pipeline cancellation requested")
+    return True
+
+
+def is_embedding_cancelled() -> bool:
+    return _cancelled
+
+
+def _reset_progress(total: int) -> None:
+    global _cancelled
+    with _lock:
+        _cancelled = False
+        _progress.update(
+            status="running",
+            total=total,
+            processed=0,
+            success=0,
+            failed=0,
+            skipped=0,
+            current_lake_id=None,
+            current_year=None,
+            current_step=None,
+            errors=[],
+        )
+
+
+def _update_progress(**kwargs) -> None:
+    with _lock:
+        _progress.update(kwargs)
+
+
+# ── Synchronous DB engine ─────────────────────────────────────────────────
+
+
+def _sync_engine():
+    return create_engine(
+        settings.SYNC_DATABASE_URL,
+        pool_pre_ping=True,
+        pool_size=5,
+    )
+
+
+# ── Single lake/year pipeline ─────────────────────────────────────────────
+
+
+def _process_single_lake(
+    lake_id: int,
+    year: int,
+    config: EmbeddingPipelineConfig,
+    storage: EmbeddingStorage,
+) -> str:
+    """
+    Full embedding pipeline for one lake / one year.
+
+    Returns "completed", "skipped", or "failed".
+    """
+    log = logger.bind(lake_id=lake_id, year=year)
+
+    # ── 0. Check if lake embedding already exists ────────────────────────
+    if storage.is_lake_embedding_complete(lake_id, year):
+        log.info("Lake embedding already complete — skipping")
+        return "skipped"
+
+    if is_embedding_cancelled():
+        return "failed"
+
+    try:
+        # ── 1. Look up GeoTIFF path ──────────────────────────────────────
+        _update_progress(current_step="loading_geotiff")
+        geotiff_path = _get_geotiff_path(lake_id, year, config)
+        if geotiff_path is None:
+            raise FileNotFoundError(
+                f"No completed GeoTIFF found for lake {lake_id} year {year}"
+            )
+        log.info("Step 1: GeoTIFF located", path=str(geotiff_path))
+
+        if is_embedding_cancelled():
+            return "failed"
+
+        # ── 2. Read lake polygon from PostGIS ────────────────────────────
+        _update_progress(current_step="reading_polygon")
+        lake_polygon = _read_lake_polygon(lake_id)
+        if lake_polygon is None:
+            raise ValueError(f"Lake {lake_id} has no geometry in PostGIS")
+        log.info("Step 2: Lake polygon loaded")
+
+        if is_embedding_cancelled():
+            return "failed"
+
+        # ── 3. Generate grid ─────────────────────────────────────────────
+        _update_progress(current_step="generating_grid")
+        grid_gen = GridGenerator(config)
+        cells = grid_gen.generate(str(geotiff_path), lake_polygon)
+        log.info("Step 3: Grid generated", valid_cells=len(cells))
+
+        if not cells:
+            log.warning("No valid grid cells — skipping lake")
+            return "skipped"
+
+        if is_embedding_cancelled():
+            return "failed"
+
+        # ── 4. Resume check — skip already-processed cells ───────────────
+        _update_progress(current_step="checking_resume")
+        processed_cells = storage.get_processed_cells(lake_id, year)
+        unprocessed = [c for c in cells if c.cell_number not in processed_cells]
+        log.info(
+            "Step 4: Resume check",
+            total_cells=len(cells),
+            already_done=len(processed_cells),
+            remaining=len(unprocessed),
+        )
+
+        # ── 5–8. Extract, infer, store (in GPU batches) ──────────────────
+        if unprocessed:
+            _update_progress(current_step="extracting_and_inferring")
+            extractor = CellExtractor(config)
+            batch_size = config.gpu_batch_size
+
+            for batch_start in range(0, len(unprocessed), batch_size):
+                if is_embedding_cancelled():
+                    return "failed"
+
+                batch_cells = unprocessed[batch_start:batch_start + batch_size]
+                batch_num = batch_start // batch_size + 1
+                total_batches = (len(unprocessed) + batch_size - 1) // batch_size
+                log.info(
+                    f"Batch {batch_num}/{total_batches}",
+                    cells_in_batch=len(batch_cells),
+                )
+
+                # 5. Extract cells
+                arrays = extractor.extract_batch(str(geotiff_path), batch_cells)
+
+                # Filter out failed extractions
+                valid_pairs = [
+                    (cell, arr)
+                    for cell, arr in zip(batch_cells, arrays)
+                    if arr is not None
+                ]
+
+                if not valid_pairs:
+                    log.warning("All cells in batch failed extraction")
+                    continue
+
+                valid_cells_batch, valid_arrays = zip(*valid_pairs)
+
+                # 6. Batch inference
+                embeddings = compute_embeddings_batch(list(valid_arrays))
+
+                # 7. Store each cell embedding
+                for cell, emb in zip(valid_cells_batch, embeddings):
+                    if np.any(emb != 0):
+                        storage.upsert_cell_embedding(
+                            lake_id=lake_id,
+                            cell_number=cell.cell_number,
+                            year=year,
+                            embedding=emb,
+                            coverage_percent=cell.coverage_percent,
+                            center_lat=cell.center_lat,
+                            center_lon=cell.center_lon,
+                            bounds_4326=cell.bounds_4326,
+                        )
+
+        if is_embedding_cancelled():
+            return "failed"
+
+        # ── 9. Weighted pooling ──────────────────────────────────────────
+        _update_progress(current_step="pooling")
+        all_cell_data = storage.get_all_cell_embeddings(lake_id, year)
+
+        if not all_cell_data:
+            log.warning("No cell embeddings available for pooling")
+            return "failed"
+
+        cell_embeddings = [item[1] for item in all_cell_data]
+        cell_weights = [item[2] for item in all_cell_data]
+
+        lake_embedding = weighted_mean_pool(cell_embeddings, cell_weights)
+        log.info(
+            "Step 9: Weighted pooling completed",
+            num_cells=len(cell_embeddings),
+        )
+
+        # ── 10. Store lake embedding ─────────────────────────────────────
+        _update_progress(current_step="storing_lake_embedding")
+        storage.upsert_lake_embedding(
+            lake_id=lake_id,
+            year=year,
+            embedding=lake_embedding,
+            num_cells=len(cell_embeddings),
+        )
+
+        log.info("✓ Embedding pipeline completed for lake")
+        return "completed"
+
+    except Exception as exc:
+        error_msg = str(exc)[:300]
+        log.error("✗ Embedding pipeline failed", error=error_msg)
+        with _lock:
+            _progress["errors"].append(
+                f"Lake {lake_id}/{year}: {error_msg}"
+            )
+            if len(_progress["errors"]) > 100:
+                _progress["errors"] = _progress["errors"][-100:]
+        return "failed"
+
+
+# ── Helpers ───────────────────────────────────────────────────────────────
+
+
+def _get_geotiff_path(
+    lake_id: int, year: int, config: EmbeddingPipelineConfig
+) -> Optional[Path]:
+    """Look up the GeoTIFF path from the lake_images table."""
+    engine = _sync_engine()
+    try:
+        with engine.connect() as conn:
+            row = conn.execute(
+                text("""
+                    SELECT file_path
+                    FROM lake_images
+                    WHERE lake_id = :lake_id
+                      AND year    = :year
+                      AND status  = 'completed'
+                    LIMIT 1
+                """),
+                {"lake_id": lake_id, "year": year},
+            ).fetchone()
+
+        if row is None:
+            return None
+
+        # file_path is relative to backend root
+        backend_root = Path(__file__).resolve().parents[2]
+        full_path = backend_root / row[0]
+        return full_path if full_path.is_file() else None
+    finally:
+        engine.dispose()
+
+
+def _read_lake_polygon(lake_id: int):
+    """Read the lake polygon as a Shapely geometry (EPSG:4326)."""
+    engine = _sync_engine()
+    Session = sessionmaker(bind=engine)
+    try:
+        with Session() as session:
+            lake = session.execute(
+                select(Lake).where(Lake.lake_id == lake_id)
+            ).scalar_one_or_none()
+
+            if lake is None or lake.geom is None:
+                return None
+            return to_shape(lake.geom)
+    finally:
+        engine.dispose()
+
+
+# ── Public entry points ───────────────────────────────────────────────────
+
+
+def run_embedding_pipeline(
+    lake_ids: Optional[List[int]] = None,
+    years: Optional[List[int]] = None,
+) -> Dict:
+    """
+    Run the embedding pipeline for specified lakes and years.
+
+    Designed to be called from ``BackgroundTasks``. Progress is tracked
+    via the global ``_progress`` dict.
+    """
+    config = get_embedding_pipeline_config()
+    storage = EmbeddingStorage()
+
+    # Resolve lake IDs if not specified
+    if lake_ids is None:
+        lake_ids = _get_lakes_with_images(years or [])
+        if not lake_ids:
+            logger.warning("No lakes with downloaded images found")
+            return {"success": 0, "failed": 0, "skipped": 0, "cancelled": False}
+
+    if not years:
+        logger.warning("No years specified")
+        return {"success": 0, "failed": 0, "skipped": 0, "cancelled": False}
+
+    total = len(lake_ids) * len(years)
+    _reset_progress(total)
+
+    logger.info(
+        "Embedding pipeline started",
+        num_lakes=len(lake_ids),
+        years=years,
+        total_tasks=total,
+    )
+
+    success = 0
+    failed = 0
+    skipped = 0
+
+    try:
+        for lake_id in lake_ids:
+            for year in years:
+                if is_embedding_cancelled():
+                    logger.warning("Embedding pipeline cancelled")
+                    with _lock:
+                        _progress["status"] = "cancelled"
+                    storage.dispose()
+                    return {
+                        "success": success,
+                        "failed": failed,
+                        "skipped": skipped,
+                        "cancelled": True,
+                    }
+
+                _update_progress(
+                    current_lake_id=lake_id,
+                    current_year=year,
+                )
+
+                result = _process_single_lake(lake_id, year, config, storage)
+
+                if result == "completed":
+                    success += 1
+                elif result == "skipped":
+                    skipped += 1
+                else:
+                    failed += 1
+
+                with _lock:
+                    _progress["processed"] += 1
+                    _progress["success"] = success
+                    _progress["failed"] = failed
+                    _progress["skipped"] = skipped
+
+        final_status = "done"
+        with _lock:
+            _progress["status"] = final_status
+            _progress["current_lake_id"] = None
+            _progress["current_year"] = None
+            _progress["current_step"] = None
+
+        logger.info(
+            "Embedding pipeline finished",
+            success=success,
+            failed=failed,
+            skipped=skipped,
+        )
+
+    except Exception as exc:
+        logger.exception("Embedding pipeline crashed", error=str(exc))
+        with _lock:
+            _progress["status"] = "failed"
+            _progress["errors"].append(f"Pipeline crash: {str(exc)[:300]}")
+
+    finally:
+        storage.dispose()
+
+    return {
+        "success": success,
+        "failed": failed,
+        "skipped": skipped,
+        "cancelled": False,
+    }
+
+
+def _get_lakes_with_images(years: List[int]) -> List[int]:
+    """Return lake IDs that have completed GeoTIFF downloads for any of the given years."""
+    engine = _sync_engine()
+    try:
+        if not years:
+            return []
+        placeholders = ",".join(str(int(y)) for y in years)
+        with engine.connect() as conn:
+            rows = conn.execute(
+                text(f"""
+                    SELECT DISTINCT lake_id
+                    FROM lake_images
+                    WHERE status = 'completed'
+                      AND year IN ({placeholders})
+                    ORDER BY lake_id
+                """)
+            ).fetchall()
+        return [row[0] for row in rows]
+    finally:
+        engine.dispose()
