@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import time
 import urllib.request
+import urllib.error
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -192,18 +193,66 @@ class SentinelCompositeBuilder:
                 )
                 return dest_path
 
-            except Exception as exc:
+            except urllib.error.HTTPError as exc:
                 last_error = exc
-                error_str = str(exc).lower()
-
-                # Check for quota / rate-limit errors
+            
+                try:
+                    body = exc.read().decode("utf-8", errors="ignore")
+                except Exception:
+                    body = "<unable to read response body>"
+            
+                logger.error(
+                    "Earth Engine HTTP Error",
+                    attempt=attempt,
+                    status=exc.code,
+                    reason=exc.reason,
+                    response=body,
+                )
+            
+                # Don't retry invalid requests
+                if exc.code == 400:
+                    raise RuntimeError(
+                        f"Earth Engine rejected the request (HTTP 400): {body}"
+                    ) from exc
+            
+                error_str = body.lower()
+            
                 is_quota = any(
                     kw in error_str
                     for kw in ("quota", "rate limit", "429", "too many")
                 )
-
+            
                 if attempt < max_retries:
                     wait = delay * (2 if is_quota else 1)
+            
+                    logger.warning(
+                        "GeoTIFF download failed — retrying",
+                        attempt=attempt,
+                        retry_in_sec=wait,
+                        is_quota_error=is_quota,
+                    )
+            
+                    time.sleep(wait)
+                    delay *= retry_backoff
+                else:
+                    logger.error(
+                        "GeoTIFF download failed — retries exhausted",
+                        attempt=attempt,
+                        status=exc.code,
+                    )
+            
+            except Exception as exc:
+                last_error = exc
+                error_str = str(exc).lower()
+            
+                is_quota = any(
+                    kw in error_str
+                    for kw in ("quota", "rate limit", "429", "too many")
+                )
+            
+                if attempt < max_retries:
+                    wait = delay * (2 if is_quota else 1)
+            
                     logger.warning(
                         "GeoTIFF download failed — retrying",
                         attempt=attempt,
@@ -211,6 +260,7 @@ class SentinelCompositeBuilder:
                         retry_in_sec=wait,
                         is_quota_error=is_quota,
                     )
+            
                     time.sleep(wait)
                     delay *= retry_backoff
                 else:
