@@ -83,7 +83,7 @@ class Settings(BaseSettings):
 
     # ── Image Acquisition Pipeline ────────────────────────────────
     SENTINEL_DATA_DIR: str = "data/sentinel"
-    LAKE_IMAGERY_BUFFER_METRES: int = 2_000
+    LAKE_IMAGERY_BUFFER_METRES: int = 1_200
     IMAGERY_MAX_RETRIES: int = 3
     IMAGERY_RETRY_DELAY_SEC: float = 5.0
     IMAGERY_RETRY_BACKOFF: float = 2.0
