@@ -39,6 +39,7 @@ class ImageAcquisitionConfig:
     download_timeout_sec: int
     batch_size: int
     tile_size_m: int
+    download_workers: int
 
     # ── Lake-level paths (legacy — retained for backward compat) ──────────
 
@@ -82,4 +83,5 @@ def get_image_acquisition_config() -> ImageAcquisitionConfig:
         download_timeout_sec=settings.IMAGERY_DOWNLOAD_TIMEOUT_SEC,
         batch_size=settings.IMAGERY_BATCH_SIZE,
         tile_size_m=settings.IMAGERY_TILE_SIZE_METRES,
+        download_workers=settings.IMAGERY_DOWNLOAD_WORKERS,
     )

@@ -37,7 +37,9 @@ from app.image_acquisition.grid import TileInfo, generate_tile_grid
 from app.models.lake import Lake
 from app.models.lake_image import LakeImage
 from app.models.lake_tile import LakeTile
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
+MAX_WORKERS = 4
 logger = structlog.get_logger(__name__)
 
 
@@ -164,19 +166,48 @@ class LakeImageDownloader:
 
             # 8. Download each pending tile
             any_failed = False
-            for tile in pending_tiles:
-                if cancel_check and cancel_check():
-                    return "failed"
-
-                result = self._download_single_tile(
-                    lake_id, year, tile, composite
-                )
-
-                if result == "failed":
-                    any_failed = True
-
-                if tile_callback:
-                    tile_callback(lake_id, year, tile.tile_index, result)
+            with ThreadPoolExecutor(max_workers=self._cfg.download_workers) as executor:
+                future_map = {
+                    executor.submit(
+                        self._download_single_tile,
+                        lake_id,
+                        year,
+                        tile,
+                        composite,
+                    ): tile
+                    for tile in pending_tiles
+                }
+            
+                for future in as_completed(future_map):
+                    if cancel_check and cancel_check():
+                        for f in future_map:
+                            f.cancel()
+                        executor.shutdown(wait=False, cancel_futures=True)
+                        return "failed"
+                    
+                    tile = future_map[future]
+                
+                    try:
+                        result = future.result()
+                
+                    except Exception as exc:
+                        log.exception(
+                            "Parallel tile download failed",
+                            tile=tile.tile_index,
+                            error=str(exc),
+                        )
+                        result = "failed"
+            
+                    if result == "failed":
+                        any_failed = True
+            
+                    if tile_callback:
+                        tile_callback(
+                            lake_id,
+                            year,
+                            tile.tile_index,
+                            result,
+                        )
 
             # 9. Update parent lake_images with aggregate status
             self._update_lake_image_aggregate(lake_id, year)
