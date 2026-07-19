@@ -90,7 +90,9 @@ class Settings(BaseSettings):
     IMAGERY_DOWNLOAD_TIMEOUT_SEC: int = 600
     IMAGERY_BATCH_SIZE: int = 10
     IMAGERY_TILE_SIZE_METRES: int = 8_500  # 9 km × 9 km tile grid
-    IMAGERY_DOWNLOAD_WORKERS: int = 8
+    IMAGERY_DOWNLOAD_WORKERS: int = 4
+    IMAGERY_LAKE_WORKERS: int = 4
+    
 
     # ── Embedding Pipeline ────────────────────────────────────────
     EMBEDDING_GPU_BATCH_SIZE: int = 8

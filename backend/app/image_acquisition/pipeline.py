@@ -14,6 +14,7 @@ import structlog
 
 from app.image_acquisition.config import get_image_acquisition_config
 from app.image_acquisition.downloader import LakeImageDownloader
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 logger = structlog.get_logger(__name__)
 
@@ -186,22 +187,55 @@ def run_imagery_pipeline(
         _on_lake_complete(lake_id, year, result)
 
     try:
-        # Track lake-level progress for the "processed" counter
         lake_results = {"success": 0, "failed": 0, "skipped": 0}
 
-        for lake_id in lake_ids:
-            for year in years:
+        max_workers = config.lake_workers
+        futures = {}
+
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+
+            # Submit all lake/year jobs
+            for lake_id in lake_ids:
+                for year in years:
+
+                    if is_imagery_cancelled():
+                        break
+
+                    # Update currently scheduled lake (for UI)
+                    # _on_lake_start(lake_id, year)
+
+                    future = executor.submit(
+                        downloader.download_lake_tiles,
+                        lake_id,
+                        year,
+                        cancel_check=is_imagery_cancelled,
+                        tile_callback=tile_callback,
+                    )
+
+                    futures[future] = (lake_id, year)
+
                 if is_imagery_cancelled():
                     break
 
-                _on_lake_start(lake_id, year)
+            # Process completed jobs
+            for future in as_completed(futures):
 
-                result = downloader.download_lake_tiles(
-                    lake_id,
-                    year,
-                    cancel_check=is_imagery_cancelled,
-                    tile_callback=tile_callback,
-                )
+                if is_imagery_cancelled():
+                    break
+
+                lake_id, year = futures[future]
+
+                try:
+                    result = future.result()
+
+                except Exception as exc:
+                    logger.exception(
+                        "Lake download failed",
+                        lake_id=lake_id,
+                        year=year,
+                        error=str(exc),
+                    )
+                    result = "failed"
 
                 if result == "completed":
                     lake_results["success"] += 1
@@ -212,24 +246,39 @@ def run_imagery_pipeline(
 
                 _on_lake_complete(lake_id, year, result)
 
-            if is_imagery_cancelled():
-                break
-
         final_status = "cancelled" if is_imagery_cancelled() else "done"
+
         with _lock:
             _progress["status"] = final_status
 
-        summary = {**lake_results, "cancelled": is_imagery_cancelled()}
+        summary = {
+            **lake_results,
+            "cancelled": is_imagery_cancelled(),
+        }
+
         logger.info(
             "Imagery pipeline finished",
             status=final_status,
             **lake_results,
         )
+
         return summary
 
     except Exception as exc:
-        logger.exception("Imagery pipeline failed", error=str(exc))
+        logger.exception(
+            "Imagery pipeline failed",
+            error=str(exc),
+        )
+
         with _lock:
             _progress["status"] = "failed"
-            _progress["errors"].append(f"Pipeline error: {str(exc)[:300]}")
-        return {"success": 0, "failed": 0, "skipped": 0, "cancelled": False}
+            _progress["errors"].append(
+                f"Pipeline error: {str(exc)[:300]}"
+            )
+
+        return {
+            "success": 0,
+            "failed": 0,
+            "skipped": 0,
+            "cancelled": False,
+        }
