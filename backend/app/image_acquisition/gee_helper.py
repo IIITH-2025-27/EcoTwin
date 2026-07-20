@@ -18,6 +18,7 @@ import urllib.request
 import urllib.error
 from pathlib import Path
 from typing import Any, Dict, Optional
+import datetime
 
 import structlog
 
@@ -273,3 +274,190 @@ class SentinelCompositeBuilder:
         raise RuntimeError(
             f"GeoTIFF download failed after {max_retries} attempts: {last_error}"
         )
+
+    # ──────────────────────────────────────────────────────────────────────────────
+    # Google Drive Export
+    # ──────────────────────────────────────────────────────────────────────────────
+
+    def export_to_drive(
+        self,
+        composite: Any,
+        aoi: Any,
+        lake_id: int,
+        year: int,
+        folder: str,
+        scale: int | None = None,
+    ):
+        """
+        Export the full buffered lake composite to Google Drive.
+
+        Returns
+        -------
+        ee.batch.Task
+            Running Earth Engine export task.
+        """
+
+        ee = self._ee
+
+        if scale is None:
+            scale = self._cfg.scale_metres
+
+        description = f"lake_{lake_id:06d}_{year}"
+        file_prefix = f"lake_{lake_id:06d}"
+
+        task = ee.batch.Export.image.toDrive(
+            image=composite,
+            description=description,
+            folder=folder,
+            fileNamePrefix=file_prefix,
+            region=aoi,
+            scale=scale,
+            crs=self._cfg.output_crs,
+            maxPixels=1e13,
+            fileFormat="GeoTIFF",
+            formatOptions={
+                "cloudOptimized": True
+            },
+        )
+
+        task.start()
+
+        logger.info(
+            "Started Google Drive export",
+            lake_id=lake_id,
+            year=year,
+            folder=folder,
+            description=description,
+            task_id=task.id,
+        )
+
+        return task
+    
+    def wait_for_drive_export(
+        self,
+        task,
+        poll_interval_sec: int = 20,
+        timeout_minutes: int = 180,
+    ):  
+        """
+        Wait until an Earth Engine Drive export completes.
+
+        Raises
+        ------
+        RuntimeError
+            If export fails, is cancelled, or times out.
+        """
+
+        deadline = (
+            datetime.datetime.utcnow()
+            + datetime.timedelta(minutes=timeout_minutes)
+        )
+
+        logger.info(
+            "Waiting for Google Drive export",
+            task_id=task.id,
+        )
+
+        while True:
+
+            status = task.status()
+
+            state = status.get("state")
+
+            if state == "COMPLETED":
+
+                logger.info(
+                    "Drive export completed",
+                    task_id=task.id,
+                )
+
+                return status
+
+            if state == "FAILED":
+
+                raise RuntimeError(
+                    f"Drive export failed: "
+                    f"{status.get('error_message', 'Unknown error')}"
+                )
+
+            if state == "CANCELLED":
+
+                raise RuntimeError(
+                    "Drive export cancelled."
+                )
+
+            if datetime.datetime.utcnow() > deadline:
+
+                try:
+                    task.cancel()
+                except Exception:
+                    pass
+
+                raise TimeoutError(
+                    f"Drive export timed out after "
+                    f"{timeout_minutes} minutes."
+                )
+
+            logger.info(
+                "Drive export running",
+                task_id=task.id,
+                state=state,
+            )
+
+            time.sleep(poll_interval_sec)
+    def cancel_drive_export(self, task):
+        """
+        Cancel a running Earth Engine Drive export.
+        """
+
+        try:
+            task.cancel()
+
+            logger.info(
+                "Drive export cancelled",
+                task_id=task.id,
+            )
+
+        except Exception as exc:
+
+            logger.warning(
+                "Unable to cancel Drive export",
+                task_id=task.id,
+                error=str(exc),
+            )
+        
+    def export_full_lake_to_drive(
+        self,
+        composite: Any,
+        aoi: Any,
+        lake_id: int,
+        year: int,
+    ):
+        """
+        Convenience wrapper.
+
+        Starts a Drive export and blocks until it finishes.
+        """
+
+        task = self.export_to_drive(
+            composite=composite,
+            aoi=aoi,
+            lake_id=lake_id,
+            year=year,
+            folder=self._cfg.drive_folder,
+            scale=self._cfg.scale_metres,
+        )
+
+        self.wait_for_drive_export(
+            task,
+            poll_interval_sec=self._cfg.drive_poll_interval_sec,
+            timeout_minutes=self._cfg.drive_timeout_min,
+        )
+
+        return {
+            "status": "completed",
+            "task_id": task.id,
+            "drive_folder": self._cfg.drive_folder,
+            "filename": f"lake_{lake_id:06d}.tif",
+        }
+# start_drive_export()

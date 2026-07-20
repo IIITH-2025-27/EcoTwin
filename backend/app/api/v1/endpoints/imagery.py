@@ -1,10 +1,13 @@
 """
-Lake imagery download endpoints.
+Lake imagery download and merge endpoints.
 
-POST /imagery/fetch     — start downloading Sentinel-2 composites (background task)
-GET  /imagery/status    — poll download progress
-POST /imagery/cancel    — cancel a running download
+POST /imagery/fetch         — start downloading Sentinel-2 composites (background task)
+GET  /imagery/status        — poll download progress
+POST /imagery/cancel        — cancel a running download
 GET  /imagery/lakes/{lake_id} — per-lake download status (with tile details)
+GET  /imagery/merge/options  — available years for merging
+POST /imagery/merge          — start merging tiles (background task)
+GET  /imagery/merge/status   — poll merge progress
 """
 
 from __future__ import annotations
@@ -21,6 +24,11 @@ from app.image_acquisition.pipeline import (
     get_imagery_progress,
     run_imagery_pipeline,
 )
+from app.image_acquisition.merge_pipeline import (
+    get_merge_progress,
+    get_mergeable_years,
+    run_merge_pipeline,
+)
 from app.models.lake_image import LakeImage
 from app.models.lake_tile import LakeTile
 from app.schemas.imagery import (
@@ -30,6 +38,11 @@ from app.schemas.imagery import (
     LakeImageRecord,
     LakeImageStatusResponse,
     LakeTileRecord,
+    MergeOptionsResponse,
+    MergeProgressResponse,
+    MergeTilesRequest,
+    MergeTilesResponse,
+    MergeYearOption,
 )
 
 router = APIRouter(tags=["Imagery"])
@@ -159,3 +172,75 @@ async def get_lake_image_status(
         images=images,
         tiles=tiles,
     )
+
+
+# ── Merge endpoints ──────────────────────────────────────────────────────
+
+
+@router.get("/merge/options", response_model=MergeOptionsResponse)
+async def merge_options() -> MergeOptionsResponse:
+    """Return years that have completed tiles available for merging."""
+    years_data, data_root = get_mergeable_years()
+    return MergeOptionsResponse(
+        years=[
+            MergeYearOption(
+                year=y["year"],
+                lake_count=y["lake_count"],
+                output_path_pattern=y["output_path_pattern"],
+            )
+            for y in years_data
+        ],
+        data_root=data_root,
+    )
+
+
+@router.post("/merge", response_model=MergeTilesResponse)
+async def merge_tiles(
+    body: MergeTilesRequest,
+    background_tasks: BackgroundTasks,
+) -> MergeTilesResponse:
+    """
+    Start merging downloaded tiles for all active lakes.
+
+    Runs as a background task.  Poll ``GET /imagery/merge/status`` for progress.
+    """
+    current = get_merge_progress()
+    if current["status"] == "running":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="A merge is already in progress. Wait for it to complete.",
+        )
+
+    logger.info(
+        "Merge request received",
+        years=body.years,
+        delete_tiles=body.delete_tiles,
+    )
+
+    try:
+        background_tasks.add_task(
+            run_merge_pipeline,
+            years=body.years,
+            delete_tiles=body.delete_tiles,
+        )
+    except Exception as exc:
+        logger.error("Failed to start merge pipeline", error=str(exc))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(exc),
+        ) from exc
+
+    return MergeTilesResponse(
+        status="queued",
+        message=(
+            "Tile merge started in the background. "
+            "Poll /imagery/merge/status for real-time progress."
+        ),
+    )
+
+
+@router.get("/merge/status", response_model=MergeProgressResponse)
+async def merge_status() -> MergeProgressResponse:
+    """Return the real-time progress of the merge pipeline."""
+    progress = get_merge_progress()
+    return MergeProgressResponse(**progress)

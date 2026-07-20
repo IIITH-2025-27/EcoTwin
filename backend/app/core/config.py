@@ -84,15 +84,21 @@ class Settings(BaseSettings):
     # ── Image Acquisition Pipeline ────────────────────────────────
     SENTINEL_DATA_DIR: str = "data/sentinel"
     LAKE_IMAGERY_BUFFER_METRES: int = 1_200
-    IMAGERY_MAX_RETRIES: int = 3
-    IMAGERY_RETRY_DELAY_SEC: float = 5.0
-    IMAGERY_RETRY_BACKOFF: float = 2.0
+    IMAGERY_MAX_RETRIES: int = 1
+    IMAGERY_RETRY_DELAY_SEC: float = 2.0
+    IMAGERY_RETRY_BACKOFF: float = 1.0
     IMAGERY_DOWNLOAD_TIMEOUT_SEC: int = 600
     IMAGERY_BATCH_SIZE: int = 10
     IMAGERY_TILE_SIZE_METRES: int = 8_500  # 9 km × 9 km tile grid
-    IMAGERY_DOWNLOAD_WORKERS: int = 4
+    IMAGERY_DOWNLOAD_WORKERS: int = 2
     IMAGERY_LAKE_WORKERS: int = 4
-    
+
+    IMAGE_ACQUISITION_MODE: str = "tile"
+    # tile | drive
+    GEE_DRIVE_FOLDER: str = "EcoTwin"
+    GEE_DRIVE_POLL_INTERVAL_SEC: int = 20
+    GEE_DRIVE_TIMEOUT_MIN: int = 180
+    USE_GEE_SERVICE_ACCOUNT: bool = True
 
     # ── Embedding Pipeline ────────────────────────────────────────
     EMBEDDING_GPU_BATCH_SIZE: int = 8

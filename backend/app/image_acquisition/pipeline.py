@@ -205,7 +205,7 @@ def run_imagery_pipeline(
                     # _on_lake_start(lake_id, year)
 
                     future = executor.submit(
-                        downloader.download_lake_tiles,
+                        downloader.download_lake,
                         lake_id,
                         year,
                         cancel_check=is_imagery_cancelled,

@@ -94,6 +94,7 @@ class LakeImageRecord(BaseModel):
     retry_count: int = 0
 
 
+
 class LakeImageStatusResponse(BaseModel):
     """Download status for a single lake's images, including tile details."""
 
@@ -102,5 +103,71 @@ class LakeImageStatusResponse(BaseModel):
     tiles: List[LakeTileRecord] = Field(default_factory=list)
 
 
+# ── Merge Tiles schemas ──────────────────────────────────────────────────
+
+
+class MergeTilesRequest(BaseModel):
+    """Request body for POST /imagery/merge."""
+
+    years: List[int] = Field(
+        ...,
+        min_length=1,
+        description="Years whose completed tiles should be merged.",
+    )
+    delete_tiles: bool = Field(
+        default=False,
+        description="Delete individual tile GeoTIFFs after a successful merge.",
+    )
+
+    @field_validator("years", mode="before")
+    @classmethod
+    def _validate_years(cls, v: list) -> list:
+        for y in v:
+            if not (PIPELINE_YEAR_START <= y <= PIPELINE_YEAR_END):
+                raise ValueError(
+                    f"Year {y} is out of range "
+                    f"[{PIPELINE_YEAR_START}, {PIPELINE_YEAR_END}]."
+                )
+        return sorted(set(v))
+
+
+class MergeTilesResponse(BaseModel):
+    """Returned immediately after triggering the merge pipeline."""
+
+    status: Literal["queued", "failed"]
+    message: str
+
+
+class MergeProgressResponse(BaseModel):
+    """Real-time progress of the running (or last completed) merge."""
+
+    status: Literal["idle", "running", "done", "failed"]
+    total: int = 0
+    processed: int = 0
+    success: int = 0
+    failed: int = 0
+    current_lake_id: Optional[int] = None
+    current_year: Optional[int] = None
+    errors: List[str] = Field(default_factory=list)
+
+
+class MergeYearOption(BaseModel):
+    """A single year available for merging."""
+
+    year: int
+    lake_count: int
+    output_path_pattern: str = Field(
+        description="Example output path pattern for this year.",
+    )
+
+
+class MergeOptionsResponse(BaseModel):
+    """Available years with completed tiles that can be merged."""
+
+    years: List[MergeYearOption]
+    data_root: str = Field(description="Base data directory for merged files.")
+
+
 # Fix forward references
 LakeImageStatusResponse.model_rebuild()
+

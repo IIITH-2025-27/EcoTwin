@@ -8,6 +8,7 @@ including the tile-based grid partitioning for large lakes.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
 
 from app.ML_pipeline.constants import (
@@ -18,6 +19,13 @@ from app.ML_pipeline.constants import (
     S2_BANDS_PRITHVI,
 )
 from app.core.config import settings
+
+
+class AcquisitionMode(str, Enum):
+    """Supported image-acquisition strategies."""
+
+    TILE = "tile"
+    DRIVE = "drive"
 
 
 @dataclass(frozen=True)
@@ -41,6 +49,10 @@ class ImageAcquisitionConfig:
     tile_size_m: int
     download_workers: int
     lake_workers: int
+    mode: AcquisitionMode
+    drive_folder: str
+    drive_poll_interval_sec: int
+    drive_timeout_min: int
 
     # ── Lake-level paths (legacy — retained for backward compat) ──────────
 
@@ -86,4 +98,8 @@ def get_image_acquisition_config() -> ImageAcquisitionConfig:
         tile_size_m=settings.IMAGERY_TILE_SIZE_METRES,
         download_workers=settings.IMAGERY_DOWNLOAD_WORKERS,
         lake_workers=settings.IMAGERY_LAKE_WORKERS,
+        mode=AcquisitionMode(settings.IMAGE_ACQUISITION_MODE),
+        drive_folder=settings.GEE_DRIVE_FOLDER,
+        drive_poll_interval_sec=settings.GEE_DRIVE_POLL_INTERVAL_SEC,
+        drive_timeout_min=settings.GEE_DRIVE_TIMEOUT_MIN,
     )

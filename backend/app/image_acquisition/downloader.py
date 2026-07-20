@@ -31,7 +31,7 @@ from sqlalchemy.orm import Session as SyncSession
 from sqlalchemy.orm import sessionmaker
 
 from app.core.config import settings
-from app.image_acquisition.config import ImageAcquisitionConfig
+from app.image_acquisition.config import AcquisitionMode, ImageAcquisitionConfig
 from app.image_acquisition.gee_helper import SentinelCompositeBuilder
 from app.image_acquisition.grid import TileInfo, generate_tile_grid
 from app.models.lake import Lake
@@ -68,6 +68,50 @@ class LakeImageDownloader:
         if self._gee is None:
             self._gee = SentinelCompositeBuilder(self._cfg)
         return self._gee
+
+    # ── Mode-aware dispatcher ─────────────────────────────────────────────
+
+    def download_lake(
+        self,
+        lake_id: int,
+        year: int,
+        *,
+        cancel_check: Optional[Callable] = None,
+        tile_callback: Optional[Callable] = None,
+    ) -> str:
+        """
+        Download imagery for one lake / one year using the configured mode.
+
+        Dispatches to :meth:`download_lake_tiles` (tile-by-tile via
+        ``getDownloadURL``) or :meth:`download_lake_drive`
+        (``Export.image.toDrive``) depending on
+        ``self._cfg.mode``.
+
+        Args:
+            lake_id: HydroLAKES lake ID.
+            year: Target year.
+            cancel_check: Returns ``True`` to abort.
+            tile_callback: Called after each tile *(tile mode only)*.
+
+        Returns:
+            ``"completed"``, ``"skipped"``, or ``"failed"``.
+        """
+        if self._cfg.mode == AcquisitionMode.TILE:
+            return self.download_lake_tiles(
+                lake_id,
+                year,
+                cancel_check=cancel_check,
+                tile_callback=tile_callback,
+            )
+
+        if self._cfg.mode == AcquisitionMode.DRIVE:
+            return self.download_lake_drive(
+                lake_id,
+                year,
+                cancel_check=cancel_check,
+            )
+
+        raise ValueError(f"Unsupported acquisition mode: {self._cfg.mode!r}")
 
     # ── Single-lake tile pipeline ─────────────────────────────────────────
 
@@ -298,6 +342,117 @@ class LakeImageDownloader:
             )
             return "failed"
 
+    # ── Single-lake Drive pipeline ────────────────────────────────────────
+
+    def download_lake_drive(
+        self,
+        lake_id: int,
+        year: int,
+        *,
+        cancel_check: Optional[Callable] = None,
+    ) -> str:
+        """
+        Full Drive-export pipeline for one lake / one year.
+
+        Pipeline:
+          1. Read lake polygon from PostGIS.
+          2. Buffer in projected CRS.
+          3. Build Sentinel-2 composite via Earth Engine.
+          4. ``Export.image.toDrive()`` (no tile grid, no local download).
+          5. Wait until the export completes.
+          6. Upsert ``lake_images`` with a ``drive://`` path.
+
+        Args:
+            lake_id: The HydroLAKES lake ID.
+            year: The target year.
+            cancel_check: Returns ``True`` to abort.
+
+        Returns:
+            ``"completed"`` or ``"failed"``.
+        """
+        log = logger.bind(lake_id=lake_id, year=year, mode="drive")
+
+        try:
+            # 1. Read lake polygon
+            log.info("Step 1: Reading lake polygon from PostGIS")
+            geom_4326 = self._read_lake_polygon(lake_id)
+            if geom_4326 is None:
+                raise ValueError(f"Lake {lake_id} has no geometry in PostGIS")
+
+            if cancel_check and cancel_check():
+                return "failed"
+
+            # 2. Buffer
+            log.info(
+                "Step 2: Projecting → buffering → reprojecting",
+                buffer_m=self._cfg.buffer_distance_m,
+            )
+            buffered_geom = self._buffer_polygon(geom_4326)
+
+            # 3. Build composite over the full buffered extent
+            full_bbox = buffered_geom.bounds  # (minx, miny, maxx, maxy)
+            log.info(
+                "Step 3: Building Sentinel-2 composite via GEE",
+                west=full_bbox[0],
+                south=full_bbox[1],
+                east=full_bbox[2],
+                north=full_bbox[3],
+            )
+            full_aoi = self.gee.build_aoi_from_bbox(*full_bbox)
+            composite = self.gee.build_composite(full_aoi, year)
+
+            if cancel_check and cancel_check():
+                return "failed"
+
+            # 4. Mark as DOWNLOADING
+            drive_path = (
+                f"drive://{self._cfg.drive_folder}/{year}/lake_{lake_id:06d}"
+            )
+            self._upsert_lake_image_status(
+                lake_id,
+                year,
+                "downloading",
+                file_path=drive_path,
+            )
+
+            # 5. Export to Drive and wait
+            log.info(
+                "Step 4-5: Exporting to Google Drive and waiting",
+                folder=self._cfg.drive_folder,
+            )
+            result = self.gee.export_full_lake_to_drive(
+                composite=composite,
+                aoi=full_aoi,
+                lake_id=lake_id,
+                year=year,
+            )
+
+            # 6. Update lake_images → COMPLETED
+            self._upsert_lake_image_status(
+                lake_id,
+                year,
+                "completed",
+                file_path=drive_path,
+            )
+
+            log.info(
+                "✓ Drive export completed",
+                drive_path=drive_path,
+                task_id=result.get("task_id"),
+            )
+            return "completed"
+
+        except Exception as exc:
+            error_msg = str(exc)[:500]
+            log.error("✗ Drive export failed", error=error_msg)
+            self._upsert_lake_image_status(
+                lake_id,
+                year,
+                "failed",
+                error_message=error_msg,
+            )
+            return "failed"
+
     # ── Batch pipeline ────────────────────────────────────────────────────
 
     def download_batch(
@@ -347,7 +502,7 @@ class LakeImageDownloader:
                         "cancelled": True,
                     }
 
-                result = self.download_lake_tiles(
+                result = self.download_lake(
                     lake_id,
                     year,
                     cancel_check=cancel_check,
