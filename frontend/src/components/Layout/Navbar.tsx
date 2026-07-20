@@ -110,7 +110,7 @@ export default function Navbar() {
           className="flex items-center gap-1.5 rounded-lg border border-primary-600/40 bg-primary-600/15 px-3 py-1.5
                      text-xs font-medium text-primary-300 hover:bg-primary-600/25 hover:text-primary-200
                      transition-colors"
-          title="Sync satellite data from Google Earth Engine"
+          title="Generate embeddings from locally merged lake images"
         >
           <RefreshCw className="h-3.5 w-3.5" />
           <span className="hidden sm:inline">Sync Data</span>

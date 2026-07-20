@@ -1,10 +1,9 @@
 """
-1 km × 1 km grid generator for lake GeoTIFFs.
+1 km × 1 km grid generator for lake boundaries.
 
-Produces a list of valid grid cells that overlap the lake polygon above
-a configurable coverage threshold.  Cell geometry and rasterio read
-windows are computed so the cell extractor can crop directly from the
-GeoTIFF without creating temporary files.
+Produces valid grid cells from the original lake polygon geometry above
+a configurable coverage threshold. Raster windows are derived afterward
+only to extract imagery for those valid cells.
 """
 
 from __future__ import annotations
@@ -49,10 +48,11 @@ class GridGenerator:
         lake_polygon_4326,
     ) -> List[GridCell]:
         """
-        Generate grid cells covering the GeoTIFF extent, filter by lake coverage.
+        Generate grid cells from the lake boundary, filter by lake coverage.
 
         Args:
-            geotiff_path:      Path to the buffered GeoTIFF on disk.
+            geotiff_path:      Path to the merged GeoTIFF on disk (used only for
+                               pixel-window mapping / extraction).
             lake_polygon_4326: Shapely geometry of the lake polygon (EPSG:4326).
 
         Returns:
@@ -64,7 +64,6 @@ class GridGenerator:
         log.info("Grid generation started")
 
         with rasterio.open(geotiff_path) as src:
-            tiff_bounds = src.bounds  # (left, bottom, right, top)
             tiff_crs = src.crs
             tiff_transform = src.transform
             tiff_width = src.width
@@ -73,7 +72,6 @@ class GridGenerator:
         log.info(
             "GeoTIFF metadata",
             crs=str(tiff_crs),
-            bounds=tiff_bounds,
             width=tiff_width,
             height=tiff_height,
         )
@@ -82,25 +80,22 @@ class GridGenerator:
         cell_size = self._cfg.cell_size_m
         min_cov = self._cfg.min_coverage_pct
 
-        # ── Transform GeoTIFF bounds to projected CRS ────────────────────
-        # GeoTIFFs are typically in EPSG:4326 from GEE export
-        to_proj = Transformer.from_crs(
-            tiff_crs.to_epsg() or 4326, proj_crs, always_xy=True
-        ).transform
-        from_proj = Transformer.from_crs(
-            proj_crs, 4326, always_xy=True
-        ).transform
-
-        # Transform the four corners to get projected extent
-        proj_minx, proj_miny = to_proj(tiff_bounds.left, tiff_bounds.bottom)
-        proj_maxx, proj_maxy = to_proj(tiff_bounds.right, tiff_bounds.top)
-
-        # Ensure correct ordering
-        proj_minx, proj_maxx = min(proj_minx, proj_maxx), max(proj_minx, proj_maxx)
-        proj_miny, proj_maxy = min(proj_miny, proj_maxy), max(proj_miny, proj_maxy)
-
         # ── Transform lake polygon to projected CRS ──────────────────────
+        to_proj = Transformer.from_crs(4326, proj_crs, always_xy=True).transform
+        from_proj = Transformer.from_crs(proj_crs, 4326, always_xy=True).transform
+
         lake_proj = transform(to_proj, lake_polygon_4326)
+
+        # Build a stable 1km grid from the original lake boundary extent.
+        # This ensures cell formation is boundary-driven, not image-driven.
+        lake_minx, lake_miny, lake_maxx, lake_maxy = lake_proj.bounds
+        proj_minx = np.floor(lake_minx / cell_size) * cell_size
+        proj_miny = np.floor(lake_miny / cell_size) * cell_size
+        proj_maxx = np.ceil(lake_maxx / cell_size) * cell_size
+        proj_maxy = np.ceil(lake_maxy / cell_size) * cell_size
+
+        # CRS transform from geographic cell bounds to the raster's native CRS.
+        to_tiff_crs = Transformer.from_crs(4326, tiff_crs, always_xy=True).transform
 
         # ── Generate grid cells ──────────────────────────────────────────
         cols = int(np.ceil((proj_maxx - proj_minx) / cell_size))
@@ -116,7 +111,7 @@ class GridGenerator:
         )
 
         valid_cells: List[GridCell] = []
-        cell_number = 0
+        valid_cell_number = 1
 
         for row in range(rows):
             for col in range(cols):
@@ -130,14 +125,12 @@ class GridGenerator:
 
                 # Compute intersection with lake polygon
                 if not cell_box_proj.intersects(lake_proj):
-                    cell_number += 1
                     continue
 
                 intersection = cell_box_proj.intersection(lake_proj)
                 coverage = (intersection.area / cell_box_proj.area) * 100.0
 
                 if coverage < min_cov:
-                    cell_number += 1
                     continue
 
                 # Convert cell bounds back to EPSG:4326
@@ -150,15 +143,15 @@ class GridGenerator:
                 pixel_window = self._compute_pixel_window(
                     tiff_transform, tiff_width, tiff_height,
                     lon_min, lat_min, lon_max, lat_max,
+                    to_tiff_crs,
                 )
 
                 if pixel_window is None:
-                    cell_number += 1
                     continue
 
                 valid_cells.append(
                     GridCell(
-                        cell_number=cell_number,
+                        cell_number=valid_cell_number,
                         bounds_projected=(cx_min, cy_min, cx_max, cy_max),
                         bounds_4326=(lon_min, lat_min, lon_max, lat_max),
                         center_lat=center_lat,
@@ -167,7 +160,7 @@ class GridGenerator:
                         pixel_window=pixel_window,
                     )
                 )
-                cell_number += 1
+                valid_cell_number += 1
 
         log.info(
             "Grid generation completed",
@@ -186,6 +179,7 @@ class GridGenerator:
         lat_min: float,
         lon_max: float,
         lat_max: float,
+        to_tiff_crs,
     ) -> Optional[Tuple[int, int, int, int]]:
         """
         Convert geographic bounds to pixel coordinates (col_off, row_off, width, height).
@@ -194,9 +188,13 @@ class GridGenerator:
         """
         from rasterio.transform import rowcol  # noqa: PLC0415
 
-        # rasterio rowcol: (transform, ys, xs) → (rows, cols)
-        row_min, col_min = rowcol(tiff_transform, lon_min, lat_max)
-        row_max, col_max = rowcol(tiff_transform, lon_max, lat_min)
+        # Convert geographic bounds to raster CRS coordinates first.
+        x_min, y_min = to_tiff_crs(lon_min, lat_min)
+        x_max, y_max = to_tiff_crs(lon_max, lat_max)
+
+        # rasterio rowcol: (transform, xs, ys) -> (rows, cols)
+        row_min, col_min = rowcol(tiff_transform, x_min, y_max)
+        row_max, col_max = rowcol(tiff_transform, x_max, y_min)
 
         # Ensure correct ordering
         row_min, row_max = min(row_min, row_max), max(row_min, row_max)

@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 
 from geoalchemy2 import Geometry
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import BigInteger, Column, DateTime, Float, ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy import BigInteger, Column, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
@@ -26,6 +26,10 @@ class SubRegion(Base):
     center_lon = Column(Float, nullable=False)
     geom = Column(Geometry("POLYGON", srid=4326), nullable=False)
     embedding = Column(Vector(EMBEDDING_DIM), nullable=True)
+    status = Column(
+        String(20), nullable=False, default="pending", server_default="pending"
+    )
+    error_message = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at = Column(
         DateTime(timezone=True),
@@ -72,6 +76,10 @@ class SubRegionFeature(Base):
     nbr_max = Column(Float)
     dominant_ecosystem = Column(String(100))
     ecosystem_confidence = Column(Float, nullable=True)
+    status = Column(
+        String(20), nullable=False, default="pending", server_default="pending"
+    )
+    error_message = Column(Text, nullable=True)
 
     sub_region = relationship("SubRegion", back_populates="features")
 

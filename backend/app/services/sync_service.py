@@ -910,19 +910,26 @@ def start_sync(request: SyncRequest, job_id: str | None = None) -> SyncJobRespon
             skipped_regions += 1
             log.warning("Could not prepare selected region", error=str(exc))
 
-    from app.ML_pipeline.pipeline import run_full_pipeline  # noqa: PLC0415
+    from app.embedding_pipeline.pipeline import run_embedding_pipeline  # noqa: PLC0415
 
-    # Build deduplicated list of (sub_region_id, lake_label, center_lat, center_lon, geom_wkt, years)
-    # so we process one lake at a time across all its years
-    lake_lookup: dict[str, dict] = {}
-    lake_year_map: dict[str, list[int]] = {}
+    # ── Collect unique lake IDs and years from the generated sub-regions ───
+    lake_ids_set: set[int] = set()
+    unique_years: set[int] = set()
     for lake in region_jobs:
-        key = lake.get("sub_region_id") or lake["region_id"]
-        lake_lookup[key] = lake
-        job_years = [lake["year"]] if request.source_type == SyncSource.HYDROLAKES else years
-        lake_year_map.setdefault(key, []).extend(job_years)
+        lake_id_val = lake.get("lake_id")
+        if lake_id_val is not None:
+            lake_ids_set.add(int(lake_id_val))
+        year_val = lake.get("year")
+        if year_val is not None:
+            unique_years.add(int(year_val))
 
-    total_lake_year_pairs = sum(len(yrs) for yrs in lake_year_map.values())
+    # Fall back to the request years when region_jobs don't carry a year
+    if not unique_years:
+        unique_years = set(years)
+
+    sorted_lake_ids = sorted(lake_ids_set)
+    sorted_years = sorted(unique_years)
+    total_lake_year_pairs = len(sorted_lake_ids) * len(sorted_years)
 
     # ── Initialise global progress ────────────────────────────────────────────
     with _SYNC_LOCK:
@@ -937,49 +944,46 @@ def start_sync(request: SyncRequest, job_id: str | None = None) -> SyncJobRespon
             "errors": [],
         })
 
+    # ── Run the local embedding pipeline ──────────────────────────────────────
+    # The embedding pipeline handles: GeoTIFF lookup from lake_images,
+    # grid generation, cell extraction, GPU-batched Prithvi inference,
+    # and per-cell storage (sub_regions / sub_region_features). It respects
+    # sync cancellation
+    # via check_sync_cancel=True.
     tasks_dispatched = 0
-    for region_id, region_years in lake_year_map.items():
-        if _is_sync_cancelled(job_id):
-            break
+    try:
+        emb_result = run_embedding_pipeline(
+            lake_ids=sorted_lake_ids if sorted_lake_ids else None,
+            years=sorted_years if sorted_years else None,
+            check_sync_cancel=True,
+        )
+        tasks_dispatched = emb_result.get("success", 0) + emb_result.get("failed", 0)
 
-        lake = lake_lookup[region_id]
-        lake_label = lake.get("lake_id") or lake.get("hydrolake_id") or region_id
+        # Bridge embedding pipeline results to sync progress
+        with _SYNC_LOCK:
+            _SYNC_PROGRESS["success"] = emb_result.get("success", 0)
+            _SYNC_PROGRESS["failed"] = emb_result.get("failed", 0)
+            _SYNC_PROGRESS["processed"] = (
+                emb_result.get("success", 0)
+                + emb_result.get("failed", 0)
+                + emb_result.get("skipped", 0)
+            )
+            if emb_result.get("cancelled"):
+                _SYNC_PROGRESS["status"] = "cancelled"
 
-        for year in region_years:
-            if _is_sync_cancelled(job_id):
-                break
-            # Mark this lake/year as currently running
-            with _SYNC_LOCK:
-                _SYNC_PROGRESS["current_lake"] = str(lake_label)
-                _SYNC_PROGRESS["current_year"] = year
-
-            try:
-                run_full_pipeline(
-                    region_id,
-                    lake["center_lat"],
-                    lake["center_lon"],
-                    year,
-                    lake.get("geom_wkt"),
-                )
-                with _SYNC_LOCK:
-                    _SYNC_PROGRESS["success"] += 1
-                    _SYNC_PROGRESS["processed"] += 1
-                tasks_dispatched += 1
-            except Exception as exc:
-                if _is_sync_cancelled(job_id):
-                    break
-                err_msg = f"Lake {lake_label} / {year}: {exc}"
-                log.warning("Pipeline failed", lake_id=lake_label, year=year, error=str(exc))
-                with _SYNC_LOCK:
-                    _SYNC_PROGRESS["failed"] += 1
-                    _SYNC_PROGRESS["processed"] += 1
-                    _SYNC_PROGRESS["errors"].append(err_msg)
+    except Exception as exc:
+        err_msg = f"Embedding pipeline error: {exc}"
+        log.error("Embedding pipeline failed", error=str(exc))
+        with _SYNC_LOCK:
+            _SYNC_PROGRESS["errors"].append(err_msg)
+            _SYNC_PROGRESS["failed"] += 1
+            _SYNC_PROGRESS["processed"] += 1
 
     # ── Mark done or cancelled ─────────────────────────────────────────────
     with _SYNC_LOCK:
         if _is_sync_cancelled(job_id):
             _SYNC_PROGRESS["status"] = "cancelled"
-        else:
+        elif _SYNC_PROGRESS["status"] != "cancelled":
             _SYNC_PROGRESS["status"] = "done"
         _SYNC_PROGRESS["current_lake"] = None
         _SYNC_PROGRESS["current_year"] = None
@@ -1001,7 +1005,7 @@ def start_sync(request: SyncRequest, job_id: str | None = None) -> SyncJobRespon
         status=status,
         source_type=request.source_type,
         country=request.country,
-        region_ids=[lake.get("sub_region_id") or lake["region_id"] for lake in region_jobs],
+        region_ids=[lake.get("sub_region_id") or lake.get("lake_id", "") for lake in region_jobs],
         years=years,
         sync_mode=request.sync_mode,
         tasks_dispatched=tasks_dispatched,
@@ -1011,9 +1015,9 @@ def start_sync(request: SyncRequest, job_id: str | None = None) -> SyncJobRespon
         skipped_regions=skipped_regions,
         backup_path=backup_path,
         message=(
-            f"Created and processed {len(region_jobs)} valid lake sub-region(s) for {request.country}."
+            f"Created {len(region_jobs)} valid sub-region(s) and generated embeddings for {request.country}."
             if request.source_type == SyncSource.HYDROLAKES
-            else f"Processed embeddings for {len(region_jobs)} stored region(s)."
+            else f"Generated embeddings for {len(region_jobs)} stored region(s)."
         ),
     )
 
