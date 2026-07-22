@@ -15,7 +15,7 @@ interface FetchImagesModalProps {
   onClose: () => void;
 }
 
-const CURRENT_YEAR = new Date().getFullYear();
+const CURRENT_YEAR = 2025;
 const YEAR_OPTIONS = Array.from({ length: 10 }, (_, i) => CURRENT_YEAR - i);
 
 export default function FetchImagesModal({ onClose }: FetchImagesModalProps) {
