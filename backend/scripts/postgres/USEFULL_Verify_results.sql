@@ -40,7 +40,8 @@ BEGIN
         ('lake_images_FAILED'),
         ('lake_images_MERGED'),
         ('sub_regions_completed'),
-		('sub_regions_failed');
+		('sub_regions_failed'),
+        ('sub_regions_lake_count');
 
     FOR i IN 1..array_length(p_years,1)
     LOOP
@@ -122,24 +123,36 @@ BEGIN
              )
              WHERE table_name=''sub_regions_failed'';',
             p_years[i]);
+        EXECUTE format(
+            'UPDATE tmp_verify_counts
+             SET "%1$s" = (
+                 SELECT COUNT(DISTINCT lake_id)
+                 FROM sub_regions
+                 WHERE year=%1$s
+                   AND status=''completed''
+                   AND embedding IS NOT NULL
+             )
+             WHERE table_name=''sub_regions_lake_count'';',
+            p_years[i]);
 
     END LOOP;
 
+
 	
--- lakes (same for all years)
-UPDATE tmp_verify_counts t
-SET
-    "2016" = (SELECT COUNT(*) FROM lakes WHERE is_active = TRUE),
-    "2017" = (SELECT COUNT(*) FROM lakes WHERE is_active = TRUE),
-    "2018" = (SELECT COUNT(*) FROM lakes WHERE is_active = TRUE),
-    "2019" = (SELECT COUNT(*) FROM lakes WHERE is_active = TRUE),
-    "2020" = (SELECT COUNT(*) FROM lakes WHERE is_active = TRUE),
-    "2021" = (SELECT COUNT(*) FROM lakes WHERE is_active = TRUE),
-    "2022" = (SELECT COUNT(*) FROM lakes WHERE is_active = TRUE),
-    "2023" = (SELECT COUNT(*) FROM lakes WHERE is_active = TRUE),
-    "2024" = (SELECT COUNT(*) FROM lakes WHERE is_active = TRUE),
-    "2025" = (SELECT COUNT(*) FROM lakes WHERE is_active = TRUE)
-WHERE t.table_name = 'lakes_Active';
+    -- lakes (same for all years)
+    UPDATE tmp_verify_counts t
+    SET
+        "2016" = (SELECT COUNT(*) FROM lakes WHERE is_active = TRUE),
+        "2017" = (SELECT COUNT(*) FROM lakes WHERE is_active = TRUE),
+        "2018" = (SELECT COUNT(*) FROM lakes WHERE is_active = TRUE),
+        "2019" = (SELECT COUNT(*) FROM lakes WHERE is_active = TRUE),
+        "2020" = (SELECT COUNT(*) FROM lakes WHERE is_active = TRUE),
+        "2021" = (SELECT COUNT(*) FROM lakes WHERE is_active = TRUE),
+        "2022" = (SELECT COUNT(*) FROM lakes WHERE is_active = TRUE),
+        "2023" = (SELECT COUNT(*) FROM lakes WHERE is_active = TRUE),
+        "2024" = (SELECT COUNT(*) FROM lakes WHERE is_active = TRUE),
+        "2025" = (SELECT COUNT(*) FROM lakes WHERE is_active = TRUE)
+    WHERE t.table_name = 'lakes_Active';
 
     RETURN QUERY
     SELECT t.*
