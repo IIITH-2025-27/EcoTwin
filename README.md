@@ -20,7 +20,15 @@ source .venv/bin/activate
 
 ## 2.1 RUN pgAdmin (Database)
 
-## 2.2 RUN Backend
+## 2.2 Install The requrements
+```bash
+cd backend
+pip install -r requirements.txt
+cd app/ML_models/Prithvi-EO-1.0-100M
+pip install -r requirements.txt
+```
+
+## 2.3 RUN Backend
 
 Start the API server
 
@@ -40,7 +48,12 @@ npm run dev
 ```
 
 ## USEFULL Commands
- ==> Remove All empty folders
+ 1) ==> Remove All empty folders , Run the below command from that specific folder location 
  ```
  find . -type d -empty -delete
+ ```
+
+ 2) ==> Kill the used port     
+ ```
+ sudo kill -9 $(sudo lsof -t -i:8000)
  ```
