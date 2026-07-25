@@ -103,7 +103,7 @@ export default function Navbar() {
           title="Merge downloaded tiles into single GeoTIFFs per lake"
         >
           <Layers className="h-3.5 w-3.5" />
-          <span className="hidden sm:inline">Merge Tiles</span>
+          <span className="hidden sm:inline">Merge Image Tiles</span>
         </button>
         <button
           onClick={() => setShowSync(true)}
