@@ -55,4 +55,4 @@ backend/data/sentinel/
 .venv/
 venv/
 backend/app/secrets/*.json
-backend/backup/*.dump
+backend/backups/*.dump
