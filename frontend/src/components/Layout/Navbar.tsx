@@ -113,7 +113,7 @@ export default function Navbar() {
           title="Generate embeddings from locally merged lake images"
         >
           <RefreshCw className="h-3.5 w-3.5" />
-          <span className="hidden sm:inline">Sync Data</span>
+          <span className="hidden sm:inline">Generate Embeddings</span>
         </button>
         <span className="hidden rounded-md bg-slate-700/40 px-2 py-0.5 font-mono text-xs text-slate-500 sm:inline">
           v1.0.0
