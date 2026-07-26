@@ -53,7 +53,9 @@ pg_restore \
   -h localhost \
   -U postgres \
   -d ecotwin_member1 \
-  member1.dump
+  ecotwin_ankit.dump
+
+# /usr/lib/postgresql/17/bin/pg_restore     -h localhost     -U postgres     -O -x     -d ecotwin_peeyush     ecotwin_peeyush.dum
 ```
 
 The temporary database now contains the teammate's data.
