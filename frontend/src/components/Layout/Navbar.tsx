@@ -6,6 +6,7 @@ import SyncModal from '@/components/SyncModal/SyncModal';
 import SyncLakesModal from '@/components/SyncModal/SyncLakesModal';
 import FetchImagesModal from '@/components/SyncModal/FetchImagesModal';
 import MergeTilesModal from '@/components/SyncModal/MergeTilesModal';
+import MergeEmbeddingsModal from '@/components/SyncModal/MergeEmbeddingsModal';
 
 export default function Navbar() {
   const { selectedRegionId, isSidebarCollapsed, toggleSidebar } = useMapStore();
@@ -14,6 +15,7 @@ export default function Navbar() {
   const [showLakesSync, setShowLakesSync] = useState(false);
   const [showFetchImages, setShowFetchImages] = useState(false);
   const [showMergeTiles, setShowMergeTiles] = useState(false);
+  const [showMergeEmbeddings, setShowMergeEmbeddings] = useState(false);
 
   return (
     <header className="flex h-14 items-center justify-between border-b border-slate-700/60 bg-surface-800/95 px-4 backdrop-blur-sm">
@@ -106,6 +108,16 @@ export default function Navbar() {
           <span className="hidden sm:inline">Merge Image Tiles</span>
         </button>
         <button
+          onClick={() => setShowMergeEmbeddings(true)}
+          className="flex items-center gap-1.5 rounded-lg border border-emerald-500/40 bg-emerald-500/15 px-3 py-1.5
+                     text-xs font-medium text-emerald-300 hover:bg-emerald-500/25 hover:text-emerald-200
+                     transition-colors"
+          title="Aggregate lake tile embeddings into final lake embeddings in the regions table"
+        >
+          <RefreshCw className="h-3.5 w-3.5" />
+          <span className="hidden sm:inline">Merge Embeddings</span>
+        </button>
+        <button
           onClick={() => setShowSync(true)}
           className="flex items-center gap-1.5 rounded-lg border border-primary-600/40 bg-primary-600/15 px-3 py-1.5
                      text-xs font-medium text-primary-300 hover:bg-primary-600/25 hover:text-primary-200
@@ -130,6 +142,7 @@ export default function Navbar() {
       {showLakesSync && <SyncLakesModal onClose={() => setShowLakesSync(false)} />}
       {showFetchImages && <FetchImagesModal onClose={() => setShowFetchImages(false)} />}
       {showMergeTiles && <MergeTilesModal onClose={() => setShowMergeTiles(false)} />}
+      {showMergeEmbeddings && <MergeEmbeddingsModal onClose={() => setShowMergeEmbeddings(false)} />}
     </header>
   );
 }

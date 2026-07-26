@@ -242,6 +242,134 @@ class EmbeddingStorage:
 
         return {row[0] for row in rows}
 
+    # ── Lake-level embedding aggregation ─────────────────────────────────
+
+    def fetch_cell_embeddings_for_lake(
+        self,
+        lake_id: int,
+        year: int,
+    ) -> list[tuple[np.ndarray, float]]:
+        """
+        Return ``[(embedding, coverage_percent), ...]`` for every completed
+        sub-region cell belonging to this lake/year.
+
+        Only rows with ``status = 'completed'`` and a non-NULL embedding are
+        returned.  If multiple sub-region cells share the same conceptual
+        tile, the caller can sum their coverage values to derive one
+        per-tile weight.
+        """
+        sql = text("""
+            SELECT embedding::text, coverage_percent
+            FROM sub_regions
+            WHERE lake_id = :lake_id
+              AND year    = :year
+              AND status  = 'completed'
+              AND embedding IS NOT NULL
+        """)
+
+        with self._Session() as session:
+            rows = session.execute(sql, {
+                "lake_id": lake_id,
+                "year": year,
+            }).fetchall()
+
+        results: list[tuple[np.ndarray, float]] = []
+        for raw_vec, cov in rows:
+            try:
+                # pgvector text representation: "[0.1,0.2,...]"
+                floats = [float(x) for x in raw_vec.strip("[]").split(",")]
+                arr = np.array(floats, dtype=np.float32)
+                if arr.shape == (PRITHVI_EMBEDDING_DIM,) and np.isfinite(arr).all():
+                    results.append((arr, float(cov)))
+            except Exception:
+                continue  # skip malformed rows
+
+        return results
+
+    def upsert_lake_embedding(
+        self,
+        lake_id: int,
+        year: int,
+        embedding: np.ndarray,
+        num_cells: int,
+        coverage_percent: float | None = None,
+    ) -> None:
+        """
+        Insert or update the aggregated lake-level embedding on the regions row.
+
+        The final lake embedding is stored directly on the matching regions row
+        so downstream region-based APIs can read it without a separate table.
+        """
+        if embedding.shape != (PRITHVI_EMBEDDING_DIM,):
+            raise ValueError(
+                f"Expected ({PRITHVI_EMBEDDING_DIM},), got {embedding.shape}"
+            )
+
+        vec_literal = "[" + ",".join(str(float(v)) for v in embedding) + "]"
+
+        sql = text("""
+            INSERT INTO regions (
+                region_id, hydrolake_id, name, country, lake_id, year,
+                embedding, coverage_percent, num_cells, status,
+                created_at, updated_at
+            ) VALUES (
+                gen_random_uuid(), :hydrolake_id, :name, :country,
+                :lake_id, :year,
+                CAST(:embedding AS vector),
+                :coverage_percent, :num_cells, 'completed',
+                NOW(), NOW()
+            )
+            ON CONFLICT (lake_id, year) DO UPDATE SET
+                hydrolake_id     = EXCLUDED.hydrolake_id,
+                name             = EXCLUDED.name,
+                country          = EXCLUDED.country,
+                embedding        = EXCLUDED.embedding,
+                coverage_percent = EXCLUDED.coverage_percent,
+                num_cells        = EXCLUDED.num_cells,
+                status           = 'completed',
+                updated_at       = NOW()
+        """)
+
+        with self._Session() as session:
+            lake_row = session.execute(
+                text("""
+                    SELECT lake_name, display_name, country
+                    FROM lakes
+                    WHERE lake_id = :lake_id
+                """),
+                {"lake_id": lake_id},
+            ).fetchone()
+
+            display_name = None
+            lake_name = None
+            country = "Unknown"
+            if lake_row is not None:
+                display_name = lake_row.display_name
+                lake_name = lake_row.lake_name
+                country = lake_row.country or "Unknown"
+
+            name = display_name or lake_name or f"Lake {lake_id}"
+            hydrolake_id = str(lake_id)
+
+            session.execute(sql, {
+                "hydrolake_id": hydrolake_id,
+                "name": name,
+                "country": country,
+                "lake_id": lake_id,
+                "year": year,
+                "embedding": vec_literal,
+                "coverage_percent": float(coverage_percent or 0.0),
+                "num_cells": num_cells,
+            })
+            session.commit()
+
+        logger.info(
+            "Lake embedding upserted into regions",
+            lake_id=lake_id,
+            year=year,
+            num_cells=num_cells,
+        )
+
     def dispose(self) -> None:
         """Dispose of the engine connection pool."""
         self._engine.dispose()

@@ -2,12 +2,15 @@ import uuid
 from datetime import datetime, timezone
 
 from geoalchemy2 import Geometry
-from sqlalchemy import Column, DateTime, Float, ForeignKey, Integer, String, UniqueConstraint
+from pgvector.sqlalchemy import Vector
+from sqlalchemy import BigInteger, Column, DateTime, Float, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
 from app.db.base import Base
+
+EMBEDDING_DIM = 768
 
 
 class Region(Base):
@@ -19,6 +22,17 @@ class Region(Base):
     country = Column(String(100), nullable=False, index=True)
     center_lat = Column(Float, nullable=False)
     center_lon = Column(Float, nullable=False)
+    lake_id = Column(
+        BigInteger,
+        ForeignKey("lakes.lake_id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    year = Column(Integer, nullable=True)
+    embedding = Column(Vector(EMBEDDING_DIM), nullable=True)
+    coverage_percent = Column(Float, nullable=True)
+    num_cells = Column(Integer, nullable=True)
+    status = Column(String(20), nullable=True, server_default="completed")
     area_sqkm = Column(Float, default=25.0)
     bbox = Column(JSONB, nullable=True)
     geom = Column(Geometry("MULTIPOLYGON", srid=4326), nullable=True)
@@ -43,6 +57,10 @@ class Region(Base):
     )
     reports = relationship(
         "Report", back_populates="region", cascade="all, delete-orphan"
+    )
+
+    __table_args__ = (
+        UniqueConstraint("lake_id", "year", name="uq_region_lake_year"),
     )
 
     def __repr__(self) -> str:

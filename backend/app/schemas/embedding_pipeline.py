@@ -56,6 +56,64 @@ class GenerateEmbeddingsResponse(BaseModel):
     message: str
 
 
+class MergeEmbeddingsRequest(BaseModel):
+    """Request body for POST /embeddings/merge."""
+
+    years: List[int] = Field(
+        ...,
+        min_length=1,
+        description="List of years to aggregate embeddings for.",
+    )
+    country: str = Field(
+        default="India",
+        description="Country to merge embeddings for. Currently India is supported.",
+    )
+    confirmed: bool = Field(
+        ...,
+        description="Must be true to start the merge operation.",
+    )
+
+    @field_validator("years", mode="before")
+    @classmethod
+    def _validate_years(cls, v: list) -> list:
+        for y in v:
+            if not (PIPELINE_YEAR_START <= y <= PIPELINE_YEAR_END):
+                raise ValueError(
+                    f"Year {y} is out of range "
+                    f"[{PIPELINE_YEAR_START}, {PIPELINE_YEAR_END}]."
+                )
+        return sorted(set(v))
+
+    @field_validator("country")
+    @classmethod
+    def _normalize_country(cls, v: str) -> str:
+        normalized = (v or "India").strip()
+        if not normalized:
+            return "India"
+        return normalized.title()
+
+    @field_validator("confirmed")
+    @classmethod
+    def _must_confirm(cls, v: bool) -> bool:
+        if not v:
+            raise ValueError("You must confirm to start embedding merge.")
+        return v
+
+
+class MergeEmbeddingsResponse(BaseModel):
+    """Returned immediately after triggering embedding aggregation."""
+
+    status: Literal["queued", "failed"]
+    message: str
+    total_tasks: int
+
+
+class AvailableEmbeddingYearsResponse(BaseModel):
+    """Years with completed embeddings available for a region."""
+
+    years: List[int]
+
+
 class EmbeddingProgressResponse(BaseModel):
     """Real-time progress of the running (or last completed) embedding pipeline."""
 

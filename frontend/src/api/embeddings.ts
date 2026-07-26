@@ -12,6 +12,18 @@ export interface GenerateEmbeddingsResponse {
   message: string;
 }
 
+export interface MergeEmbeddingsRequest {
+  years: number[];
+  country: string;
+  confirmed: true;
+}
+
+export interface MergeEmbeddingsResponse {
+  status: 'queued' | 'failed';
+  total_tasks: number;
+  message: string;
+}
+
 export type EmbeddingStatus = 'idle' | 'running' | 'done' | 'failed' | 'cancelled';
 
 export interface EmbeddingProgressResponse {
@@ -27,6 +39,10 @@ export interface EmbeddingProgressResponse {
   errors: string[];
 }
 
+export interface AvailableEmbeddingYearsResponse {
+  years: number[];
+}
+
 export async function startEmbeddingGeneration(
   request: GenerateEmbeddingsRequest,
 ): Promise<GenerateEmbeddingsResponse> {
@@ -36,6 +52,17 @@ export async function startEmbeddingGeneration(
 
 export async function getEmbeddingProgress(): Promise<EmbeddingProgressResponse> {
   const { data } = await apiClient.get<EmbeddingProgressResponse>('/embeddings/status');
+  return data;
+}
+
+export async function getAvailableEmbeddingYears(): Promise<number[]> {
+  const { data } = await apiClient.get<AvailableEmbeddingYearsResponse>('/embeddings/merge/options', {
+  });
+  return data.years;
+}
+
+export async function mergeEmbeddings(request: MergeEmbeddingsRequest): Promise<MergeEmbeddingsResponse> {
+  const { data } = await apiClient.post<MergeEmbeddingsResponse>('/embeddings/merge', request);
   return data;
 }
 

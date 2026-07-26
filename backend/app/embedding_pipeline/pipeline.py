@@ -25,11 +25,17 @@ from app.core.config import settings
 from app.embedding_pipeline.batch_inference import compute_embeddings_batch
 from app.embedding_pipeline.cell_extractor import CellExtractor
 from app.embedding_pipeline.config import (
+
     EmbeddingPipelineConfig,
     get_embedding_pipeline_config,
 )
 from app.embedding_pipeline.grid_generator import GridCell, GridGenerator
 from app.embedding_pipeline.storage import EmbeddingStorage
+from app.embedding_pipeline.lake_aggregator import (
+    aggregate_all_lake_embeddings as _batch_aggregate,
+    aggregate_single_lake_year as _single_aggregate,
+)
+from app.embedding_pipeline.weighted_pooling import weighted_mean_pool
 from app.models.lake import Lake
 from app.models.lake_image import LakeImage
 
@@ -307,6 +313,13 @@ def _process_single_lake(
             log.warning("No completed sub-region embeddings were stored")
             return "failed"
 
+        # ── 9. Aggregate cell embeddings into one lake-level embedding ───
+        _update_progress(current_step="aggregating_lake_embedding")
+        agg_result = _aggregate_lake_embedding(lake_id, year, storage, log)
+        if agg_result == "failed":
+            log.warning("Cell embeddings completed but lake-level aggregation failed")
+            # cell embeddings are still valid; report as completed
+
         log.info("✓ Embedding pipeline completed for lake")
         return "completed"
 
@@ -351,6 +364,40 @@ def _get_geotiff_path(
         backend_root = Path(__file__).resolve().parents[2]
         full_path = backend_root / row[0]
         return full_path if full_path.is_file() else None
+    finally:
+        engine.dispose()
+
+
+def _aggregate_lake_embedding(
+    lake_id: int,
+    year: int,
+    storage: EmbeddingStorage,
+    log,
+) -> str:
+    """
+    Fetch completed cell embeddings, compute coverage-weighted mean,
+    L2-normalise, and upsert into ``lake_embeddings``.
+
+    Delegates to :func:`lake_aggregator.aggregate_single_lake_year`.
+
+    Returns ``"completed"`` or ``"failed"``.
+    """
+    engine = _sync_engine()
+    Session = sessionmaker(bind=engine)
+    try:
+        with Session() as session:
+            result = _single_aggregate(session, lake_id, year)
+        if result.status == "success":
+            return "completed"
+        log.warning(
+            "Lake-level aggregation did not succeed",
+            status=result.status,
+            reason=result.reason,
+        )
+        return "failed"
+    except Exception as exc:
+        log.error("Lake-level aggregation failed", error=str(exc)[:300])
+        return "failed"
     finally:
         engine.dispose()
 
@@ -490,6 +537,29 @@ def run_embedding_pipeline(
         "skipped": skipped,
         "cancelled": False,
     }
+
+
+def aggregate_lake_embeddings(
+    lake_ids: Optional[List[int]] = None,
+    years: Optional[List[int]] = None,
+) -> Dict:
+    """
+    Batch-aggregate cell-level embeddings into lake-level embeddings.
+
+    Delegates to :func:`lake_aggregator.aggregate_all_lake_embeddings`
+    which handles discovery, aggregation, and detailed per-pair logging.
+
+    Args:
+        lake_ids: Specific lakes to process.  ``None`` = all lakes with
+                  completed cell embeddings.
+        years:    Specific years to process.  ``None`` = all years with
+                  completed cell embeddings.
+
+    Returns:
+        ``{"success": int, "failed": int, "skipped": int}``
+    """
+    batch_result = _batch_aggregate(lake_ids=lake_ids, years=years)
+    return batch_result.summary
 
 
 def _get_lakes_with_images(years: List[int]) -> List[int]:
