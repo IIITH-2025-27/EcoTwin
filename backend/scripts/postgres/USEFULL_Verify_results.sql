@@ -118,8 +118,10 @@ BEGIN
                  SELECT COUNT(*)
                  FROM sub_regions
                  WHERE year=%1$s
-                 AND status<>''completed''
-				 OR embedding is null
+                   AND (
+                        status <> ''completed''
+                        OR embedding IS NULL
+                   )
              )
              WHERE table_name=''sub_regions_failed'';',
             p_years[i]);
@@ -163,4 +165,4 @@ END;
 $$;
 
 
--- SELECT * FROM verify_counts(ARRAY[2023,2024,2025]);
+-- SELECT * FROM verify_counts(ARRAY[2016,2017,2018,2019,2020,2021,2022,2023,2024,2025]);
