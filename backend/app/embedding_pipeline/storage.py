@@ -291,8 +291,6 @@ class EmbeddingStorage:
         lake_id: int,
         year: int,
         embedding: np.ndarray,
-        num_cells: int,
-        coverage_percent: float | None = None,
     ) -> None:
         """
         Insert or update the aggregated lake-level embedding on the regions row.
@@ -309,65 +307,41 @@ class EmbeddingStorage:
 
         sql = text("""
             INSERT INTO regions (
-                region_id, hydrolake_id, name, country, lake_id, year,
-                embedding, coverage_percent, num_cells, status,
-                created_at, updated_at
-            ) VALUES (
-                gen_random_uuid(), :hydrolake_id, :name, :country,
-                :lake_id, :year,
-                CAST(:embedding AS vector),
-                :coverage_percent, :num_cells, 'completed',
-                NOW(), NOW()
+                lake_id, year, center_lat, center_lon,
+                embedding, status, created_at, updated_at
             )
+            SELECT
+                lake.lake_id, :year,
+                COALESCE(ST_Y(lake.centroid), ST_Y(ST_Centroid(lake.geom)), lake.pour_lat, 0),
+                COALESCE(ST_X(lake.centroid), ST_X(ST_Centroid(lake.geom)), lake.pour_long, 0),
+                CAST(:embedding AS vector),
+                'completed',
+                NOW(), NOW()
+            FROM lakes AS lake
+            WHERE lake.lake_id = :lake_id
             ON CONFLICT (lake_id, year) DO UPDATE SET
-                hydrolake_id     = EXCLUDED.hydrolake_id,
-                name             = EXCLUDED.name,
-                country          = EXCLUDED.country,
                 embedding        = EXCLUDED.embedding,
-                coverage_percent = EXCLUDED.coverage_percent,
-                num_cells        = EXCLUDED.num_cells,
                 status           = 'completed',
+                error_message    = NULL,
+                center_lat       = EXCLUDED.center_lat,
+                center_lon       = EXCLUDED.center_lon,
                 updated_at       = NOW()
         """)
 
         with self._Session() as session:
-            lake_row = session.execute(
-                text("""
-                    SELECT lake_name, display_name, country
-                    FROM lakes
-                    WHERE lake_id = :lake_id
-                """),
-                {"lake_id": lake_id},
-            ).fetchone()
-
-            display_name = None
-            lake_name = None
-            country = "Unknown"
-            if lake_row is not None:
-                display_name = lake_row.display_name
-                lake_name = lake_row.lake_name
-                country = lake_row.country or "Unknown"
-
-            name = display_name or lake_name or f"Lake {lake_id}"
-            hydrolake_id = str(lake_id)
-
-            session.execute(sql, {
-                "hydrolake_id": hydrolake_id,
-                "name": name,
-                "country": country,
+            result = session.execute(sql, {
                 "lake_id": lake_id,
                 "year": year,
                 "embedding": vec_literal,
-                "coverage_percent": float(coverage_percent or 0.0),
-                "num_cells": num_cells,
             })
+            if result.rowcount != 1:
+                raise ValueError(f"Lake {lake_id} was not found")
             session.commit()
 
         logger.info(
             "Lake embedding upserted into regions",
             lake_id=lake_id,
             year=year,
-            num_cells=num_cells,
         )
 
     def dispose(self) -> None:

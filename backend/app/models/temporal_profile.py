@@ -1,8 +1,7 @@
 import uuid
 
-from sqlalchemy import Column, Float, ForeignKey, Integer, UniqueConstraint
+from sqlalchemy import Column, Float, Integer, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import relationship
 
 from app.db.base import Base
 
@@ -15,7 +14,6 @@ class TemporalProfile(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     region_id = Column(
         UUID(as_uuid=True),
-        ForeignKey("regions.region_id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -23,8 +21,6 @@ class TemporalProfile(Base):
     ndvi = Column(Float)
     ndwi = Column(Float)
     nbr = Column(Float)
-
-    region = relationship("Region", back_populates="temporal_profiles")
 
     __table_args__ = (
         UniqueConstraint("region_id", "year", name="uq_temporal_profile_year"),

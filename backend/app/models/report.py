@@ -2,9 +2,8 @@ import uuid
 from datetime import datetime, timezone
 from enum import Enum as PyEnum
 
-from sqlalchemy import Column, DateTime, Enum, ForeignKey, Text
+from sqlalchemy import Column, DateTime, Enum, Text
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import relationship
 
 from app.db.base import Base
 
@@ -22,7 +21,6 @@ class Report(Base):
     report_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     region_id = Column(
         UUID(as_uuid=True),
-        ForeignKey("regions.region_id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -36,8 +34,6 @@ class Report(Base):
         nullable=False,
     )
     error_message = Column(Text, nullable=True)
-
-    region = relationship("Region", back_populates="reports")
 
     def __repr__(self) -> str:
         return (
