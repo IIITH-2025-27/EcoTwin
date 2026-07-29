@@ -41,7 +41,9 @@ BEGIN
         ('lake_images_MERGED'),
         ('sub_regions_completed'),
 		('sub_regions_failed'),
-        ('sub_regions_lake_count');
+        ('sub_regions_lake_count'),
+        ('regions_completed'),
+		('regions_failed');
 
     FOR i IN 1..array_length(p_years,1)
     LOOP
@@ -135,6 +137,28 @@ BEGIN
                    AND embedding IS NOT NULL
              )
              WHERE table_name=''sub_regions_lake_count'';',
+            p_years[i]);
+        EXECUTE format(
+            'UPDATE tmp_verify_counts
+             SET "%1$s" = (
+                 SELECT COUNT(DISTINCT lake_id)
+                 FROM regions
+                 WHERE year=%1$s
+                   AND status=''completed''
+                   AND embedding IS NOT NULL
+             )
+             WHERE table_name=''regions_completed'';',
+            p_years[i]);
+        EXECUTE format(
+            'UPDATE tmp_verify_counts
+             SET "%1$s" = (
+                 SELECT COUNT(DISTINCT lake_id)
+                 FROM regions
+                 WHERE year=%1$s
+                   AND (status=''failed''
+                   OR embedding IS NULL)
+             )
+             WHERE table_name=''regions_failed'';',
             p_years[i]);
 
     END LOOP;
