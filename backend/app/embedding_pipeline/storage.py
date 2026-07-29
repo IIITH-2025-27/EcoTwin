@@ -307,11 +307,11 @@ class EmbeddingStorage:
 
         sql = text("""
             INSERT INTO regions (
-                lake_id, year, center_lat, center_lon,
+                region_id, lake_id, year, center_lat, center_lon,
                 embedding, status, created_at, updated_at
             )
             SELECT
-                lake.lake_id, :year,
+                gen_random_uuid(), lake.lake_id, :year,
                 COALESCE(ST_Y(lake.centroid), ST_Y(ST_Centroid(lake.geom)), lake.pour_lat, 0),
                 COALESCE(ST_X(lake.centroid), ST_X(ST_Centroid(lake.geom)), lake.pour_long, 0),
                 CAST(:embedding AS vector),
@@ -319,7 +319,7 @@ class EmbeddingStorage:
                 NOW(), NOW()
             FROM lakes AS lake
             WHERE lake.lake_id = :lake_id
-            ON CONFLICT (lake_id, year) DO UPDATE SET
+            ON CONFLICT ON CONSTRAINT uq_regions_lake_year DO UPDATE SET
                 embedding        = EXCLUDED.embedding,
                 status           = 'completed',
                 error_message    = NULL,
