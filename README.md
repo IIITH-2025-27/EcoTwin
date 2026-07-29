@@ -57,3 +57,16 @@ npm run dev
  ```
  sudo kill -9 $(sudo lsof -t -i:8000)
  ```
+
+ 3) ==> How to run alembic previous script
+
+ s1 : update the alembic version in the db
+ ```sql
+ UPDATE alembic_version SET version_num = '012';
+ ```
+
+ s2 : Run the required script
+ ```bash
+ alembic upgrade 013
+ ```
+ Now the head will set to 013, after this you can run the "alembic upgrade head for future scripts"

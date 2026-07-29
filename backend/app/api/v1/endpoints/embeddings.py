@@ -18,6 +18,8 @@ from app.embedding_pipeline.pipeline import (
     aggregate_lake_embeddings,
     cancel_embedding_pipeline,
     get_embedding_progress,
+    get_merge_embedding_progress,
+    reset_merge_embedding_progress,
     run_embedding_pipeline,
 )
 from app.models.sub_region import SubRegion
@@ -28,6 +30,7 @@ from app.schemas.embedding_pipeline import (
     GenerateEmbeddingsResponse,
     MergeEmbeddingsRequest,
     MergeEmbeddingsResponse,
+    MergeEmbeddingProgressResponse,
 )
 
 router = APIRouter(tags=["Embeddings"])
@@ -151,6 +154,13 @@ async def merge_embeddings(
             detail="Only India is currently supported for embedding merge.",
         )
 
+    current = get_merge_embedding_progress()
+    if current["status"] == "running":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="An embedding merge is already in progress. Wait for it to complete.",
+        )
+
     available_years = await get_available_embedding_years(db)
     unavailable_years = sorted(set(body.years) - set(available_years))
     if unavailable_years:
@@ -174,6 +184,7 @@ async def merge_embeddings(
     )
 
     try:
+        reset_merge_embedding_progress(total=0)
         background_tasks.add_task(
             aggregate_lake_embeddings,
             years=body.years,
@@ -189,10 +200,17 @@ async def merge_embeddings(
         status="queued",
         total_tasks=len(body.years),
         message=(
-            "Embedding merge started in the background. "
-            "The aggregated embeddings will be written to the regions table."
+            "Embedding merge started. "
+            "Poll /embeddings/merge/status for real-time progress."
         ),
     )
+
+
+@router.get("/merge/status", response_model=MergeEmbeddingProgressResponse)
+async def get_merge_status() -> MergeEmbeddingProgressResponse:
+    """Return the real-time progress of the lake embedding merge."""
+    progress = get_merge_embedding_progress()
+    return MergeEmbeddingProgressResponse(**progress)
 
 
 @router.get("/status", response_model=EmbeddingProgressResponse)

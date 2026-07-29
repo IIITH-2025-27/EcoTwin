@@ -108,6 +108,20 @@ class MergeEmbeddingsResponse(BaseModel):
     total_tasks: int
 
 
+class MergeEmbeddingProgressResponse(BaseModel):
+    """Real-time progress of the lake embedding merge operation."""
+
+    status: Literal["idle", "running", "done", "failed"]
+    total: int
+    processed: int
+    success: int
+    failed: int
+    skipped: int
+    current_lake_id: Optional[int] = None
+    current_year: Optional[int] = None
+    errors: List[str] = Field(default_factory=list)
+
+
 class AvailableEmbeddingYearsResponse(BaseModel):
     """Years with completed embeddings available for a region."""
 

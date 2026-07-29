@@ -32,8 +32,8 @@ from app.embedding_pipeline.config import (
 from app.embedding_pipeline.grid_generator import GridCell, GridGenerator
 from app.embedding_pipeline.storage import EmbeddingStorage
 from app.embedding_pipeline.lake_aggregator import (
-    aggregate_all_lake_embeddings as _batch_aggregate,
     aggregate_single_lake_year as _single_aggregate,
+    _discover_lake_year_pairs,
 )
 from app.embedding_pipeline.weighted_pooling import weighted_mean_pool
 from app.models.lake import Lake
@@ -63,11 +63,45 @@ _cancelled = False
 # When True, also check the sync service's cancellation flag
 _check_sync_cancel = False
 
+_merge_embedding_progress: Dict = {
+    "status": "idle",
+    "total": 0,
+    "processed": 0,
+    "success": 0,
+    "failed": 0,
+    "skipped": 0,
+    "current_lake_id": None,
+    "current_year": None,
+    "errors": [],
+}
+
 
 def get_embedding_progress() -> Dict:
     """Return a snapshot of the current pipeline progress."""
     with _lock:
         return dict(_progress)
+
+
+def get_merge_embedding_progress() -> Dict:
+    """Return a snapshot of the lake embedding merge progress."""
+    with _lock:
+        return dict(_merge_embedding_progress)
+
+
+def reset_merge_embedding_progress(total: int = 0) -> None:
+    """Mark merge as running before the background worker starts."""
+    with _lock:
+        _merge_embedding_progress.update(
+            status="running",
+            total=total,
+            processed=0,
+            success=0,
+            failed=0,
+            skipped=0,
+            current_lake_id=None,
+            current_year=None,
+            errors=[],
+        )
 
 
 def cancel_embedding_pipeline() -> bool:
@@ -546,8 +580,7 @@ def aggregate_lake_embeddings(
     """
     Batch-aggregate cell-level embeddings into lake-level embeddings.
 
-    Delegates to :func:`lake_aggregator.aggregate_all_lake_embeddings`
-    which handles discovery, aggregation, and detailed per-pair logging.
+    Progress is tracked via ``_merge_embedding_progress`` for API polling.
 
     Args:
         lake_ids: Specific lakes to process.  ``None`` = all lakes with
@@ -556,10 +589,102 @@ def aggregate_lake_embeddings(
                   completed cell embeddings.
 
     Returns:
-        ``{"success": int, "failed": int, "skipped": int}``
+        ``{"success": int, "failed": int, "skipped": int, "total": int}``
     """
-    batch_result = _batch_aggregate(lake_ids=lake_ids, years=years)
-    return batch_result.summary
+    engine = _sync_engine()
+    Session = sessionmaker(bind=engine)
+    success = 0
+    failed = 0
+    skipped = 0
+
+    try:
+        pairs = _discover_lake_year_pairs(engine, lake_ids, years)
+        total = len(pairs)
+
+        with _lock:
+            _merge_embedding_progress.update(
+                status="running",
+                total=total,
+                processed=0,
+                success=0,
+                failed=0,
+                skipped=0,
+                current_lake_id=None,
+                current_year=None,
+                errors=[],
+            )
+
+        if not pairs:
+            logger.info("No (lake_id, year) pairs found for embedding merge")
+            with _lock:
+                _merge_embedding_progress["status"] = "done"
+            return {"success": 0, "failed": 0, "skipped": 0, "total": 0}
+
+        logger.info(
+            "Lake embedding merge started",
+            total_pairs=total,
+            lake_ids=lake_ids,
+            years=years,
+        )
+
+        for lake_id, year in pairs:
+            with _lock:
+                _merge_embedding_progress["current_lake_id"] = lake_id
+                _merge_embedding_progress["current_year"] = year
+
+            with Session() as session:
+                result = _single_aggregate(session, lake_id, year)
+
+            with _lock:
+                _merge_embedding_progress["processed"] += 1
+                if result.status == "success":
+                    success += 1
+                    _merge_embedding_progress["success"] = success
+                elif result.status == "skipped":
+                    skipped += 1
+                    _merge_embedding_progress["skipped"] = skipped
+                else:
+                    failed += 1
+                    _merge_embedding_progress["failed"] = failed
+                    if result.reason:
+                        _merge_embedding_progress["errors"].append(
+                            f"Lake {lake_id}/{year}: {result.reason[:200]}"
+                        )
+                        if len(_merge_embedding_progress["errors"]) > 100:
+                            _merge_embedding_progress["errors"] = (
+                                _merge_embedding_progress["errors"][-100:]
+                            )
+
+        final_status = "done" if failed == 0 else "failed"
+        with _lock:
+            _merge_embedding_progress["status"] = final_status
+            _merge_embedding_progress["current_lake_id"] = None
+            _merge_embedding_progress["current_year"] = None
+
+        logger.info(
+            "Lake embedding merge finished",
+            success=success,
+            failed=failed,
+            skipped=skipped,
+            total=total,
+        )
+
+        return {
+            "success": success,
+            "failed": failed,
+            "skipped": skipped,
+            "total": total,
+        }
+    except Exception as exc:
+        logger.exception("Lake embedding merge crashed", error=str(exc))
+        with _lock:
+            _merge_embedding_progress["status"] = "failed"
+            _merge_embedding_progress["errors"].append(
+                f"Merge crash: {str(exc)[:300]}"
+            )
+        raise
+    finally:
+        engine.dispose()
 
 
 def _get_lakes_with_images(years: List[int]) -> List[int]:

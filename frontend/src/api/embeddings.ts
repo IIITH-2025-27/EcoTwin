@@ -24,6 +24,20 @@ export interface MergeEmbeddingsResponse {
   message: string;
 }
 
+export type MergeEmbeddingStatus = 'idle' | 'running' | 'done' | 'failed';
+
+export interface MergeEmbeddingProgress {
+  status: MergeEmbeddingStatus;
+  total: number;
+  processed: number;
+  success: number;
+  failed: number;
+  skipped: number;
+  current_lake_id: number | null;
+  current_year: number | null;
+  errors: string[];
+}
+
 export type EmbeddingStatus = 'idle' | 'running' | 'done' | 'failed' | 'cancelled';
 
 export interface EmbeddingProgressResponse {
@@ -63,6 +77,11 @@ export async function getAvailableEmbeddingYears(): Promise<number[]> {
 
 export async function mergeEmbeddings(request: MergeEmbeddingsRequest): Promise<MergeEmbeddingsResponse> {
   const { data } = await apiClient.post<MergeEmbeddingsResponse>('/embeddings/merge', request);
+  return data;
+}
+
+export async function getMergeEmbeddingProgress(): Promise<MergeEmbeddingProgress> {
+  const { data } = await apiClient.get<MergeEmbeddingProgress>('/embeddings/merge/status');
   return data;
 }
 
