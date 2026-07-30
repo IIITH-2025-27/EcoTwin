@@ -2,15 +2,18 @@
 
 export interface Region {
   region_id: string;
-  hydrolake_id: string;
-  name: string;
-  country: string;
+  lake_id: number;
+  year: number;
+  hydrolake_id: string | null;
+  name: string | null;
+  country: string | null;
+  state: string | null;
   center_lat: number;
   center_lon: number;
-  area_sqkm: number;
+  area_sqkm: number | null;
   bbox: Record<string, number> | null;
-  created_at: string;
-  updated_at: string;
+  created_at: string | null;
+  updated_at: string | null;
 }
 
 export interface RegionMapFeature extends Region {
@@ -57,16 +60,19 @@ export interface RegionQueryResult {
 
 export interface LakeRegionResponse {
   region_id: string;
-  hydrolake_id: string;
-  name: string;
-  country: string;
+  lake_id: number;
+  year: number;
+  name: string | null;
+  hydrolake_id: string | null;
+  country: string | null;
+  state: string | null;
   center_lat: number;
   center_lon: number;
-  area_sqkm: number;
+  area_sqkm: number | null;
   bbox: Record<string, number> | null;
   geometry: GeoJSON.Geometry | null;
-  created_at: string;
-  updated_at: string;
+  created_at: string | null;
+  updated_at: string | null;
 }
 
 export interface LakeSearchResult {
@@ -81,6 +87,7 @@ export interface LakeGeometry extends LakeSearchResult {
   center_lat: number | null;
   center_lon: number | null;
   geometry: GeoJSON.Geometry | null;
+  region_id: string | null;
 }
 
 // ── Similarity ────────────────────────────────────────────────────────────
@@ -93,6 +100,8 @@ export interface AnalogResult {
   center_lon: number;
   similarity_score: number;
   year: number;
+  start_year?: number;
+  end_year?: number;
   dominant_ecosystem: string | null;
 }
 

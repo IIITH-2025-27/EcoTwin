@@ -7,31 +7,36 @@ from pydantic import BaseModel, Field
 
 class RegionResponse(BaseModel):
     region_id: UUID
-    hydrolake_id: str
-    name: str
-    country: str
+    lake_id: int
+    year: int
+    name: Optional[str] = None
+    hydrolake_id: Optional[str] = None
+    country: Optional[str] = None
+    state: Optional[str] = None
     center_lat: float
     center_lon: float
-    area_sqkm: float
-    bbox: Optional[dict[str, float]] = None
-    created_at: datetime
-    updated_at: datetime
+    area_sqkm: Optional[float] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
 
     model_config = {"from_attributes": True}
 
 
 class RegionMapResponse(BaseModel):
     region_id: UUID
-    hydrolake_id: str
-    name: str
-    country: str
+    lake_id: int
+    year: int
+    name: Optional[str] = None
+    hydrolake_id: Optional[str] = None
+    country: Optional[str] = None
+    state: Optional[str] = None
     center_lat: float
     center_lon: float
-    area_sqkm: float
+    area_sqkm: Optional[float] = None
     bbox: Optional[dict[str, float]] = None
     geometry: Optional[dict[str, Any]] = None
-    created_at: datetime
-    updated_at: datetime
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
 
 
 class RegionFeatureResponse(BaseModel):

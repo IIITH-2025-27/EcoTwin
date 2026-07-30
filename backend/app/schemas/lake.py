@@ -1,4 +1,5 @@
 from typing import Any, Optional
+from uuid import UUID
 
 from pydantic import BaseModel
 
@@ -20,6 +21,7 @@ class LakeGeometryResponse(LakeSearchResponse):
     center_lat: Optional[float] = None
     center_lon: Optional[float] = None
     geometry: Optional[dict[str, Any]] = None
+    region_id: Optional[UUID] = None
 
 
 class LakeMarkerResponse(BaseModel):

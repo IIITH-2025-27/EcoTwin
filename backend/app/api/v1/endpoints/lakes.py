@@ -8,6 +8,7 @@ from sqlalchemy import distinct, func, select
 
 from app.core.dependencies import DatabaseDep
 from app.models.lake import Lake
+from app.models.region import Region
 from app.schemas.lake import LakeCountResponse, LakeGeometryResponse, LakeMarkerResponse, LakeSearchResponse
 
 router = APIRouter(tags=["Lakes"])
@@ -142,6 +143,12 @@ async def get_lake_geometry(lake_id: int, db: DatabaseDep) -> LakeGeometryRespon
 
     geometry = to_shape(lake.geom).__geo_interface__ if lake.geom is not None else None
     centroid = to_shape(lake.centroid) if lake.centroid is not None else None
+    region_id = await db.scalar(
+        select(Region.region_id)
+        .where(Region.lake_id == lake_id, Region.embedding.is_not(None))
+        .order_by(Region.year.desc())
+        .limit(1)
+    )
     return LakeGeometryResponse(
         lake_id=lake.lake_id,
         display_name=lake.display_name,
@@ -151,4 +158,5 @@ async def get_lake_geometry(lake_id: int, db: DatabaseDep) -> LakeGeometryRespon
         center_lat=centroid.y if centroid is not None else lake.pour_lat,
         center_lon=centroid.x if centroid is not None else lake.pour_long,
         geometry=geometry,
+        region_id=region_id,
     )

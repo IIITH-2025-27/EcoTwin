@@ -122,13 +122,14 @@ export default function RegionPanel() {
         <div className="space-y-2.5">
           <div className="flex items-start justify-between">
             <div>
-              <p className="text-xs text-slate-500">Region ID</p>
-              <div className="flex items-center">
-                <span className="font-mono text-xs text-slate-300">
-                  {region.region_id.slice(0, 18)}…
-                </span>
-                <CopyId id={region.region_id} />
-              </div>
+              {region.name && (
+                <p className="text-sm font-semibold text-slate-100 mb-0.5">{region.name}</p>
+              )}
+              {region.country && (
+                <p className="text-[11px] text-slate-400">
+                  {region.state ? `${region.state}, ` : ''}{region.country}
+                </p>
+              )}
             </div>
             {f?.dominant_ecosystem && (
               <Badge
@@ -137,6 +138,16 @@ export default function RegionPanel() {
                 className="capitalize"
               />
             )}
+          </div>
+
+          <div className="space-y-1 pt-1">
+            <p className="text-xs text-slate-500">Region ID</p>
+            <div className="flex items-center">
+              <span className="font-mono text-xs text-slate-300">
+                {region.region_id.slice(0, 18)}…
+              </span>
+              <CopyId id={region.region_id} />
+            </div>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
@@ -153,15 +164,15 @@ export default function RegionPanel() {
               </p>
             </div>
             <div>
-              <p className="text-xs text-slate-500">Cell Area</p>
-              <p className="text-sm text-slate-200">{region.area_sqkm} km²</p>
+              <p className="text-xs text-slate-500">Area</p>
+              <p className="text-sm text-slate-200">
+                {region.area_sqkm != null ? `${region.area_sqkm.toFixed(2)} km²` : '—'}
+              </p>
             </div>
-            {f && (
-              <div>
-                <p className="text-xs text-slate-500">Last Observed</p>
-                <p className="text-sm text-slate-200">{f.year}</p>
-              </div>
-            )}
+            <div>
+              <p className="text-xs text-slate-500">Last Year</p>
+              <p className="text-sm text-slate-200">{region.year ?? '—'}</p>
+            </div>
           </div>
         </div>
       </Card>

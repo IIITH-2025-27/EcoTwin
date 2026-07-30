@@ -6,7 +6,6 @@ from fastapi import APIRouter, Depends
 from app.core.dependencies import CacheDep, DatabaseDep
 from app.repositories.embedding_repository import EmbeddingRepository
 from app.repositories.region_repository import RegionRepository
-from app.repositories.temporal_repository import TemporalRepository
 from app.schemas.forecast import ForecastResponse
 from app.services.forecast_service import ForecastService
 
@@ -18,7 +17,6 @@ def _service(db: DatabaseDep) -> ForecastService:
     return ForecastService(
         region_repo=RegionRepository(db),
         embedding_repo=EmbeddingRepository(db),
-        temporal_repo=TemporalRepository(db),
     )
 
 

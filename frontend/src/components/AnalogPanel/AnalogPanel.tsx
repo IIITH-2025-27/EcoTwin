@@ -190,6 +190,17 @@ export default function AnalogPanel() {
 
   if (!data) return null;
 
+  if (data.analogs.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-3 py-12 text-center px-4">
+        <p className="text-sm text-slate-400">No similarity embeddings are available for this lake yet.</p>
+        <p className="text-xs text-slate-500">
+          Try another lake that has historical embeddings, or switch to a different sub-region.
+        </p>
+      </div>
+    );
+  }
+
   const handleAnalogClick = (analog: AnalogResult) => {
     selectRegion(analog.region_id, analog.center_lat, analog.center_lon);
     setActiveTab('overview');

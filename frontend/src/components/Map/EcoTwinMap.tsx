@@ -162,16 +162,16 @@ function LakeRegionLayer({
             <Popup>
               <div className="space-y-1 min-w-[180px]">
                 <div className="flex items-center justify-between gap-2">
-                  <span className="font-semibold text-slate-100 text-sm">{region.name}</span>
+                  <span className="font-semibold text-slate-100 text-sm">{region.name ?? 'Lake'}</span>
                   <span className="rounded-full px-1.5 py-0.5 text-[10px] font-bold text-primary-300">
-                    Lake
+                    {region.year}
                   </span>
                 </div>
                 <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-xs text-slate-300">
                   <span className="text-slate-500">ID</span>
-                  <span className="font-mono text-[11px]">{region.hydrolake_id}</span>
+                  <span className="font-mono text-[11px]">{region.hydrolake_id ?? region.lake_id}</span>
                   <span className="text-slate-500">Area</span>
-                  <span>{region.area_sqkm.toFixed(2)} km²</span>
+                  <span>{region.area_sqkm != null ? `${region.area_sqkm.toFixed(2)} km²` : '—'}</span>
                   <span className="text-slate-500">Lat</span>
                   <span>{fmt(region.center_lat)}</span>
                   <span className="text-slate-500">Lon</span>
@@ -181,7 +181,7 @@ function LakeRegionLayer({
             </Popup>
             <Tooltip sticky className="!bg-transparent !border-none !shadow-none">
               <span className="rounded bg-slate-900/90 px-2 py-1 text-xs text-slate-100 shadow-lg">
-                {region.name}
+                {region.name ?? `Lake ${region.lake_id}`}
               </span>
             </Tooltip>
           </GeoJSON>
@@ -363,6 +363,11 @@ export default function EcoTwinMap() {
       const geo = await getLakeGeometry(lakeId);
       if (lakeRequestId.current === reqId) {
         setSelectedLake(geo);
+        if (geo.region_id && geo.center_lat !== null && geo.center_lon !== null) {
+          selectRegion(geo.region_id, geo.center_lat, geo.center_lon);
+        } else {
+          setLakeSearchError('No similarity embedding is available for this lake yet.');
+        }
       }
     } catch (err) {
       if (lakeRequestId.current === reqId) {

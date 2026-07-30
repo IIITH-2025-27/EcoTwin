@@ -4,8 +4,7 @@ import structlog
 from fastapi import APIRouter
 
 from app.core.dependencies import DatabaseDep
-from app.repositories.temporal_repository import TemporalRepository
-from app.schemas.forecast import TemporalDataResponse, YearlyIndicator
+from app.schemas.forecast import TemporalDataResponse
 
 router = APIRouter(tags=["Temporal"])
 logger = structlog.get_logger(__name__)
@@ -17,27 +16,13 @@ async def get_temporal_profile(
     db: DatabaseDep,
 ) -> TemporalDataResponse:
     """
-    Return the year-by-year NDVI / NDWI / NBR time-series for a region
-    (2018–present, one data point per year).
+    Return the year-by-year NDVI / NDWI / NBR time-series for a region.
+    Currently returns empty series until the region_features table is populated.
     """
-    repo = TemporalRepository(db)
-    profiles = await repo.get_profile(region_id)
-
+    logger.info("Temporal profile requested", region_id=str(region_id))
     return TemporalDataResponse(
         region_id=region_id,
-        ndvi=[
-            YearlyIndicator(year=p.year, value=round(p.ndvi, 4))
-            for p in profiles
-            if p.ndvi is not None
-        ],
-        ndwi=[
-            YearlyIndicator(year=p.year, value=round(p.ndwi, 4))
-            for p in profiles
-            if p.ndwi is not None
-        ],
-        nbr=[
-            YearlyIndicator(year=p.year, value=round(p.nbr, 4))
-            for p in profiles
-            if p.nbr is not None
-        ],
+        ndvi=[],
+        ndwi=[],
+        nbr=[],
     )
