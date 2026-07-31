@@ -1,5 +1,13 @@
 from app.schemas.common import ErrorResponse, HealthResponse, PaginatedResponse
-from app.schemas.forecast import ForecastHorizon, ForecastResponse, TemporalDataResponse, YearlyIndicator
+from app.schemas.forecast import (
+    AnalogForecastInput,
+    EmbeddingForecastResult,
+    ForecastHorizon,
+    ForecastResponse,
+    SelectedAnalog,
+    TemporalDataResponse,
+    YearlyIndicator,
+)
 from app.schemas.region import (
     RegionFeatureResponse,
     RegionQueryRequest,
@@ -15,8 +23,11 @@ __all__ = [
     "ErrorResponse",
     "HealthResponse",
     "PaginatedResponse",
+    "AnalogForecastInput",
+    "EmbeddingForecastResult",
     "ForecastHorizon",
     "ForecastResponse",
+    "SelectedAnalog",
     "TemporalDataResponse",
     "YearlyIndicator",
     "RegionFeatureResponse",

@@ -3,25 +3,73 @@ from uuid import UUID
 
 import structlog
 
-from app.core.exceptions import RegionNotFoundException
+from app.core.exceptions import EmbeddingNotFoundException, RegionNotFoundException
 from app.repositories.embedding_repository import EmbeddingRepository
 from app.repositories.region_repository import RegionRepository
-from app.schemas.forecast import ForecastHorizon, ForecastResponse
+from app.schemas.forecast import (
+    AnalogForecastInput,
+    EmbeddingForecastResult,
+    ForecastHorizon,
+    ForecastResponse,
+)
+from app.schemas.similarity import SimilarityMethod
+from app.services.forecasting_module import ForecastingModule
+from app.services.similarity_service import SimilarityService
 
 logger = structlog.get_logger(__name__)
 
-_FORECAST_HORIZON = 5   # years ahead
-_ANALOG_POOL_SIZE = 5   # top-K analogs to consider
+_DEFAULT_FORECAST_HORIZON: int = 3   # years ahead
+_DEFAULT_ANALOG_POOL: int = 5        # top-K analogs to try
+_LEGACY_FORECAST_HORIZON: int = 5    # kept for the legacy fallback response
+
+# Cosine/KNN on L2-normalised embeddings: scores cluster in [0.5, 1.0].
+# Below 0.5 the vectors are essentially random; above 0.5 is the meaningful
+# signal range.  Linear rescaling maps [floor, 1.0] → [0.0, 1.0].
+_COSINE_FLOOR: float = 0.5
+
+
+def _calibrate_confidence(raw_score: float, method: SimilarityMethod) -> float:
+    """
+    Map a raw weighted-mean similarity score to a human-meaningful confidence.
+
+    Each similarity method has a different effective score range:
+
+    COSINE / KNN
+        Prithvi embeddings are L2-normalised before storage, so cosine
+        similarity = inner product ∈ [-1, 1], clamped to [0, 1].  For any
+        two ecosystems of similar type the score clusters near 1.0, making
+        the raw value uninformative as a confidence indicator.
+        Fix: linearly rescale [_COSINE_FLOOR, 1.0] → [0.0, 1.0].
+
+    EUCLIDEAN
+        Score = 1 / (1 + distance) ∈ (0, 1].  Distance is unbounded, so
+        this metric naturally spreads across the full range.  A score of
+        0.5 means distance = 1.0 (a meaningful gap); 0.9 means distance ≈ 0.11
+        (a very close match).  No rescaling needed.
+    """
+    if method in (SimilarityMethod.COSINE, SimilarityMethod.KNN):
+        span = 1.0 - _COSINE_FLOOR
+        return max(0.0, min(1.0, (raw_score - _COSINE_FLOOR) / span))
+    # EUCLIDEAN: already on a meaningful [0, 1] scale.
+    return max(0.0, min(1.0, raw_score))
 
 
 class ForecastService:
     """
-    Analog-based forecasting engine.
+    Analog-based forecasting service.
 
-    Uses the most recent embedding to find similar historical regions,
-    then projects their subsequent evolution as a proxy forecast.
-    Since NDVI/NDWI/NBR feature tables are not yet populated, the forecast
-    currently returns trend placeholders based on available embedding data.
+    Orchestration
+    -------------
+    1. Run ``SimilarityService.search_analogs`` to obtain a ranked list of
+       analog trajectories for the query region.
+    2. Convert the ranked results into ``AnalogForecastInput`` objects that
+       carry the lake ID, matched window, similarity score, and forecast horizon.
+    3. Wrap ``EmbeddingRepository.get_timeline_for_lake`` as an async callable
+       and inject it into the standalone ``ForecastingModule``.
+    4. Let ``ForecastingModule.run`` handle candidate filtering, weight
+       computation, and weighted-average embedding generation.
+    5. Map the ``EmbeddingForecastResult`` back onto the legacy
+       ``ForecastResponse`` shape so the existing API contract is unchanged.
     """
 
     def __init__(
@@ -32,78 +80,192 @@ class ForecastService:
     ) -> None:
         self._region_repo = region_repo
         self._embedding_repo = embedding_repo
+        self._similarity_svc: Optional[SimilarityService] = None
+        self._forecasting_module = ForecastingModule()
 
-    async def generate_forecast(self, region_id: UUID) -> ForecastResponse:
+    def _get_similarity_service(self) -> SimilarityService:
+        """Lazily build a SimilarityService that shares the same DB session."""
+        if self._similarity_svc is None:
+            self._similarity_svc = SimilarityService(
+                embedding_repo=self._embedding_repo,
+                region_repo=self._region_repo,
+            )
+        return self._similarity_svc
+
+    async def generate_forecast(
+        self,
+        region_id: UUID,
+        forecast_horizon: int = _DEFAULT_FORECAST_HORIZON,
+        num_analogs: int = _DEFAULT_ANALOG_POOL,
+        method: SimilarityMethod = SimilarityMethod.COSINE,
+        year: Optional[int] = None,
+    ) -> ForecastResponse:
+        """
+        Generate an analog-based embedding forecast for *region_id*.
+
+        Parameters
+        ----------
+        region_id:
+            Target region to forecast.
+        forecast_horizon:
+            Number of future years to predict (default: 3).
+        num_analogs:
+            Maximum number of valid analog trajectories to include in the
+            weighted average (default: 5).
+        method:
+            Similarity method to use for the analog search and for weight
+            computation inside the forecasting module.
+        year:
+            Anchor year for the query trajectory.  Defaults to the latest
+            available year for the region.
+        """
         region = await self._region_repo.get_by_id(region_id)
         if not region:
             raise RegionNotFoundException(str(region_id))
 
-        query_record = await self._embedding_repo.get_latest(region_id)
-        if not query_record:
-            return self._fallback_forecast(region_id, 2025)
-
-        current_year = query_record.year
-
-        # Parse the embedding safely
-        parsed_embedding = EmbeddingRepository._parse_embedding(query_record.embedding)
-        if not parsed_embedding:
-            return self._fallback_forecast(region_id, current_year)
-
-        # Search top-K analogs (excluding the region itself)
+        # ── Step 1: Run similarity search ────────────────────────────────────
+        similarity_svc = self._get_similarity_service()
         try:
-            raw_analogs, _ = await self._embedding_repo.search_similar(
-                query_embedding=parsed_embedding,
-                top_k=_ANALOG_POOL_SIZE,
-                exclude_region_id=region_id,
+            search_response = await similarity_svc.search_analogs(
+                region_id=region_id,
+                year=year,
+                top_k=min(num_analogs * 4, 50),  # over-fetch to allow skips
+                exclude_same_region=True,
+                method=method,
+            )
+        except (RegionNotFoundException, EmbeddingNotFoundException):
+            raise
+        except Exception as exc:
+            logger.warning("Similarity search failed in forecast", error=str(exc))
+            return self._fallback_forecast(region_id, year or 2025)
+
+        query_year: int = search_response.query_year
+
+        if not search_response.analogs:
+            logger.info(
+                "No analogs returned by similarity search; using fallback",
+                region_id=str(region_id),
+                query_year=query_year,
+            )
+            return self._fallback_forecast(region_id, query_year)
+
+        # ── Step 2: Build AnalogForecastInput list ───────────────────────────
+        # We need the lake_id and matched_window_start/end for each analog.
+        # SimilarityService stores the best-window information in best_matches
+        # but AnalogResult currently only exposes region_id, year, similarity_score.
+        # We retrieve the lake_id from the DB for each analog region.
+        ranked_inputs: List[AnalogForecastInput] = []
+        for analog in search_response.analogs:
+            try:
+                row = await self._region_repo.get_by_id_with_lake(analog.region_id)
+                if row is None:
+                    continue
+                lake_id: int = int(row["lake_id"])
+                # The similarity search returns the end year of the matched window
+                # as `year`.  We back-calculate the start (window_size = 5).
+                window_end: int = analog.year
+                window_start: int = window_end - 4  # 5-year window
+                ranked_inputs.append(
+                    AnalogForecastInput(
+                        lake_id=lake_id,
+                        region_id=analog.region_id,
+                        matched_window_start=window_start,
+                        matched_window_end=window_end,
+                        similarity_score=analog.similarity_score,
+                        forecast_horizon=forecast_horizon,
+                    )
+                )
+            except Exception as exc:
+                logger.warning(
+                    "Failed to build AnalogForecastInput; skipping",
+                    region_id=str(analog.region_id),
+                    error=str(exc),
+                )
+
+        if not ranked_inputs:
+            logger.warning(
+                "All analog inputs failed to build; using fallback",
+                region_id=str(region_id),
+            )
+            return self._fallback_forecast(region_id, query_year)
+
+        # ── Step 3: Build the embedding-lookup callable ──────────────────────
+        # The forecasting module is DB-agnostic — inject the repository method.
+        async def embedding_lookup(lake_id: int):
+            return await self._embedding_repo.get_timeline_for_lake(lake_id)
+
+        # ── Step 4: Run the forecasting module ───────────────────────────────
+        try:
+            result: EmbeddingForecastResult = await self._forecasting_module.run(
+                ranked_results=ranked_inputs,
+                embedding_lookup=embedding_lookup,
+                query_year=query_year,
+                method=method,
+                desired_num_analogs=num_analogs,
             )
         except Exception as exc:
-            logger.warning("Analog search failed in forecast", error=str(exc))
-            raw_analogs = []
+            logger.warning("ForecastingModule failed", error=str(exc))
+            return self._fallback_forecast(region_id, query_year)
 
-        if not raw_analogs:
-            return self._fallback_forecast(region_id, current_year)
+        # ── Step 5: Map EmbeddingForecastResult → ForecastResponse ───────────
+        if result.num_analogs_used == 0 or not result.forecast_embeddings:
+            return self._fallback_forecast(region_id, query_year)
 
-        best = raw_analogs[0]
-        best_id: UUID = best["region_id"]
-        best_similarity = float(best["similarity_score"])
-        analog_match_year: int = best["year"]
+        best_analog = result.selected_analogs[0]
+        # Weighted-mean similarity across all selected analogs, then calibrated
+        # to a method-aware scale so that each method's score range maps
+        # meaningfully to [0.0, 1.0] (see _calibrate_confidence above).
+        weighted_sim = sum(a.weight * a.similarity_score for a in result.selected_analogs)
+        overall_confidence = round(_calibrate_confidence(weighted_sim, method), 3)
 
-        # Build horizons: we don't have NDVI/NDWI/NBR yet, so use placeholder 0.0
         horizons = [
             ForecastHorizon(
-                year=current_year + offset,
-                ndvi_forecast=0.0,
+                year=horizon_year,
+                ndvi_forecast=0.0,   # will be decoded from embedding in a later stage
                 ndwi_forecast=0.0,
                 nbr_forecast=0.0,
-                confidence=round(best_similarity * max(0.3, 1.0 - (offset - 1) * 0.08), 3),
+                confidence=round(
+                    # Decay from the weighted-mean similarity so all analogs'
+                    # agreement is reflected, not just the best analog alone.
+                    overall_confidence * max(0.3, 1.0 - (offset - 1) * 0.08),
+                    3,
+                ),
             )
-            for offset in range(1, _FORECAST_HORIZON + 1)
+            for offset, horizon_year in enumerate(
+                sorted(result.forecast_embeddings.keys()), start=1
+            )
         ]
 
+        analog_ids_str = ", ".join(
+            str(a.region_id) for a in result.selected_analogs[:3]
+        )
+        explanation = (
+            f"Region in {query_year} matched {result.num_analogs_used} analog "
+            f"trajectory(ies) (method: {method.value}). "
+            f"Top analogs: {analog_ids_str}. "
+            "Embedding-based forecast generated; spectral indicator decoding "
+            "will be available once the feature pipeline runs."
+        )
+
         logger.info(
-            "Forecast generated",
+            "ForecastResponse assembled",
             region_id=str(region_id),
-            analog_id=str(best_id),
-            analog_match_year=analog_match_year,
-            similarity=round(best_similarity, 3),
+            query_year=query_year,
+            num_analogs_used=result.num_analogs_used,
+            forecast_years=sorted(result.forecast_embeddings.keys()),
         )
 
         return ForecastResponse(
             region_id=region_id,
-            current_year=current_year,
+            current_year=query_year,
             forecast_horizons=horizons,
-            best_analog_id=best_id,
-            analog_match_year=analog_match_year,
-            overall_confidence=round(best_similarity * 0.8 + 0.2, 3),
+            best_analog_id=best_analog.region_id,
+            analog_match_year=best_analog.matched_window_end,
+            overall_confidence=max(0.0, min(1.0, overall_confidence)),
             vegetation_trend="stable",
             water_trend="stable",
             burn_severity_trend="stable",
-            explanation=(
-                f"Region in {current_year} closely resembles analog {best_id} "
-                f"as it appeared in {analog_match_year} "
-                f"(cosine similarity: {best_similarity:.3f}). "
-                "Spectral indicator forecasts will be available once the feature pipeline runs."
-            ),
+            explanation=explanation,
         )
 
     def _fallback_forecast(
@@ -119,7 +281,7 @@ class ForecastService:
                 nbr_forecast=0.0,
                 confidence=round(max(0.05, 0.3 - (i - 1) * 0.04), 3),
             )
-            for i in range(1, _FORECAST_HORIZON + 1)
+            for i in range(1, _LEGACY_FORECAST_HORIZON + 1)
         ]
         return ForecastResponse(
             region_id=region_id,

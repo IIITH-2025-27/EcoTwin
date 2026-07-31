@@ -171,6 +171,40 @@ class EmbeddingRepository:
 
         return list(grouped.values())
 
+    async def get_timeline_for_lake(
+        self,
+        lake_id: int,
+    ) -> List[Tuple[int, List[float]]]:
+        """
+        Return all ``(year, embedding)`` pairs for *lake_id*, sorted by year.
+
+        Used by the forecasting module to retrieve future embeddings for analog
+        lakes after the matched window.  Only rows with non-NULL embeddings are
+        returned.
+        """
+        result = await self.session.execute(
+            text(
+                """
+                SELECT year, embedding
+                FROM regions
+                WHERE lake_id = :lake_id
+                  AND embedding IS NOT NULL
+                ORDER BY year ASC
+                """
+            ),
+            {"lake_id": lake_id},
+        )
+        timeline: List[Tuple[int, List[float]]] = []
+        for row in result.mappings().all():
+            parsed = self._parse_embedding(row["embedding"])
+            if parsed is not None:
+                timeline.append((int(row["year"]), parsed))
+        logger.debug(
+            "Fetched embedding timeline for lake",
+            lake_id=lake_id,
+            num_years=len(timeline),
+        )
+        return timeline
 
     async def search_similar(
         self,

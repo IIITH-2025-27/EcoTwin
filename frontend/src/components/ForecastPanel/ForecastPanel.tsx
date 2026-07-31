@@ -124,11 +124,11 @@ function CustomTooltip({
 }
 
 export default function ForecastPanel() {
-  const { selectedRegionId } = useMapStore();
+  const { selectedRegionId, similarityMethod } = useMapStore();
   const [activeIndicator, setActiveIndicator] = useState<IndicatorKey>('ndvi');
 
   const { data: forecast, isLoading: fLoading, error: fError, refetch: fRefetch } =
-    useForecast(selectedRegionId);
+    useForecast(selectedRegionId, similarityMethod);
   const { data: temporal } = useTemporal(selectedRegionId);
 
   const ind = INDICATORS.find((i) => i.key === activeIndicator)!;

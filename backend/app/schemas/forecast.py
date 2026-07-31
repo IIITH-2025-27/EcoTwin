@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import Dict, List, Optional
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -35,3 +35,37 @@ class ForecastResponse(BaseModel):
     water_trend: str
     burn_severity_trend: str
     explanation: str
+
+
+# ── Forecasting Module I/O ───────────────────────────────────────────────────
+
+class AnalogForecastInput(BaseModel):
+    """One ranked result from the similarity search, consumed by the forecasting module."""
+
+    lake_id: int
+    region_id: UUID
+    matched_window_start: int  # first year of the matched window
+    matched_window_end: int    # last year of the matched window (= query year)
+    similarity_score: float = Field(..., ge=0.0, le=1.0)
+    forecast_horizon: int = Field(3, ge=1, description="Number of future years to forecast")
+
+
+class SelectedAnalog(BaseModel):
+    """Metadata for one analog that was ultimately selected for the forecast."""
+
+    lake_id: int
+    region_id: UUID
+    matched_window_start: int
+    matched_window_end: int
+    similarity_score: float
+    weight: float = Field(..., ge=0.0, le=1.0)
+
+
+class EmbeddingForecastResult(BaseModel):
+    """Output of the forecasting module: one weighted-average embedding per horizon year."""
+
+    # horizon_year → weighted-average embedding vector
+    forecast_embeddings: Dict[int, List[float]]
+    selected_analogs: List[SelectedAnalog]
+    num_analogs_used: int
+    forecast_horizon: int
