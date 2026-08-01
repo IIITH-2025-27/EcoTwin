@@ -43,7 +43,9 @@ BEGIN
 		('sub_regions_failed'),
         ('sub_regions_lake_count'),
         ('regions_completed'),
-		('regions_failed');
+		('regions_failed'),
+        ('lake_features_completed'),
+		('lake_features_failed');
 
     FOR i IN 1..array_length(p_years,1)
     LOOP
@@ -159,6 +161,26 @@ BEGIN
                    OR embedding IS NULL)
              )
              WHERE table_name=''regions_failed'';',
+            p_years[i]);
+        EXECUTE format(
+            'UPDATE tmp_verify_counts
+             SET "%1$s" = (
+                 SELECT COUNT(DISTINCT lake_id)
+                 FROM lake_features
+                 WHERE year=%1$s
+                   AND status=''completed''
+             )
+             WHERE table_name=''lake_features_completed'';',
+            p_years[i]);
+        EXECUTE format(
+            'UPDATE tmp_verify_counts
+             SET "%1$s" = (
+                 SELECT COUNT(DISTINCT lake_id)
+                 FROM lake_features
+                 WHERE year=%1$s
+                   AND status <> ''completed''
+             )
+             WHERE table_name=''lake_features_failed'';',
             p_years[i]);
 
     END LOOP;

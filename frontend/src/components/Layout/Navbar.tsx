@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Database, Layers, Leaf, PanelLeftClose, PanelLeftOpen, RefreshCw, Satellite } from 'lucide-react';
+import { BarChart3, Database, Layers, Leaf, PanelLeftClose, PanelLeftOpen, RefreshCw, Satellite } from 'lucide-react';
 import { useMapStore } from '@/store/mapStore';
 import { useRegion } from '@/hooks/useRegion';
 import SyncModal from '@/components/SyncModal/SyncModal';
@@ -7,6 +7,7 @@ import SyncLakesModal from '@/components/SyncModal/SyncLakesModal';
 import FetchImagesModal from '@/components/SyncModal/FetchImagesModal';
 import MergeTilesModal from '@/components/SyncModal/MergeTilesModal';
 import MergeEmbeddingsModal from '@/components/SyncModal/MergeEmbeddingsModal';
+import GenerateLakeFeaturesModal from '@/components/SyncModal/GenerateLakeFeaturesModal';
 
 export default function Navbar() {
   const { selectedRegionId, isSidebarCollapsed, toggleSidebar } = useMapStore();
@@ -16,6 +17,7 @@ export default function Navbar() {
   const [showFetchImages, setShowFetchImages] = useState(false);
   const [showMergeTiles, setShowMergeTiles] = useState(false);
   const [showMergeEmbeddings, setShowMergeEmbeddings] = useState(false);
+  const [showLakeFeatures, setShowLakeFeatures] = useState(false);
 
   return (
     <header className="flex h-14 items-center justify-between border-b border-slate-700/60 bg-surface-800/95 px-4 backdrop-blur-sm">
@@ -130,6 +132,17 @@ export default function Navbar() {
           <span className="hidden sm:inline">Merge Embeddings</span>
         </button> 
 
+        <button
+          onClick={() => setShowLakeFeatures(true)}
+          className="flex items-center gap-1.5 rounded-lg border border-emerald-500/40 bg-emerald-500/15 px-3 py-1.5
+                     text-xs font-medium text-emerald-300 hover:bg-emerald-500/25 hover:text-emerald-200
+                     transition-colors"
+          title="Extract ecological features from merged Sentinel-2 images"
+        >
+          <BarChart3 className="h-3.5 w-3.5" />
+          <span className="hidden sm:inline">Generate Lake Features</span>
+        </button>
+
         {/* <span className="hidden rounded-md bg-slate-700/40 px-2 py-0.5 font-mono text-xs text-slate-500 sm:inline">
           v1.0.0
         </span> */}
@@ -146,6 +159,7 @@ export default function Navbar() {
       {showFetchImages && <FetchImagesModal onClose={() => setShowFetchImages(false)} />}
       {showMergeTiles && <MergeTilesModal onClose={() => setShowMergeTiles(false)} />}
       {showMergeEmbeddings && <MergeEmbeddingsModal onClose={() => setShowMergeEmbeddings(false)} />}
+      {showLakeFeatures && <GenerateLakeFeaturesModal onClose={() => setShowLakeFeatures(false)} />}
     </header>
   );
 }

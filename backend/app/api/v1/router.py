@@ -5,6 +5,7 @@ from app.api.v1.endpoints import (
     forecast,
     health,
     imagery,
+    lake_features,
     lakes,
     regions,
     reports,
@@ -25,3 +26,4 @@ api_router.include_router(reports.router, prefix="/report")
 api_router.include_router(sync.router, prefix="/sync")
 api_router.include_router(imagery.router, prefix="/imagery")
 api_router.include_router(embeddings.router, prefix="/embeddings")
+api_router.include_router(lake_features.router, prefix="/lake-features")
