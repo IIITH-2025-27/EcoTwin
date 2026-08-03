@@ -254,6 +254,31 @@ function SelectedLakePolygon({ lake }: { lake: LakeGeometry }) {
   );
 }
 
+function MapTabEffects({
+  activeTab,
+  analogs,
+}: {
+  activeTab: string;
+  analogs: AnalogResult[];
+}) {
+  const map = useMap();
+
+  useEffect(() => {
+    if (activeTab === 'analogs' && analogs.length > 0) {
+      if (analogs.length === 1) {
+        const [onlyAnalog] = analogs;
+        map.flyTo([onlyAnalog.center_lat, onlyAnalog.center_lon], 8, { animate: true });
+        return;
+      }
+
+      const bounds: [number, number][] = analogs.map((analog) => [analog.center_lat, analog.center_lon]);
+      map.fitBounds(bounds, { padding: [48, 48], maxZoom: 8, animate: true });
+    }
+  }, [activeTab, analogs, map]);
+
+  return null;
+}
+
 // ── Analog markers ────────────────────────────────────────────────────────────
 
 function AnalogLayer({
@@ -322,12 +347,14 @@ export default function EcoTwinMap() {
     selectedRegionId,
     selectedRegionLat,
     selectedRegionLon,
+    activeTab,
     topK,
     highlightedAnalogId,
     mapClickLoading,
     setHighlightedAnalogId,
     selectRegion,
     setActiveTab,
+    clearRegion,
   } = useMapStore();
 
   const { data: regions = [] } = useRegions('India');
@@ -336,6 +363,8 @@ export default function EcoTwinMap() {
   // ── Selected lake polygon (from search or marker click) ──────────────────
   const [selectedLake, setSelectedLake] = useState<LakeGeometry | null>(null);
   const [activeLakeId, setActiveLakeId] = useState<number | null>(null);
+  const [selectedLakeQuery, setSelectedLakeQuery] = useState('');
+  const [committedLakeQuery, setCommittedLakeQuery] = useState<string | null>(null);
   const [lakeSearchError, setLakeSearchError] = useState<string | null>(null);
   const [lakeLoading, setLakeLoading] = useState(false);
   const lakeRequestId = useRef(0);
@@ -343,6 +372,12 @@ export default function EcoTwinMap() {
   // ── Active lake markers ──────────────────────────────────────────────────
   const [lakeMarkers, setLakeMarkers] = useState<LakeMarker[]>([]);
   const [showLakeMarkers, setShowLakeMarkers] = useState(false);
+
+  useEffect(() => {
+    if (activeTab === 'analogs') {
+      setShowLakeMarkers(false);
+    }
+  }, [activeTab, setShowLakeMarkers]);
 
   useEffect(() => {
     let cancelled = false;
@@ -363,6 +398,8 @@ export default function EcoTwinMap() {
       const geo = await getLakeGeometry(lakeId);
       if (lakeRequestId.current === reqId) {
         setSelectedLake(geo);
+        setSelectedLakeQuery(geo.display_name);
+        setCommittedLakeQuery(geo.display_name);
         if (geo.region_id && geo.center_lat !== null && geo.center_lon !== null) {
           selectRegion(geo.region_id, geo.center_lat, geo.center_lon);
         } else {
@@ -378,6 +415,17 @@ export default function EcoTwinMap() {
       if (lakeRequestId.current === reqId) setLakeLoading(false);
     }
   }, []);
+
+  const clearLakeSelection = useCallback(() => {
+    lakeRequestId.current += 1;
+    setSelectedLake(null);
+    setActiveLakeId(null);
+    setSelectedLakeQuery('');
+    setCommittedLakeQuery(null);
+    setLakeSearchError(null);
+    setLakeLoading(false);
+    clearRegion();
+  }, [clearRegion]);
 
   const handleRegionSelect = useCallback(
     (region: LakeRegionResponse) => {
@@ -397,11 +445,27 @@ export default function EcoTwinMap() {
 
   /** Called when user picks a lake from the search bar */
   const handleLakeSearchSelect = useCallback((lake: LakeSearchResult) => {
+    setSelectedLakeQuery(lake.display_name);
+    setCommittedLakeQuery(lake.display_name);
     void loadLakeGeometry(lake.lake_id);
   }, [loadLakeGeometry]);
 
+  const handleLakeSearchChange = useCallback((query: string) => {
+    setSelectedLakeQuery(query);
+    setCommittedLakeQuery(null);
+    if (query.trim().length === 0) {
+      setSelectedLake(null);
+      setActiveLakeId(null);
+      setLakeSearchError(null);
+      setLakeLoading(false);
+      clearRegion();
+    }
+  }, [clearRegion]);
+
   /** Called when user clicks a lake marker pin */
   const handleMarkerClick = useCallback((lake: LakeMarker) => {
+    setSelectedLakeQuery(lake.display_name);
+    setCommittedLakeQuery(lake.display_name);
     void loadLakeGeometry(lake.lake_id);
   }, [loadLakeGeometry]);
 
@@ -410,7 +474,13 @@ export default function EcoTwinMap() {
   return (
     <div className="relative h-full w-full">
       {/* Search bar */}
-      <LakeSearch onSelect={handleLakeSearchSelect} />
+      <LakeSearch
+        query={selectedLakeQuery}
+        committedQuery={committedLakeQuery}
+        onQueryChange={handleLakeSearchChange}
+        onSelect={handleLakeSearchSelect}
+        onClear={clearLakeSelection}
+      />
 
       {/* Loading indicator */}
       {isLoadingGeometry && (
@@ -466,6 +536,8 @@ export default function EcoTwinMap() {
         />
 
         <ZoomControl position="bottomright" />
+
+        <MapTabEffects activeTab={activeTab} analogs={similarityData?.analogs ?? []} />
 
         {/* Sub-region GeoJSON polygons */}
         <LakeRegionLayer
@@ -544,10 +616,19 @@ export default function EcoTwinMap() {
                 )}
               </div>
             </div>
-            <span className={clsx('text-[10px]', showLakeMarkers ? 'text-cyan-300' : 'text-slate-400')}>
+            <span
+              className={clsx(
+                'text-[10px]',
+                activeTab === 'analogs'
+                  ? 'text-slate-500'
+                  : showLakeMarkers
+                  ? 'text-cyan-300'
+                  : 'text-slate-400',
+              )}
+            >
               Show Lakes
             </span>
-            {showLakeMarkers && (
+            {showLakeMarkers && activeTab !== 'analogs' && (
               <span className="h-2 w-2 flex-shrink-0 rounded-full border border-cyan-400 bg-cyan-500/60" />
             )}
           </label>
@@ -558,11 +639,11 @@ export default function EcoTwinMap() {
             <span className="text-[10px] text-slate-400">Selected Lake</span>
           </div>
 
-          {/* Sub-region cell */}
+          {/* Similar Lakes */}
           {regions.length > 0 && (
             <div className="flex items-center gap-2">
-              <span className="h-2.5 w-2.5 flex-shrink-0 rounded-sm border border-teal-400 bg-teal-500/25" />
-              <span className="text-[10px] text-slate-400">Sub-region Cell</span>
+              <span className="h-2 w-2 flex-shrink-0 rounded-full border border-green-400 bg-green-500/60" />
+              <span className="text-[10px] text-slate-400">Similar Lakes</span>
             </div>
           )}
         </div>

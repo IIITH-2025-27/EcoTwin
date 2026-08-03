@@ -39,7 +39,7 @@ export const useMapStore = create<MapState>()(
       selectedRegionLat: null,
       selectedRegionLon: null,
       activeTab: 'overview',
-      topK: 10,
+      topK: 5,
       similarityMethod: 'cosine' as SimilarityMethod,
       highlightedAnalogId: null,
       mapClickLoading: false,

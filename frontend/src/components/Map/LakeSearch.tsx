@@ -5,11 +5,20 @@ import { searchLakes } from '@/api/regions';
 import type { LakeSearchResult } from '@/types';
 
 interface LakeSearchProps {
+  query: string;
+  committedQuery: string | null;
+  onQueryChange: (query: string) => void;
   onSelect: (lake: LakeSearchResult) => void;
+  onClear: () => void;
 }
 
-export default function LakeSearch({ onSelect }: LakeSearchProps) {
-  const [query, setQuery] = useState('');
+export default function LakeSearch({
+  query,
+  committedQuery,
+  onQueryChange,
+  onSelect,
+  onClear,
+}: LakeSearchProps) {
   const [results, setResults] = useState<LakeSearchResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -18,6 +27,13 @@ export default function LakeSearch({ onSelect }: LakeSearchProps) {
   useEffect(() => {
     const term = query.trim();
     if (term.length < 3) {
+      setResults([]);
+      setError(null);
+      setLoading(false);
+      return;
+    }
+
+    if (committedQuery?.trim() === term) {
       setResults([]);
       setError(null);
       setLoading(false);
@@ -42,10 +58,9 @@ export default function LakeSearch({ onSelect }: LakeSearchProps) {
     }, 250);
 
     return () => window.clearTimeout(timer);
-  }, [query]);
+  }, [committedQuery, query]);
 
   const selectLake = (lake: LakeSearchResult) => {
-    setQuery(lake.display_name);
     setResults([]);
     onSelect(lake);
   };
@@ -57,7 +72,7 @@ export default function LakeSearch({ onSelect }: LakeSearchProps) {
           <Search className="h-4 w-4 shrink-0 text-slate-400" />
           <input
             value={query}
-            onChange={(event) => setQuery(event.target.value)}
+            onChange={(event) => onQueryChange(event.target.value)}
             placeholder="Search lakes by name…"
             aria-label="Search lakes by display name"
             className="min-w-0 flex-1 bg-transparent text-sm text-slate-100 outline-none placeholder:text-slate-500"
@@ -66,7 +81,7 @@ export default function LakeSearch({ onSelect }: LakeSearchProps) {
           {query && !loading && (
             <button
               type="button"
-              onClick={() => setQuery('')}
+              onClick={onClear}
               className="rounded p-0.5 text-slate-400 hover:bg-slate-700 hover:text-slate-100"
               aria-label="Clear lake search"
             >
