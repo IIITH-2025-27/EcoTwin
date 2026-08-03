@@ -59,7 +59,14 @@ const TABS: Array<{
 
 // ── Sidebar component ─────────────────────────────────────────────────────
 function Sidebar() {
-  const { activeTab, setActiveTab, selectedRegionId, clearRegion } = useMapStore();
+  const {
+    activeTab,
+    setActiveTab,
+    selectedRegionId,
+    selectedLake,
+    setSelectedLake,
+    clearRegion,
+  } = useMapStore();
 
   return (
     <aside className="flex h-full flex-col border-r border-slate-700/60 bg-surface-900">
@@ -76,6 +83,29 @@ function Sidebar() {
             >
               <X className="h-3 w-3" />
               Clear
+            </button>
+          </div>
+        )}
+
+        {selectedRegionId && selectedLake && (
+          <div className="border-b border-slate-700/40 px-3 py-1">
+            <button
+              type="button"
+              onClick={() => setSelectedLake(selectedLake)}
+              className="w-full rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-left transition-colors hover:border-emerald-400/50 hover:bg-emerald-500/15"
+              title="Refocus this lake on the map"
+            >
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-emerald-300/80">
+                Selected Lake
+              </p>
+              <p className="mt-0.5 truncate text-sm font-semibold text-slate-100">
+                {selectedLake.display_name}
+              </p>
+              {/* <p className="mt-1 text-xs text-slate-400">
+                {selectedLake.area_sqkm != null
+                  ? `${selectedLake.area_sqkm.toFixed(2)} km²`
+                  : 'Area unavailable'}
+              </p> */}
             </button>
           </div>
         )}

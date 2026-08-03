@@ -26,8 +26,11 @@ class AnalogResult(BaseModel):
     region_id: UUID
     center_lat: float
     center_lon: float
+    area_sqkm: Optional[float] = None
     similarity_score: float = Field(..., ge=0.0, le=1.0)
     year: int
+    start_year: int
+    end_year: int
     dominant_ecosystem: Optional[str] = None
 
 

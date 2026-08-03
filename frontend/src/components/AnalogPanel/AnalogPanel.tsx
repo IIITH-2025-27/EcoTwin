@@ -55,6 +55,12 @@ function SimilarityRing({ score }: { score: number }) {
   );
 }
 
+function formatYearRange(startYear: number, endYear: number): string {
+  return startYear === endYear
+    ? `Year ${startYear}`
+    : `Years ${startYear} to ${endYear}`;
+}
+
 // ── Analog card ───────────────────────────────────────────────────────────
 function AnalogCard({
   analog,
@@ -92,20 +98,25 @@ function AnalogCard({
 
       {/* Details */}
       <div className="min-w-0 flex-1">
-        <p className="font-mono text-[11px] text-slate-400 truncate">
+        {/* <p className="font-mono text-[11px] text-slate-400 truncate">
           {analog.region_id.slice(0, 20)}…
-        </p>
+        </p> */}
+        
         <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-slate-500">
-          <span className="flex items-center gap-0.5">
-            <MapPin className="h-2.5 w-2.5" />
-            {analog.center_lat.toFixed(3)}, {analog.center_lon.toFixed(3)}
-          </span>
-          <span>Year {analog.year}</span>
           {analog.dominant_ecosystem && (
             <span className="capitalize text-slate-400">
               {analog.dominant_ecosystem}
             </span>
           )}
+          
+          <span className="flex items-center gap-0.5">
+            <MapPin className="h-2.5 w-2.5" />
+            {analog.center_lat.toFixed(3)}, {analog.center_lon.toFixed(3)}
+          </span>
+          <span>{formatYearRange(analog.start_year, analog.end_year)}</span>
+          
+
+          <span>Area {analog.area_sqkm != null ? `${analog.area_sqkm.toFixed(2)} km²` : '—'}</span>
         </div>
       </div>
 
@@ -151,7 +162,7 @@ export default function AnalogPanel() {
     setSimilarityMethod,
     highlightedAnalogId,
     setHighlightedAnalogId,
-    selectRegion,
+    setFocusedAnalogRegionId,
     setActiveTab,
   } = useMapStore();
 
@@ -202,8 +213,8 @@ export default function AnalogPanel() {
   }
 
   const handleAnalogClick = (analog: AnalogResult) => {
-    selectRegion(analog.region_id, analog.center_lat, analog.center_lon);
-    setActiveTab('overview');
+    setFocusedAnalogRegionId(analog.region_id);
+    setActiveTab('analogs');
   };
 
   return (

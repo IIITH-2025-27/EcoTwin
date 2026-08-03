@@ -186,6 +186,7 @@ class SimilarityService:
                         "year": end_year,
                         "center_lat": candidate["center_lat"],
                         "center_lon": candidate["center_lon"],
+                        "area_sqkm": candidate.get("area_sqkm"),
                         "dominant_ecosystem": candidate["dominant_ecosystem"],
                     }
                 )
@@ -208,8 +209,11 @@ class SimilarityService:
                 region_id=row["region_id"],
                 center_lat=row["center_lat"],
                 center_lon=row["center_lon"],
+                area_sqkm=row.get("area_sqkm"),
                 similarity_score=max(0.0, min(1.0, float(row["similarity_score"]))),
                 year=row["year"],
+                start_year=row["start_year"],
+                end_year=row["end_year"],
                 dominant_ecosystem=row.get("dominant_ecosystem"),
             )
             for row in raw_results

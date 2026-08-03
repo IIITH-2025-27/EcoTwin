@@ -151,8 +151,7 @@ class ForecastService:
 
         # ── Step 2: Build AnalogForecastInput list ───────────────────────────
         # We need the lake_id and matched_window_start/end for each analog.
-        # SimilarityService stores the best-window information in best_matches
-        # but AnalogResult currently only exposes region_id, year, similarity_score.
+        # SimilarityService now exposes the matched window directly on AnalogResult.
         # We retrieve the lake_id from the DB for each analog region.
         ranked_inputs: List[AnalogForecastInput] = []
         for analog in search_response.analogs:
@@ -161,16 +160,12 @@ class ForecastService:
                 if row is None:
                     continue
                 lake_id: int = int(row["lake_id"])
-                # The similarity search returns the end year of the matched window
-                # as `year`.  We back-calculate the start (window_size = 5).
-                window_end: int = analog.year
-                window_start: int = window_end - 4  # 5-year window
                 ranked_inputs.append(
                     AnalogForecastInput(
                         lake_id=lake_id,
                         region_id=analog.region_id,
-                        matched_window_start=window_start,
-                        matched_window_end=window_end,
+                        matched_window_start=analog.start_year,
+                        matched_window_end=analog.end_year,
                         similarity_score=analog.similarity_score,
                         forecast_horizon=forecast_horizon,
                     )

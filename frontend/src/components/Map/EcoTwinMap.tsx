@@ -26,6 +26,7 @@ import LakeSearch from './LakeSearch';
 const DEFAULT_CENTER: LatLngExpression = [20.5937, 78.9629];
 const DEFAULT_ZOOM = 5;
 const INDIA_BOUNDS: [[number, number], [number, number]] = [[6.0, 68.0], [38.5, 98.5]];
+const EMPTY_REGIONS: LakeRegionResponse[] = [];
 
 function similarityColor(score: number): string {
   if (score >= 0.85) return '#22c55e';
@@ -37,6 +38,12 @@ function similarityColor(score: number): string {
 
 function fmt(n: number, d = 4) {
   return n.toFixed(d);
+}
+
+function formatYearRange(startYear: number, endYear: number): string {
+  return startYear === endYear
+    ? `Year ${startYear}`
+    : `Years ${startYear} to ${endYear}`;
 }
 
 function toGeoJson(region: LakeRegionResponse): Feature {
@@ -214,7 +221,7 @@ function SelectedRegionMarker({ lat, lon }: { lat: number; lon: number }) {
 
 // ── Yellow lake polygon (search / marker click) ───────────────────────────────
 
-function SelectedLakePolygon({ lake }: { lake: LakeGeometry }) {
+function SelectedLakePolygon({ lake, focusRevision }: { lake: LakeGeometry; focusRevision: number }) {
   const map = useMap();
 
   useEffect(() => {
@@ -228,7 +235,7 @@ function SelectedLakePolygon({ lake }: { lake: LakeGeometry }) {
     if (lake.center_lat !== null && lake.center_lon !== null) {
       map.flyTo([lake.center_lat, lake.center_lon], 11, { duration: 0.8 });
     }
-  }, [lake, map]);
+  }, [lake, focusRevision, map]);
 
   if (!lake.geometry) return null;
 
@@ -251,6 +258,76 @@ function SelectedLakePolygon({ lake }: { lake: LakeGeometry }) {
         </div>
       </Popup>
     </GeoJSON>
+  );
+}
+
+function FocusedAnalogPolygon({
+  lake,
+  analogs,
+  onZoomOut,
+}: {
+  lake: LakeGeometry;
+  analogs: AnalogResult[];
+  onZoomOut: () => void;
+}) {
+  const map = useMap();
+
+  useEffect(() => {
+    if (lake.geometry) {
+      const bounds = geoJSON(lake.geometry as GeoJsonObject).getBounds();
+      if (bounds.isValid()) {
+        map.flyToBounds(bounds, { padding: [48, 48], maxZoom: 12, duration: 0.8 });
+        return;
+      }
+    }
+
+    if (lake.center_lat !== null && lake.center_lon !== null) {
+      map.flyTo([lake.center_lat, lake.center_lon], 11, { duration: 0.8 });
+    }
+  }, [lake, map]);
+
+  if (!lake.geometry) return null;
+
+  return (
+    <>
+      <GeoJSON
+        data={lake.geometry as GeoJsonObject}
+        style={() => ({
+          color: '#22c55e',
+          weight: 4,
+          fillColor: '#22c55e',
+          fillOpacity: 0.16,
+          opacity: 1,
+        })}
+      >
+        <Popup>
+          <div className="min-w-[180px] space-y-1">
+            <p className="text-sm font-semibold">{lake.display_name}</p>
+            <p className="text-xs text-slate-600">{lake.state ?? lake.country}</p>
+            {lake.area_sqkm !== null && <p className="text-xs text-slate-600">{lake.area_sqkm.toFixed(2)} km²</p>}
+          </div>
+        </Popup>
+      </GeoJSON>
+
+      <div className="absolute right-4 bottom-24 z-[1000]">
+        <button
+          type="button"
+          onClick={() => {
+            if (analogs.length === 1) {
+              const [onlyAnalog] = analogs;
+              map.flyTo([onlyAnalog.center_lat, onlyAnalog.center_lon], 8, { animate: true });
+            } else if (analogs.length > 1) {
+              const bounds: [number, number][] = analogs.map((analog) => [analog.center_lat, analog.center_lon]);
+              map.fitBounds(bounds, { padding: [48, 48], maxZoom: 8, animate: true });
+            }
+            onZoomOut();
+          }}
+          className="rounded-full border border-emerald-400/30 bg-surface-800/90 px-3 py-2 text-xs font-medium text-emerald-200 shadow-xl backdrop-blur-sm transition-colors hover:border-emerald-300/60 hover:text-emerald-100"
+        >
+          Zoom out
+        </button>
+      </div>
+    </>
   );
 }
 
@@ -284,11 +361,13 @@ function MapTabEffects({
 function AnalogLayer({
   analogs,
   highlightedId,
+  activeId,
   onHover,
   onClick,
 }: {
   analogs: AnalogResult[];
   highlightedId: string | null;
+  activeId: string | null;
   onHover: (id: string | null) => void;
   onClick: (analog: AnalogResult) => void;
 }) {
@@ -297,16 +376,17 @@ function AnalogLayer({
       {analogs.map((analog, index) => {
         const color = similarityColor(analog.similarity_score);
         const isHighlighted = analog.region_id === highlightedId;
+        const isActive = analog.region_id === activeId;
         return (
           <CircleMarker
             key={analog.region_id}
             center={[analog.center_lat, analog.center_lon]}
-            radius={isHighlighted ? 12 : 8}
+            radius={isHighlighted || isActive ? 12 : 8}
             pathOptions={{
               color,
               fillColor: color,
-              fillOpacity: isHighlighted ? 0.8 : 0.5,
-              weight: isHighlighted ? 3 : 1.5,
+              fillOpacity: isHighlighted || isActive ? 0.85 : 0.5,
+              weight: isHighlighted || isActive ? 3 : 1.5,
             }}
             eventHandlers={{
               mouseover: () => onHover(analog.region_id),
@@ -328,8 +408,8 @@ function AnalogLayer({
                   <span>{fmt(analog.center_lat)}</span>
                   <span className="text-slate-500">Lon</span>
                   <span>{fmt(analog.center_lon)}</span>
-                  <span className="text-slate-500">Year</span>
-                  <span>{analog.year}</span>
+                  <span className="text-slate-500">Window</span>
+                  <span>{formatYearRange(analog.start_year, analog.end_year)}</span>
                 </div>
               </div>
             </Popup>
@@ -350,18 +430,23 @@ export default function EcoTwinMap() {
     activeTab,
     topK,
     highlightedAnalogId,
+    focusedAnalogRegionId,
+    focusedAnalogFocusRevision,
     mapClickLoading,
+    selectedLake,
+    selectedLakeFocusRevision,
     setHighlightedAnalogId,
+    setFocusedAnalogRegionId,
+    setMapClickLoading,
     selectRegion,
     setActiveTab,
+    setSelectedLake,
     clearRegion,
   } = useMapStore();
 
-  const { data: regions = [] } = useRegions('India');
+  const { data: regions = EMPTY_REGIONS } = useRegions('India');
   const { data: similarityData } = useSimilarity(selectedRegionId, topK);
 
-  // ── Selected lake polygon (from search or marker click) ──────────────────
-  const [selectedLake, setSelectedLake] = useState<LakeGeometry | null>(null);
   const [activeLakeId, setActiveLakeId] = useState<number | null>(null);
   const [selectedLakeQuery, setSelectedLakeQuery] = useState('');
   const [committedLakeQuery, setCommittedLakeQuery] = useState<string | null>(null);
@@ -372,6 +457,7 @@ export default function EcoTwinMap() {
   // ── Active lake markers ──────────────────────────────────────────────────
   const [lakeMarkers, setLakeMarkers] = useState<LakeMarker[]>([]);
   const [showLakeMarkers, setShowLakeMarkers] = useState(false);
+  const [focusedAnalogLake, setFocusedAnalogLake] = useState<LakeGeometry | null>(null);
 
   useEffect(() => {
     if (activeTab === 'analogs') {
@@ -387,11 +473,53 @@ export default function EcoTwinMap() {
     return () => { cancelled = true; };
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    if (!focusedAnalogRegionId) {
+      setFocusedAnalogLake(null);
+      setMapClickLoading(false);
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    setFocusedAnalogLake(null);
+    setMapClickLoading(true);
+
+    const matchingRegion = regions.find((region) => region.region_id === focusedAnalogRegionId) ?? null;
+
+    if (!matchingRegion) {
+      setFocusedAnalogLake(null);
+      setMapClickLoading(false);
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    getLakeGeometry(matchingRegion.lake_id)
+      .then((lake) => {
+        if (cancelled) return;
+        setFocusedAnalogLake(lake);
+      })
+      .catch(() => {
+        if (!cancelled) setFocusedAnalogLake(null);
+      })
+      .finally(() => {
+        if (!cancelled) setMapClickLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [focusedAnalogRegionId, focusedAnalogFocusRevision, regions, setMapClickLoading]);
+
   // ── Shared handler: load geometry and highlight lake ─────────────────────
   const loadLakeGeometry = useCallback(async (lakeId: number) => {
     const reqId = ++lakeRequestId.current;
     setSelectedLake(null);
     setActiveLakeId(lakeId);
+    setFocusedAnalogRegionId(null);
     setLakeSearchError(null);
     setLakeLoading(true);
     try {
@@ -420,6 +548,7 @@ export default function EcoTwinMap() {
     lakeRequestId.current += 1;
     setSelectedLake(null);
     setActiveLakeId(null);
+    setFocusedAnalogRegionId(null);
     setSelectedLakeQuery('');
     setCommittedLakeQuery(null);
     setLakeSearchError(null);
@@ -429,18 +558,20 @@ export default function EcoTwinMap() {
 
   const handleRegionSelect = useCallback(
     (region: LakeRegionResponse) => {
+      setSelectedLake(null);
+      setFocusedAnalogRegionId(null);
       selectRegion(region.region_id, region.center_lat, region.center_lon);
       setActiveTab('overview');
     },
-    [selectRegion, setActiveTab],
+    [selectRegion, setActiveTab, setSelectedLake],
   );
 
   const handleAnalogClick = useCallback(
     (analog: AnalogResult) => {
-      selectRegion(analog.region_id, analog.center_lat, analog.center_lon);
-      setActiveTab('overview');
+      setFocusedAnalogRegionId(analog.region_id);
+      setActiveTab('analogs');
     },
-    [selectRegion, setActiveTab],
+    [setActiveTab, setFocusedAnalogRegionId],
   );
 
   /** Called when user picks a lake from the search bar */
@@ -456,11 +587,12 @@ export default function EcoTwinMap() {
     if (query.trim().length === 0) {
       setSelectedLake(null);
       setActiveLakeId(null);
+      setFocusedAnalogRegionId(null);
       setLakeSearchError(null);
       setLakeLoading(false);
       clearRegion();
     }
-  }, [clearRegion]);
+  }, [clearRegion, setFocusedAnalogRegionId]);
 
   /** Called when user clicks a lake marker pin */
   const handleMarkerClick = useCallback((lake: LakeMarker) => {
@@ -556,7 +688,18 @@ export default function EcoTwinMap() {
         )}
 
         {/* Yellow highlighted lake boundary */}
-        {selectedLake && <SelectedLakePolygon lake={selectedLake} />}
+        {selectedLake && (
+          <SelectedLakePolygon lake={selectedLake} focusRevision={selectedLakeFocusRevision} />
+        )}
+
+        {/* Focused similar-lake boundary */}
+        {focusedAnalogLake && (
+          <FocusedAnalogPolygon
+            lake={focusedAnalogLake}
+            analogs={similarityData?.analogs ?? []}
+            onZoomOut={() => setFocusedAnalogRegionId(null)}
+          />
+        )}
 
         {/* Blue dot for selected sub-region */}
         {selectedRegionLat !== null && selectedRegionLon !== null && (
@@ -568,10 +711,12 @@ export default function EcoTwinMap() {
           <AnalogLayer
             analogs={similarityData.analogs}
             highlightedId={highlightedAnalogId}
+            activeId={focusedAnalogRegionId}
             onHover={setHighlightedAnalogId}
             onClick={handleAnalogClick}
           />
         )}
+
       </MapContainer>
 
       {/* Layer legend + Show Lakes toggle */}

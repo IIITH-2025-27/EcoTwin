@@ -98,10 +98,11 @@ export interface AnalogResult {
   region_id: string;
   center_lat: number;
   center_lon: number;
+  area_sqkm: number | null;
   similarity_score: number;
   year: number;
-  start_year?: number;
-  end_year?: number;
+  start_year: number;
+  end_year: number;
   dominant_ecosystem: string | null;
 }
 

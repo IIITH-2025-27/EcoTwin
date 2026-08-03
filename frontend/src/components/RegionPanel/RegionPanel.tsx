@@ -7,49 +7,6 @@ import Badge from '@/components/common/Badge';
 import Card from '@/components/common/Card';
 import { useRegion } from '@/hooks/useRegion';
 import { useMapStore } from '@/store/mapStore';
-import type { RegionFeature } from '@/types';
-
-// ── Indicator bar ─────────────────────────────────────────────────────────
-function IndicatorBar({
-  label,
-  value,
-  min = -1,
-  max = 1,
-  color,
-}: {
-  label: string;
-  value: number | null | undefined;
-  min?: number;
-  max?: number;
-  color: string;
-}) {
-  if (value === null || value === undefined) {
-    return (
-      <div className="flex items-center justify-between text-xs">
-        <span className="text-slate-500">{label}</span>
-        <span className="text-slate-600">—</span>
-      </div>
-    );
-  }
-
-  const pct = Math.min(100, Math.max(0, ((value - min) / (max - min)) * 100));
-  return (
-    <div className="space-y-1">
-      <div className="flex items-center justify-between text-xs">
-        <span className="text-slate-400">{label}</span>
-        <span className="font-mono font-medium text-slate-200">
-          {value.toFixed(3)}
-        </span>
-      </div>
-      <div className="h-1.5 w-full rounded-full bg-slate-700/60">
-        <div
-          className="h-1.5 rounded-full transition-all duration-500"
-          style={{ width: `${pct}%`, backgroundColor: color }}
-        />
-      </div>
-    </div>
-  );
-}
 
 // ── Copy UUID button ──────────────────────────────────────────────────────
 function CopyId({ id }: { id: string }) {
@@ -176,58 +133,6 @@ export default function RegionPanel() {
           </div>
         </div>
       </Card>
-
-      {/* Environmental indicators */}
-      {f ? (
-        <Card title="Environmental Indicators" subtitle={`Year ${f.year}`}>
-          <div className="space-y-3.5">
-            <IndicatorBar
-              label="NDVI (Vegetation)"
-              value={f.ndvi_mean}
-              color="#22c55e"
-            />
-            <IndicatorBar
-              label="NDWI (Water)"
-              value={f.ndwi_mean}
-              color="#3b82f6"
-            />
-            <IndicatorBar
-              label="NBR (Burn Severity)"
-              value={f.nbr_mean}
-              color="#f97316"
-            />
-            {(f.ndvi_std !== null || f.ndwi_std !== null) && (
-              <div className="border-t border-slate-700/40 pt-3 space-y-2">
-                <p className="text-xs text-slate-500 uppercase tracking-wider">
-                  Std Deviation
-                </p>
-                <div className="grid grid-cols-3 gap-2">
-                  {[
-                    { label: 'NDVI σ', value: f.ndvi_std },
-                    { label: 'NDWI σ', value: f.ndwi_std },
-                    { label: 'NBR σ', value: f.nbr_std },
-                  ].map(({ label, value }) => (
-                    <div key={label} className="text-center">
-                      <p className="text-[10px] text-slate-500">{label}</p>
-                      <p className="font-mono text-xs text-slate-300">
-                        {value !== null && value !== undefined
-                          ? value.toFixed(3)
-                          : '—'}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        </Card>
-      ) : (
-        <Card>
-          <p className="text-center text-sm text-slate-500">
-            No indicator data available for this region.
-          </p>
-        </Card>
-      )}
     </div>
   );
 }

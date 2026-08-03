@@ -129,7 +129,8 @@ class EmbeddingRepository:
                     r.center_lat,
                     r.center_lon,
                     r.embedding,
-                    l.display_name
+                    l.display_name,
+                    l.area_sqkm
                 FROM regions AS r
                 LEFT JOIN lakes AS l ON l.lake_id = r.lake_id
                 WHERE r.embedding IS NOT NULL
@@ -149,6 +150,7 @@ class EmbeddingRepository:
                     "center_lat": float(row["center_lat"]),
                     "center_lon": float(row["center_lon"]),
                     "dominant_ecosystem": row["display_name"],
+                    "area_sqkm": row["area_sqkm"],
                     "records": [],
                 },
             )
@@ -158,6 +160,7 @@ class EmbeddingRepository:
                 payload["center_lat"] = float(row["center_lat"])
                 payload["center_lon"] = float(row["center_lon"])
                 payload["dominant_ecosystem"] = row["display_name"]
+                payload["area_sqkm"] = row["area_sqkm"]
             parsed_emb = self._parse_embedding(row["embedding"])
             if parsed_emb is not None:
                 payload["records"].append(
