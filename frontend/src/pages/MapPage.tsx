@@ -37,12 +37,12 @@ const TABS: Array<{
     icon: <Network className="h-4 w-4" />,
     requiresRegion: true,
   },
-  {
-    id: 'temporal',
-    label: 'Temporal',
-    icon: <LineChart className="h-4 w-4" />,
-    requiresRegion: true,
-  },
+  // {
+  //   id: 'temporal',
+  //   label: 'Temporal',
+  //   icon: <LineChart className="h-4 w-4" />,
+  //   requiresRegion: true,
+  // },
   {
     id: 'forecast',
     label: 'Forecast',
