@@ -152,6 +152,55 @@ export interface ForecastData {
   explanation: string;
 }
 
+// ── Ecological Forecast ──────────────────────────────────────────────────
+
+export type EcoDirection = 'up' | 'down' | 'stable' | 'uncertain';
+
+export interface YearlyDirection {
+  year: number;
+  direction: EcoDirection;
+  weighted_score: number;
+  twins_contributing: number;
+}
+
+export interface IndexForecast {
+  index_name: string;
+  current_value: number;
+  yearly_directions: YearlyDirection[];
+}
+
+export interface TwinContribution {
+  lake_id: number;
+  region_id: string;
+  rank: number;
+  fixed_weight: number;
+  matched_year: number;
+  similarity_score: number;
+  embedding_distance: number;
+  future_window: number[];
+  index_values: Record<string, Record<string, number>>;
+}
+
+export interface ForecastAuditReport {
+  summary: string;
+  anchor_details: string;
+  weight_scheme: string;
+  classification_rule: string;
+  twin_details: string[];
+  per_year_reasoning: string[];
+}
+
+export interface EcologicalForecastData {
+  region_id: string;
+  lake_id: number;
+  current_year: number;
+  forecast_years: number[];
+  index_forecasts: IndexForecast[];
+  twins_used: TwinContribution[];
+  audit_report: ForecastAuditReport;
+  explanation: string;
+}
+
 // ── Report ────────────────────────────────────────────────────────────────
 
 export type ReportStatus = 'pending' | 'processing' | 'completed' | 'failed';

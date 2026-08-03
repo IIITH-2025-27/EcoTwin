@@ -69,3 +69,62 @@ class EmbeddingForecastResult(BaseModel):
     selected_analogs: List[SelectedAnalog]
     num_analogs_used: int
     forecast_horizon: int
+
+
+# ── Ecological Index Forecast I/O ─────────────────────────────────────────────
+
+
+class YearlyDirection(BaseModel):
+    """Classification for one index at one forecast year."""
+
+    year: int
+    direction: str                     # "up" | "down" | "stable" | "uncertain"
+    weighted_score: float              # combined weighted delta for this year
+    twins_contributing: int            # how many twins had data for this year
+
+
+class IndexForecast(BaseModel):
+    """One row of the 3-year forecast table — one index across all years."""
+
+    index_name: str                    # "ndci", "ndvi_b7", etc.
+    current_value: float               # target lake's latest actual value
+    yearly_directions: List[YearlyDirection]
+
+
+class TwinContribution(BaseModel):
+    """One twin lake's contribution to the ecological forecast."""
+
+    lake_id: int
+    region_id: UUID
+    rank: int                          # 1-based rank by similarity
+    fixed_weight: float                # rank-based weight (0.40, 0.25, …)
+    matched_year: int
+    similarity_score: float
+    embedding_distance: float
+    future_window: List[int]           # years with data after match
+    index_values: Dict[str, Dict[str, float]]  # index -> {year_str: value}
+
+
+class ForecastAuditReport(BaseModel):
+    """Detailed audit trail explaining how the forecast was derived."""
+
+    summary: str
+    anchor_details: str
+    weight_scheme: str
+    classification_rule: str
+    twin_details: List[str]
+    per_year_reasoning: List[str]
+
+
+class EcologicalForecastResponse(BaseModel):
+    """Per-year directional ecological forecast for one target lake."""
+
+    region_id: UUID
+    lake_id: int
+    current_year: int
+    forecast_years: List[int]          # e.g. [2026, 2027, 2028]
+    index_forecasts: List[IndexForecast]
+    twins_used: List[TwinContribution]
+    audit_report: ForecastAuditReport
+    explanation: str
+
