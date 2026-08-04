@@ -1,5 +1,5 @@
 from functools import lru_cache
-from typing import List
+from typing import List, Optional
 from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -19,6 +19,8 @@ class Settings(BaseSettings):
     APP_VERSION: str = "1.0.0"
     DEBUG: bool = False
     ENVIRONMENT: str = "production"
+
+    DATABASE_URL_OVERRIDE: Optional[str] = None
 
     # ── Server ────────────────────────────────────────────────────
     HOST: str = "0.0.0.0"
@@ -104,9 +106,11 @@ class Settings(BaseSettings):
     EMBEDDING_GPU_BATCH_SIZE: int = 8
     EMBEDDING_MAX_WORKERS: int = 4
 
-    # ── Computed properties ───────────────────────────────────────
     @property
-    def DATABASE_URL(self) -> str:  # noqa: N802
+    def DATABASE_URL(self) -> str:
+        if self.DATABASE_URL_OVERRIDE:
+            return self.DATABASE_URL_OVERRIDE
+    
         return URL.create(
             drivername="postgresql+asyncpg",
             username=self.POSTGRES_USER,
@@ -115,9 +119,15 @@ class Settings(BaseSettings):
             port=self.POSTGRES_PORT,
             database=self.POSTGRES_DB,
         ).render_as_string(hide_password=False)
-
+    
     @property
-    def SYNC_DATABASE_URL(self) -> str:  # noqa: N802
+    def SYNC_DATABASE_URL(self) -> str:
+        if self.DATABASE_URL_OVERRIDE:
+            return (
+                self.DATABASE_URL_OVERRIDE
+                .replace("postgresql+asyncpg://", "postgresql+psycopg2://", 1)
+            )
+    
         return URL.create(
             drivername="postgresql+psycopg2",
             username=self.POSTGRES_USER,

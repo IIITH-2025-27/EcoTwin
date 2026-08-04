@@ -56,3 +56,5 @@ backend/data/sentinel/
 venv/
 backend/app/secrets/*.json
 backend/backups/*.dump
+backend/.env.prod
+backend/.env.local
