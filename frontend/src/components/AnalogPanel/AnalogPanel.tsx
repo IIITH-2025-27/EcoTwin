@@ -49,7 +49,7 @@ function SimilarityRing({ score }: { score: number }) {
         className="absolute inset-0 flex items-center justify-center font-mono text-[10px] font-bold"
         style={{ color }}
       >
-        {pct.toFixed(0)}%
+        {pct.toFixed(1)}%
       </span>
     </div>
   );

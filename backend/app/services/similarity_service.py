@@ -103,6 +103,27 @@ class SimilarityService:
             cosine_distance = 1.0 - (dot / norms) if norms else 0.0
         return 1.0 - cosine_distance
 
+    # Floor below which a cosine/KNN score is treated as zero similarity.
+    # All Prithvi embeddings are L2-normalised, so raw cosine scores
+    # cluster tightly near 1.0.  Rescaling [_COSINE_FLOOR, 1.0] → [0.0, 1.0]
+    # spreads the values so the displayed percentage is meaningful.
+    _COSINE_FLOOR: float = 0.5
+    @staticmethod
+    def _rescale_score(score: float, method: SimilarityMethod) -> float:
+        """
+        Map a raw similarity score to a human-meaningful [0, 1] range.
+        - COSINE / KNN: raw scores cluster near 1.0 for all unit-norm
+          embeddings from the same model.  Linearly rescale
+          [_COSINE_FLOOR, 1.0] → [0.0, 1.0] so rankings are visible.
+        - EUCLIDEAN: 1 / (1 + distance) is already naturally spread;
+          no rescaling needed.
+        """
+        if method in (SimilarityMethod.COSINE, SimilarityMethod.KNN):
+            floor = SimilarityService._COSINE_FLOOR
+            span = 1.0 - floor
+            return max(0.0, min(1.0, (score - floor) / span))
+        return max(0.0, min(1.0, score))
+
     async def search_analogs(
         self,
         region_id: UUID,
@@ -182,7 +203,7 @@ class SimilarityService:
                         "region_id": candidate["region_id"],
                         "start_year": start_year,
                         "end_year": end_year,
-                        "similarity_score": max(0.0, min(1.0, best_window_score)),
+                        "similarity_score": self._rescale_score(best_window_score, method),
                         "year": end_year,
                         "center_lat": candidate["center_lat"],
                         "center_lon": candidate["center_lon"],
@@ -210,7 +231,7 @@ class SimilarityService:
                 center_lat=row["center_lat"],
                 center_lon=row["center_lon"],
                 area_sqkm=row.get("area_sqkm"),
-                similarity_score=max(0.0, min(1.0, float(row["similarity_score"]))),
+                similarity_score=self._rescale_score(float(row["similarity_score"]), method),
                 year=row["year"],
                 start_year=row["start_year"],
                 end_year=row["end_year"],
