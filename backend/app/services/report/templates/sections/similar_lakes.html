@@ -1,0 +1,20 @@
+{% set sim = context.similarity %}
+<div class="section-head">
+  <div class="section-kicker">Section 03</div>
+  <h2>Similar Lake Map</h2>
+</div>
+
+{% if context.lake.map_image %}
+<div class="fig">
+  <img src="{{ context.lake.map_image | safe }}" alt="Geographic distribution of similar lakes"/>
+  <div class="fig-caption">
+    Geographic distribution of the {{ context.analogs | length }} most similar lakes
+  </div>
+</div>
+<div class="map-legend">
+  <span class="legend-item"><span class="legend-dot" style="background:#fde047;"></span>Selected lake</span>
+  <span class="legend-item"><span class="legend-dot" style="background:#22c55e;"></span>Similar lake</span>
+</div>
+{% else %}
+<div class="empty-note">Map could not be generated for this comparison.</div>
+{% endif %}

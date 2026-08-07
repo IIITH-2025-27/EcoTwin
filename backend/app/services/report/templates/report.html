@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>EcoTwin — Ecosystem Discovery Report</title>
+<style>
+  /* ── Page setup & running footer ─────────────────────────────────────── */
+  @page {
+    size: A4;
+    margin: 20mm 16mm 24mm 16mm;
+
+    @bottom-left {
+      content: "EcoTwin Ecosystem Discovery Platform";
+      font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+      font-size: 7.5pt;
+      color: #94a3b8;
+    }
+    @bottom-right {
+      content: "Page " counter(page) " of " counter(pages);
+      font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+      font-size: 7.5pt;
+      color: #94a3b8;
+    }
+    @bottom-center {
+      content: "•";
+      color: #16a34a;
+      font-size: 7pt;
+    }
+  }
+  @page cover {
+    margin: 0;
+    @bottom-left { content: none; }
+    @bottom-right { content: none; }
+    @bottom-center { content: none; }
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    font-size: 10pt;
+    line-height: 1.5;
+    color: #1e293b;
+    margin: 0;
+    padding: 0;
+  }
+
+  .section { break-before: page; }
+
+  .section-head {
+    border-left: 4px solid #16a34a;
+    padding: 2px 0 2px 12px;
+    margin: 0 0 16px 0;
+  }
+  .section-head .section-kicker {
+    font-size: 7.5pt;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1.8px;
+    color: #16a34a;
+  }
+  .section-head h2 {
+    margin: 2px 0 0 0;
+    font-size: 16pt;
+    color: #0f172a;
+  }
+
+  .lead {
+    color: #475569;
+    font-size: 9.5pt;
+    margin: 0 0 14px 0;
+  }
+
+  h3 {
+    font-size: 11pt;
+    color: #0f172a;
+    margin: 18px 0 8px 0;
+    border-bottom: 1px solid #e2e8f0;
+    padding-bottom: 4px;
+  }
+
+  .mono { font-family: 'Liberation Mono', 'DejaVu Sans Mono', monospace; font-size: 8.5pt; }
+
+  /* ── Two-column layout (table based — WeasyPrint safe) ─────────────── */
+  .cols { display: table; width: 100%; table-layout: fixed; border-collapse: separate; border-spacing: 0; }
+  .cols > .col { display: table-cell; vertical-align: top; }
+  .cols > .col:first-child { padding-right: 14px; }
+
+  /* ── Key/value tables ──────────────────────────────────────────────── */
+  table.kv { width: 100%; border-collapse: collapse; margin-top: 4px; }
+  table.kv th {
+    width: 42%;
+    text-align: left;
+    font-weight: 600;
+    color: #64748b;
+    font-size: 8.5pt;
+    padding: 6px 10px 6px 0;
+    vertical-align: top;
+  }
+  table.kv td {
+    text-align: left;
+    color: #0f172a;
+    font-size: 9.5pt;
+    padding: 6px 8px;
+    border-bottom: 1px solid #e2e8f0;
+  }
+
+  /* ── Stat cards (Section 2) ────────────────────────────────────────── */
+  table.stats { width: 100%; border-collapse: separate; border-spacing: 8px 8px; margin: -8px; }
+  .stat {
+    border: 1px solid #bbf7d0;
+    background: #f0fdf4;
+    border-radius: 8px;
+    padding: 10px 14px;
+  }
+  .stat .stat-label {
+    font-size: 7pt;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: #15803d;
+  }
+  .stat .stat-value {
+    font-size: 13pt;
+    font-weight: 700;
+    color: #14532d;
+    margin-top: 2px;
+  }
+
+  /* ── Data tables (Section 3) ───────────────────────────────────────── */
+  table.data {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 8.5pt;
+    margin: 4px 0 14px 0;
+  }
+  table.data th {
+    background: #16a34a;
+    color: #ffffff;
+    text-align: left;
+    padding: 7px 9px;
+    font-size: 7.5pt;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+  }
+  table.data td {
+    padding: 7px 9px;
+    border-bottom: 1px solid #e2e8f0;
+    color: #1e293b;
+  }
+  table.data tbody tr:nth-child(even) td { background: #f0fdf4; }
+  table.data td.center { text-align: center; }
+  table.data td.right { text-align: right; }
+
+  /* ── Figures ───────────────────────────────────────────────────────── */
+  .fig { break-inside: avoid; margin: 8px 0 6px 0; }
+  .fig img { width: 100%; border-radius: 8px; }
+  .fig .fig-caption {
+    font-size: 8pt;
+    color: #64748b;
+    text-align: center;
+    margin-top: 5px;
+  }
+
+  .map-legend { margin-top: 6px; }
+  .map-legend .legend-item {
+    display: inline-block;
+    margin-right: 14px;
+    font-size: 8pt;
+    color: #475569;
+  }
+  .map-legend .legend-dot {
+    display: inline-block;
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    margin-right: 4px;
+    vertical-align: middle;
+  }
+
+  .legend-note {
+    font-size: 8pt;
+    color: #64748b;
+    margin: 10px 0 14px 0;
+  }
+
+  /* ── Analog lake profiles (Section 4) ───────────────────────────────── */
+  .analog-profile {
+    break-inside: avoid;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    padding: 16px 20px;
+    margin-bottom: 6px;
+    background: #ffffff;
+  }
+  .analog-profile .rank-badge {
+    display: inline-block;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: #16a34a;
+    color: #ffffff;
+    font-weight: 700;
+    text-align: center;
+    line-height: 24px;
+    font-size: 11pt;
+    margin-right: 8px;
+    vertical-align: middle;
+  }
+  .analog-profile .score-pill {
+    float: right;
+    background: #dcfce7;
+    color: #166534;
+    font-weight: 700;
+    font-size: 9.5pt;
+    border-radius: 999px;
+    padding: 3px 12px;
+  }
+  .analog-profile-head { margin-bottom: 2px; }
+  .analog-profile-head .analog-name {
+    font-size: 12.5pt;
+    font-weight: 700;
+    color: #0f172a;
+    vertical-align: middle;
+  }
+  .analog-profile-location {
+    font-size: 9pt;
+    color: #64748b;
+    margin: 0 0 10px 40px;
+  }
+  .analog-profile .fig img { border-radius: 8px; }
+  .analog-divider {
+    border: none;
+    border-top: 1px dashed #cbd5e1;
+    margin: 14px 0;
+  }
+
+  /* ── Forecast placeholder (Section 5) ──────────────────────────────── */
+  .underdev {
+    border: 1px dashed #94a3b8;
+    background: #f8fafc;
+    border-radius: 10px;
+    padding: 20px;
+    text-align: center;
+    margin-bottom: 14px;
+  }
+  .status-badge {
+    display: inline-block;
+    background: #fef3c7;
+    color: #92400e;
+    border: 1px solid #fde68a;
+    border-radius: 999px;
+    padding: 4px 16px;
+    font-size: 10pt;
+    font-weight: 700;
+  }
+  .underdev .underdev-desc {
+    color: #475569;
+    font-size: 9.5pt;
+    margin: 12px 0 0 0;
+  }
+  .planned-box {
+    border: 1px solid #e2e8f0;
+    background: #ffffff;
+    border-radius: 10px;
+    padding: 14px 20px;
+  }
+  .planned-box ul { margin: 0; padding: 0; list-style: none; }
+  .planned-box li {
+    padding: 4px 0;
+    color: #334155;
+    font-size: 9.5pt;
+    border-bottom: 1px solid #f1f5f9;
+  }
+  .planned-box li:last-child { border-bottom: none; }
+  .planned-box li::before { content: "✓  "; color: #16a34a; font-weight: 700; }
+
+  /* ── Cover page ────────────────────────────────────────────────────── */
+  .cover {
+    page: cover;
+    position: relative;
+    width: 100%;
+    height: 297mm;
+    background: linear-gradient(160deg, #0f172a 0%, #164e33 78%, #166534 100%);
+    color: #ffffff;
+    overflow: hidden;
+  }
+  .cover .cover-top {
+    position: absolute;
+    top: 16mm;
+    left: 18mm;
+    right: 18mm;
+  }
+  .cover .cover-logo { display: inline-block; vertical-align: middle; }
+  .cover .cover-brand { display: inline-block; vertical-align: middle; margin-left: 10px; }
+  .cover .cover-name {
+    display: block;
+    font-size: 20pt;
+    font-weight: 800;
+    letter-spacing: 0.5px;
+    line-height: 1.1;
+  }
+  .cover .cover-tag {
+    display: block;
+    font-size: 8.5pt;
+    letter-spacing: 2.5px;
+    text-transform: uppercase;
+    color: #bbf7d0;
+  }
+  .cover .cover-title {
+    position: absolute;
+    top: 78mm;
+    left: 24mm;
+    right: 24mm;
+    text-align: center;
+  }
+  .cover .cover-kicker {
+    font-size: 10pt;
+    font-weight: 700;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    color: #86efac;
+    margin-bottom: 8px;
+  }
+  .cover .cover-lake {
+    margin: 0;
+    font-size: 26pt;
+    font-weight: 800;
+    line-height: 1.2;
+    color: #ffffff;
+  }
+  .cover .cover-location {
+    margin-top: 6px;
+    font-size: 12pt;
+    color: #d1fae5;
+  }
+  .cover .cover-meta {
+    margin-top: 10px;
+    font-size: 9pt;
+    color: #a7f3d0;
+    letter-spacing: 0.5px;
+  }
+  .cover .cover-image {
+    position: absolute;
+    top: 122mm;
+    left: 16mm;
+    right: 16mm;
+    height: 128mm;
+    text-align: center;
+  }
+  .cover .cover-img {
+    width: 100%;
+    max-height: 118mm;
+    object-fit: cover;
+    border-radius: 10px;
+    border: 3px solid rgba(255, 255, 255, 0.25);
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+  }
+  .cover .cover-caption {
+    margin-top: 6px;
+    font-size: 8.5pt;
+    color: #bbf7d0;
+    letter-spacing: 0.5px;
+  }
+  .cover .cover-foot {
+    position: absolute;
+    bottom: 10mm;
+    left: 18mm;
+    right: 18mm;
+    text-align: center;
+    font-size: 8pt;
+    letter-spacing: 1px;
+    color: #86efac;
+    border-top: 1px solid rgba(187, 247, 208, 0.25);
+    padding-top: 6px;
+  }
+
+  /* ── Misc ──────────────────────────────────────────────────────────── */
+  .empty-note {
+    border: 1px dashed #cbd5e1;
+    border-radius: 8px;
+    padding: 18px;
+    text-align: center;
+    color: #64748b;
+    font-size: 9.5pt;
+  }
+  .summary-box {
+    border: 1px solid #bbf7d0;
+    background: #f0fdf4;
+    border-radius: 10px;
+    padding: 18px 22px;
+    font-size: 10pt;
+    line-height: 1.7;
+    color: #14532d;
+  }
+  .summary-box p { margin: 0; }
+</style>
+</head>
+<body>
+  <section class="cover">
+    {% include "sections/cover.html" %}
+  </section>
+
+  <section class="section">
+    {% include "sections/overview.html" %}
+  </section>
+
+  <section class="section">
+    {% include "sections/similarity.html" %}
+  </section>
+
+  <section class="section">
+    {% include "sections/similar_lakes.html" %}
+  </section>
+
+  <section class="section">
+    {% include "sections/analogs.html" %}
+  </section>
+
+  <section class="section">
+    {% include "sections/forecast.html" %}
+  </section>
+
+  <section class="section">
+    {% include "sections/technical.html" %}
+  </section>
+
+  <section class="section">
+    {% include "sections/summary.html" %}
+  </section>
+</body>
+</html>

@@ -1,0 +1,58 @@
+{% set tech = context.technical %}
+<div class="section-head">
+  <div class="section-kicker">Section 06</div>
+  <h2>Technical Details</h2>
+</div>
+
+<h3>Methodology</h3>
+<p class="lead">
+  Lake spectral signatures are encoded as vector embeddings by the Prithvi geospatial foundation
+  model. Similar lakes are found by nearest-neighbour search across the EcoTwin ecosystem library.
+</p>
+
+<table class="data">
+  <tbody>
+    <tr>
+      <td style="width:38%;"><strong>Embedding Model</strong></td>
+      <td>{{ tech.embedding_model or 'Prithvi' }}</td>
+    </tr>
+    <tr>
+      <td><strong>Embedding Dimension</strong></td>
+      <td>{{ tech.embedding_dim }}</td>
+    </tr>
+    <tr>
+      <td><strong>Vector Database</strong></td>
+      <td>{{ tech.database_stack | join(' + ') }}</td>
+    </tr>
+    <tr>
+      <td><strong>Similarity Search</strong></td>
+      <td>{{ tech.search_detail }}</td>
+    </tr>
+    <tr>
+      <td><strong>Ecosystem Library Size</strong></td>
+      <td>{{ '{:,}'.format(tech.library_size) }} lakes</td>
+    </tr>
+    <tr>
+      <td><strong>Report Generated</strong></td>
+      <td>{{ context.generated_at }}</td>
+    </tr>
+  </tbody>
+</table>
+<!-- 
+<h3>EcoTwin Stack</h3>
+<table class="data">
+  <tbody>
+    <tr>
+      <td style="width:38%;"><strong>Geospatial Storage</strong></td>
+      <td>PostgreSQL + PostGIS + pgvector</td>
+    </tr>
+    <tr>
+      <td><strong>PDF Rendering</strong></td>
+      <td>WeasyPrint (HTML + CSS → PDF)</td>
+    </tr>
+    <tr>
+      <td><strong>Basemap Imagery</strong></td>
+      <td>Esri World Imagery (satellite)</td>
+    </tr>
+  </tbody>
+</table> -->

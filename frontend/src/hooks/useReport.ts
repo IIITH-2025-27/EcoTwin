@@ -1,81 +1,58 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
-import { createReport, getReport } from '@/api/reports';
-import type { Report, ReportRequest } from '@/types';
+import { generateReportPDF } from '@/api/reports';
+import type { ReportRequest } from '@/types';
 
-const POLL_INTERVAL_MS = 3_000;
-const MAX_POLL_ATTEMPTS = 40; // 2 minutes
+export const REPORT_STEPS = [
+  'Collecting Lake Information',
+  'Building Similarity Analysis',
+  'Preparing Maps',
+  'Rendering Report',
+  'Creating PDF',
+] as const;
+
+const STEP_INTERVAL_MS = 2_400;
 
 export function useReport() {
-  const [report, setReport] = useState<Report | null>(null);
-  const [pollError, setPollError] = useState<string | null>(null);
-  const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const pollCountRef = useRef(0);
-
-  const stopPolling = useCallback(() => {
-    if (pollTimerRef.current) {
-      clearInterval(pollTimerRef.current);
-      pollTimerRef.current = null;
-    }
-  }, []);
-
-  const startPolling = useCallback(
-    (reportId: string) => {
-      stopPolling();
-      pollCountRef.current = 0;
-
-      pollTimerRef.current = setInterval(async () => {
-        pollCountRef.current += 1;
-
-        if (pollCountRef.current > MAX_POLL_ATTEMPTS) {
-          stopPolling();
-          setPollError('Report generation timed out. Please try again.');
-          return;
-        }
-
-        try {
-          const latest = await getReport(reportId);
-          setReport(latest);
-
-          if (latest.status === 'completed' || latest.status === 'failed') {
-            stopPolling();
-          }
-        } catch {
-          stopPolling();
-          setPollError('Failed to fetch report status.');
-        }
-      }, POLL_INTERVAL_MS);
-    },
-    [stopPolling],
-  );
-
-  // Cleanup on unmount
-  useEffect(() => stopPolling, [stopPolling]);
+  const [stepIndex, setStepIndex] = useState(0);
 
   const mutation = useMutation({
-    mutationFn: (request: ReportRequest) => createReport(request),
-    onSuccess: (data) => {
-      setReport(data);
-      setPollError(null);
-      if (data.status === 'pending' || data.status === 'processing') {
-        startPolling(data.report_id);
+    mutationFn: (request: ReportRequest) => generateReportPDF(request),
+    onSuccess: (pdfBlob) => {
+      const url = URL.createObjectURL(pdfBlob);
+      const newTab = window.open(url, '_blank');
+      if (!newTab) {
+        const anchor = document.createElement('a');
+        anchor.href = url;
+        anchor.download = 'ecotwin-report.pdf';
+        anchor.click();
       }
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
     },
   });
 
+  // Advance the step checklist while the PDF is being generated.
+  useEffect(() => {
+    if (!mutation.isPending) return;
+    setStepIndex(0);
+    const interval = setInterval(() => {
+      setStepIndex((index) => Math.min(index + 1, REPORT_STEPS.length - 1));
+    }, STEP_INTERVAL_MS);
+    return () => clearInterval(interval);
+  }, [mutation.isPending]);
+
   const reset = useCallback(() => {
-    stopPolling();
-    setReport(null);
-    setPollError(null);
+    setStepIndex(0);
     mutation.reset();
-  }, [stopPolling, mutation]);
+  }, [mutation]);
 
   return {
-    report,
-    pollError,
+    steps: REPORT_STEPS,
+    stepIndex,
     generate: mutation.mutate,
     isGenerating: mutation.isPending,
-    generateError: mutation.error?.message ?? null,
+    isSuccess: mutation.isSuccess,
+    error: mutation.error?.message ?? null,
     reset,
   };
 }

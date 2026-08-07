@@ -1,0 +1,103 @@
+{% set sim = context.similarity %}
+{% set lake = context.lake %}
+<div class="section-head">
+  <div class="section-kicker">Section 02</div>
+  <h2>Similarity Analysis</h2>
+</div>
+
+<p class="lead">
+  {{ lake.name }} was compared against the <strong>EcoTwin ecosystem library</strong>
+  using <strong>{{ method_label(sim.method) }} similarity</strong> on
+  <strong>Prithvi geospatial foundation model embeddings</strong>. The retrieved analog
+  lakes represent ecosystems with the most similar spectral and environmental
+  characteristics.
+</p>
+
+<table class="data">
+  <thead>
+    <tr>
+      <th>Search Method</th>
+      <th class="center">Compared Lakes</th>
+      <th class="center">Search Duration</th>
+      <th class="center">Window Size</th>
+      <th class="center">Top Matches</th>
+      <th class="center">Best Similarity</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>{{ method_label(sim.method) }}</strong></td>
+      <td class="center">{{ '{:,}'.format(sim.total_lakes) }}</td>
+      <td class="center">10 Years</td>
+      <td class="center">{{ 5 }}</td>
+      <td class="center">{{ sim.top_k }}</td>
+      <td class="center"><strong>{{ fmt_score(sim.best_score) }}</strong></td>
+    </tr>
+  </tbody>
+</table>
+
+<h3>Analysis</h3>
+{% if sim.best_score is not none and sim.best_score >= 0.90 %}
+<p class="lead">
+  {{ lake.name }} exhibits <strong>very high similarity</strong> to the retrieved
+  analog lakes. This indicates that the lake shares highly comparable spectral and
+  environmental characteristics with ecosystems already present in the EcoTwin
+  reference library.
+</p>
+{% elif sim.best_score is not none and sim.best_score >= 0.80 %}
+<p class="lead">
+  {{ lake.name }} exhibits <strong>high similarity</strong> to the retrieved analog
+  lakes, indicating comparable ecological and spectral characteristics.
+</p>
+{% elif sim.best_score is not none and sim.best_score >= 0.70 %}
+<p class="lead">
+  {{ lake.name }} exhibits <strong>moderate similarity</strong> to the retrieved
+  analog lakes, suggesting partial environmental resemblance.
+</p>
+{% elif sim.best_score is not none %}
+<p class="lead">
+  {{ lake.name }} exhibits <strong>limited similarity</strong> to the retrieved
+  analog lakes, indicating distinct environmental characteristics.
+</p>
+{% endif %}
+
+{% if context.analogs %}
+<h3>Top {{ sim.top_k }} Analog Lakes</h3>
+<table class="data">
+  <thead>
+    <tr>
+      <th style="width:8%">Rank</th>
+      <th>Lake</th>
+      <th>State</th>
+      <th class="center" style="width:15%">Similarity</th>
+      <th class="center" style="width:15%">Match Quality</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for a in context.analogs %}
+    <tr>
+      <td class="center">{{ loop.index }}</td>
+      <td><strong>{{ a.name }}</strong></td>
+      <td>{{ a.state or '—' }}</td>
+      <td class="center"><strong>{{ fmt_score(a.similarity_score) }}</strong></td>
+      <td class="center">{{ match_quality(a.similarity_score) }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<p class="legend-note">
+  <strong>Match Quality</strong> bands: <strong>Excellent</strong> ≥ 0.90 ·
+  <strong>Strong</strong> 0.80–0.89 · <strong>Moderate</strong> 0.70–0.79 ·
+  <strong>Low</strong> &lt; 0.70.
+</p>
+
+<p class="lead">
+  Higher similarity scores indicate greater agreement between {{ lake.name }} and
+  the retrieved analogs based on learned geospatial representations derived from
+  satellite imagery. Similarity does not imply identical ecological conditions but
+  highlights comparable landscape characteristics.
+</p>
+{% else %}
+<div class="empty-note">No similar lakes found for this region.</div>
+{% endif %}

@@ -1,255 +1,194 @@
-import { useState } from 'react';
 import {
   FileText,
-  Download,
   Loader2,
-  CheckCircle,
+  CheckCircle2,
   XCircle,
-  Clock,
   RefreshCw,
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import Card from '@/components/common/Card';
-import LoadingSpinner from '@/components/common/LoadingSpinner';
 import ErrorMessage from '@/components/common/ErrorMessage';
 import { useReport } from '@/hooks/useReport';
 import { useMapStore } from '@/store/mapStore';
-import type { ReportStatus } from '@/types';
+import type { SimilarityMethod } from '@/types';
 
-const STATUS_CONFIG: Record<
-  ReportStatus,
-  { label: string; color: string; icon: React.ReactNode }
-> = {
-  pending: {
-    label: 'Pending',
-    color: 'text-amber-400',
-    icon: <Clock className="h-4 w-4" />,
-  },
-  processing: {
-    label: 'Generating…',
-    color: 'text-blue-400',
-    icon: <Loader2 className="h-4 w-4 animate-spin" />,
-  },
-  completed: {
-    label: 'Ready',
-    color: 'text-emerald-400',
-    icon: <CheckCircle className="h-4 w-4" />,
-  },
-  failed: {
-    label: 'Failed',
-    color: 'text-red-400',
-    icon: <XCircle className="h-4 w-4" />,
-  },
-};
+const METHODS: SimilarityMethod[] = ['cosine', 'euclidean', 'knn'];
 
 export default function ReportPanel() {
-  const { selectedRegionId } = useMapStore();
-  const { report, pollError, generate, isGenerating, generateError, reset } =
+  const { selectedLake, topK, setTopK, similarityMethod, setSimilarityMethod } =
+    useMapStore();
+  const { steps, stepIndex, generate, isGenerating, isSuccess, error, reset } =
     useReport();
 
-  const [includesForecast, setIncludesForecast] = useState(true);
-  const [includesAnalogs, setIncludesAnalogs] = useState(true);
-  const [topKAnalogs, setTopKAnalogs] = useState(5);
-
-  if (!selectedRegionId) {
+  if (!selectedLake) {
     return (
       <div className="flex flex-col items-center justify-center gap-3 py-12 text-center px-4">
         <FileText className="h-10 w-10 text-slate-700" />
-        <p className="text-sm text-slate-400">Select a region to generate a report</p>
+        <p className="text-sm text-slate-400">
+          Select a lake on the map to generate its ecosystem report
+        </p>
       </div>
     );
   }
 
   const handleGenerate = () => {
     generate({
-      region_id: selectedRegionId,
-      include_forecast: includesForecast,
-      include_analogs: includesAnalogs,
-      top_k_analogs: topKAnalogs,
+      lake_id: selectedLake.lake_id,
+      top_k: topK,
+      method: similarityMethod,
     });
   };
 
-  const isActive = !!report;
-  const currentStatus = report?.status;
-  const statusConf = currentStatus ? STATUS_CONFIG[currentStatus] : null;
+  const handleReset = () => {
+    reset();
+  };
+
+  const showSuccess = isSuccess && !isGenerating && !error;
 
   return (
     <div className="space-y-3 p-3 tab-content-enter">
-      {/* Options */}
+      {/* Selected lake */}
       <Card title="Report Options">
-        <div className="space-y-3">
-          {/* Toggles */}
-          {[
-            {
-              id: 'forecast',
-              label: 'Include Forecast',
-              desc: '5-year analog-based projection',
-              checked: includesForecast,
-              onChange: setIncludesForecast,
-            },
-            {
-              id: 'analogs',
-              label: 'Include Analogs',
-              desc: 'Top-K similar ecosystem regions',
-              checked: includesAnalogs,
-              onChange: setIncludesAnalogs,
-            },
-          ].map(({ id, label, desc, checked, onChange }) => (
-            <label
-              key={id}
-              className="flex cursor-pointer items-start justify-between gap-3"
-            >
-              <div>
-                <p className="text-sm text-slate-200">{label}</p>
-                <p className="text-xs text-slate-500">{desc}</p>
-              </div>
+        <div className="mb-3 rounded-lg bg-slate-800/60 border border-slate-700/60 px-3 py-2">
+          <p className="text-sm font-medium text-slate-200">
+            {selectedLake.display_name}
+          </p>
+          <p className="text-xs text-slate-500">
+            {[selectedLake.state, selectedLake.country]
+              .filter(Boolean)
+              .join(' · ') || '—'}
+          </p>
+        </div>
+
+        {/* Top-K slider */}
+        <div className="space-y-1">
+          <div className="flex items-center justify-between text-xs">
+            <span className="text-slate-400">Analog Lakes (Top-K)</span>
+            <span className="font-mono font-medium text-slate-200">{topK}</span>
+          </div>
+          <input
+            type="range"
+            min={1}
+            max={20}
+            value={topK}
+            onChange={(e) => setTopK(Number(e.target.value))}
+            className="w-full accent-primary-500 h-1.5 rounded-full bg-slate-700 cursor-pointer"
+          />
+          <div className="flex justify-between text-[10px] text-slate-600">
+            <span>1</span>
+            <span>20</span>
+          </div>
+        </div>
+
+        {/* Similarity method */}
+        <div className="space-y-1.5 pt-2">
+          <span className="text-xs text-slate-400">Similarity Method</span>
+          <div className="grid grid-cols-3 gap-2">
+            {METHODS.map((method) => (
               <button
-                role="switch"
-                aria-checked={checked}
-                onClick={() => onChange(!checked)}
+                key={method}
+                onClick={() => setSimilarityMethod(method)}
                 className={clsx(
-                  'relative mt-0.5 inline-flex h-5 w-9 flex-shrink-0 items-center rounded-full transition-colors',
-                  checked ? 'bg-primary-600' : 'bg-slate-700',
+                  'rounded-lg border px-2 py-1.5 text-xs font-medium capitalize transition-colors',
+                  similarityMethod === method
+                    ? 'border-primary-500 bg-primary-600/20 text-primary-300'
+                    : 'border-slate-700 text-slate-400 hover:border-slate-600 hover:text-slate-200',
                 )}
               >
-                <span
-                  className={clsx(
-                    'inline-block h-3.5 w-3.5 rounded-full bg-white shadow-sm transition-transform',
-                    checked ? 'translate-x-4' : 'translate-x-1',
-                  )}
-                />
+                {method}
               </button>
-            </label>
-          ))}
-
-          {/* Top-K slider */}
-          {includesAnalogs && (
-            <div className="space-y-1">
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-slate-400">Analog Count</span>
-                <span className="font-mono font-medium text-slate-200">
-                  {topKAnalogs}
-                </span>
-              </div>
-              <input
-                type="range"
-                min={1}
-                max={20}
-                value={topKAnalogs}
-                onChange={(e) => setTopKAnalogs(Number(e.target.value))}
-                className="w-full accent-primary-500 h-1.5 rounded-full bg-slate-700 cursor-pointer"
-              />
-              <div className="flex justify-between text-[10px] text-slate-600">
-                <span>1</span>
-                <span>20</span>
-              </div>
-            </div>
-          )}
+            ))}
+          </div>
         </div>
       </Card>
 
-      {/* Generate button or status */}
-      {!isActive ? (
+      {/* Generate button */}
+      {!isGenerating && !showSuccess && (
         <button
           onClick={handleGenerate}
-          disabled={isGenerating}
           className={clsx(
             'flex w-full items-center justify-center gap-2 rounded-xl py-3',
             'bg-primary-600 text-sm font-semibold text-white transition-all',
             'hover:bg-primary-500 active:scale-[0.98]',
-            'disabled:cursor-not-allowed disabled:opacity-60',
           )}
         >
-          {isGenerating ? (
-            <>
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Submitting…
-            </>
-          ) : (
-            <>
-              <FileText className="h-4 w-4" />
-              Generate PDF Report
-            </>
-          )}
+          <FileText className="h-4 w-4" />
+          Generate PDF Report
         </button>
-      ) : (
-        <Card>
-          <div className="space-y-3">
-            {/* Status row */}
-            {statusConf && (
-              <div className="flex items-center gap-2">
-                <span className={statusConf.color}>{statusConf.icon}</span>
-                <div>
-                  <p className={clsx('text-sm font-semibold', statusConf.color)}>
-                    {statusConf.label}
-                  </p>
-                  <p className="font-mono text-[11px] text-slate-500">
-                    {report!.report_id.slice(0, 20)}…
-                  </p>
-                </div>
-              </div>
-            )}
+      )}
 
-            {/* Processing animation */}
-            {(currentStatus === 'pending' || currentStatus === 'processing') && (
-              <div className="space-y-1.5">
-                {['Fetching region data', 'Building analog analysis', 'Rendering PDF'].map(
-                  (step, i) => (
-                    <div key={step} className="flex items-center gap-2 text-xs">
-                      <span className="h-1.5 w-1.5 rounded-full bg-blue-500 animate-pulse" />
-                      <span className="text-slate-400">{step}</span>
-                    </div>
-                  ),
+      {/* Progress checklist */}
+      {isGenerating && (
+        <Card title="Generating Report">
+          <div className="space-y-1.5">
+            {steps.map((step, i) => (
+              <div key={step} className="flex items-center gap-2 text-xs">
+                {i < stepIndex ? (
+                  <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />
+                ) : i === stepIndex ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin text-blue-400" />
+                ) : (
+                  <span className="h-3.5 w-3.5 rounded-full border border-slate-600" />
                 )}
+                <span
+                  className={clsx(
+                    i <= stepIndex ? 'text-slate-200' : 'text-slate-500',
+                  )}
+                >
+                  {step}
+                </span>
               </div>
-            )}
-
-            {/* Download button */}
-            {currentStatus === 'completed' && report?.pdf_url && (
-              <a
-                href={`${import.meta.env.VITE_API_BASE_URL ?? ''}${report.pdf_url}`}
-                download
-                target="_blank"
-                rel="noreferrer"
-                className="flex w-full items-center justify-center gap-2 rounded-lg
-                           bg-emerald-600/20 border border-emerald-600/30 py-2.5
-                           text-sm font-semibold text-emerald-400
-                           hover:bg-emerald-600/30 transition-colors"
-              >
-                <Download className="h-4 w-4" />
-                Download PDF Report
-              </a>
-            )}
-
-            {/* Error message */}
-            {(currentStatus === 'failed' || pollError || generateError) && (
-              <ErrorMessage
-                message={
-                  report?.error_message ??
-                  pollError ??
-                  generateError ??
-                  'Report generation failed'
-                }
-                compact
-              />
-            )}
-
-            {/* Reset */}
-            <button
-              onClick={reset}
-              className="flex w-full items-center justify-center gap-1.5 rounded-lg
-                         py-2 text-xs text-slate-500 hover:text-slate-300 transition-colors"
-            >
-              <RefreshCw className="h-3 w-3" />
-              Generate a new report
-            </button>
+            ))}
           </div>
         </Card>
       )}
 
+      {/* Success */}
+      {showSuccess && (
+        <Card>
+          <div className="flex items-center gap-2.5">
+            <CheckCircle2 className="h-5 w-5 text-emerald-400" />
+            <div>
+              <p className="text-sm font-semibold text-emerald-400">
+                Report generated
+              </p>
+              <p className="text-xs text-slate-400">
+                The PDF has been opened in a new tab.
+              </p>
+            </div>
+          </div>
+        </Card>
+      )}
+
+      {/* Error */}
+      {error && (
+        <div className="space-y-2">
+          <div className="flex items-center gap-2">
+            <XCircle className="h-4 w-4 text-red-400" />
+            <span className="text-sm font-semibold text-red-400">
+              Generation failed
+            </span>
+          </div>
+          <ErrorMessage message={error} compact />
+        </div>
+      )}
+
+      {/* Reset */}
+      {(showSuccess || error) && (
+        <button
+          onClick={handleReset}
+          className="flex w-full items-center justify-center gap-1.5 rounded-lg
+                     py-2 text-xs text-slate-500 hover:text-slate-300 transition-colors"
+        >
+          <RefreshCw className="h-3 w-3" />
+          Generate a new report
+        </button>
+      )}
+
       {/* Info note */}
       <p className="text-center text-[11px] text-slate-600 px-2">
-        Reports are generated asynchronously. Generation typically takes 10–30 seconds.
+        The generated report opens in a new tab. Generation typically takes
+        10–30 seconds. The Forecast section is currently under development.
       </p>
     </div>
   );

@@ -204,22 +204,10 @@ export interface EcologicalForecastData {
 
 // ── Report ────────────────────────────────────────────────────────────────
 
-export type ReportStatus = 'pending' | 'processing' | 'completed' | 'failed';
-
-export interface Report {
-  report_id: string;
-  region_id: string;
-  status: ReportStatus;
-  generated_at: string;
-  pdf_url: string | null;
-  error_message: string | null;
-}
-
 export interface ReportRequest {
-  region_id: string;
-  include_forecast: boolean;
-  include_analogs: boolean;
-  top_k_analogs: number;
+  lake_id: number;
+  top_k: number;
+  method: SimilarityMethod;
 }
 
 export interface LakeSyncRequest {

@@ -1,0 +1,48 @@
+{% set lake = context.lake %}
+<div class="section-head">
+  <div class="section-kicker">Section 01</div>
+  <h2>Lake Overview</h2>
+</div>
+
+<div class="cols">
+  <div class="col">
+    <table class="kv">
+      <tr>
+        <th>Lake Name</th>
+        <td>{{ lake.name }}</td>
+      </tr>
+      <tr>
+        <th>State</th>
+        <td>{{ lake.state or '—' }}</td>
+      </tr>
+      <tr>
+        <th>Country</th>
+        <td>{{ lake.country or '—' }}</td>
+      </tr>
+      <!-- <tr>
+        <th>Region ID</th>
+        <td class="mono">{{ lake.region_id }}</td>
+      </tr> -->
+      <tr>
+        <th>Coordinates</th>
+        <td>{{ fmt_coords(lake.center_lat, lake.center_lon) }}</td>
+      </tr>
+      <tr>
+        <th>Area</th>
+        <td>{{ fmt_area(lake.area_sqkm) }}</td>
+      </tr>
+      <tr>
+        <th>Latest Available Year</th>
+        <td>{{ lake.latest_year or '—' }}</td>
+      </tr>
+    </table>
+  </div>
+  <div class="col">
+    {% if lake.boundary_image %}
+    <div class="fig">
+      <img src="{{ lake.boundary_image | safe }}" alt="Lake boundary over satellite imagery"/>
+      <div class="fig-caption">Lake boundary over satellite imagery</div>
+    </div>
+    {% endif %}
+  </div>
+</div>

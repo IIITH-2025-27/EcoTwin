@@ -1,0 +1,73 @@
+{% set lake = context.lake %}
+<div class="section-head">
+  <div class="section-kicker">Section 04</div>
+  <h2>Analog Lake Profiles</h2>
+</div>
+
+<p class="lead">
+  Detailed profiles of the {{ context.analogs | length }} most ecologically
+  similar lakes to {{ lake.name }}, listed in order of similarity.
+</p>
+
+{% for a in context.analogs %}
+<div class="analog-profile">
+  <div class="analog-profile-head">
+    <span class="rank-badge">{{ a.rank }}</span>
+    <span class="analog-name">{{ a.name }}</span>
+    <span class="score-pill">{{ fmt_score(a.similarity_score) }}</span>
+  </div>
+  <div class="analog-profile-location">
+    {% if a.state %}{{ a.state }}{% endif %}{% if a.state and a.country %}, {% endif %}{% if a.country %}{{ a.country }}{% endif %}
+  </div>
+
+  <div class="cols">
+    <div class="col">
+      <table class="kv">
+        <tr>
+          <th>Rank</th>
+          <td>#{{ a.rank }}</td>
+        </tr>
+        <tr>
+          <th>Similarity Score</th>
+          <td>{{ fmt_score(a.similarity_score) }}</td>
+        </tr>
+        <tr>
+          <th>Area</th>
+          <td>{{ fmt_area(a.area_sqkm) }}</td>
+        </tr>
+        <tr>
+          <th>Coordinates</th>
+          <td>{{ fmt_coords(a.center_lat, a.center_lon) }}</td>
+        </tr>
+        <tr>
+          <th>Historical Years</th>
+          <td>{{ a.start_year }}–{{ a.end_year }}</td>
+        </tr>
+        {% if a.distance_km is not none %}
+        <tr>
+          <th>Distance from {{ lake.name }}</th>
+          <td>{{ fmt_km(a.distance_km) }}</td>
+        </tr>
+        {% endif %}
+        <!-- <tr>
+          <th>Region ID</th>
+          <td class="mono">{{ a.region_id }}</td>
+        </tr> -->
+      </table>
+    </div>
+    <div class="col">
+      {% if a.boundary_image %}
+      <div class="fig">
+        <img src="{{ a.boundary_image | safe }}" alt="Boundary of {{ a.name }} over satellite imagery"/>
+        <div class="fig-caption">Lake boundary &amp; satellite view</div>
+      </div>
+      {% else %}
+      <div class="empty-note">Imagery unavailable for this lake.</div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% if not loop.last %}
+<hr class="analog-divider"/>
+{% endif %}
+{% endfor %}

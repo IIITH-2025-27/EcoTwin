@@ -1,12 +1,15 @@
 import { apiClient } from './client';
-import type { Report, ReportRequest } from '@/types';
+import type { ReportRequest } from '@/types';
 
-export async function createReport(request: ReportRequest): Promise<Report> {
-  const { data } = await apiClient.post<Report>('/report', request);
-  return data;
-}
-
-export async function getReport(reportId: string): Promise<Report> {
-  const { data } = await apiClient.get<Report>(`/report/${reportId}`);
+export async function generateReportPDF(request: ReportRequest): Promise<Blob> {
+  const { data } = await apiClient.post<Blob>(
+    `/report/${request.lake_id}`,
+    null,
+    {
+      params: { top_k: request.top_k, method: request.method },
+      responseType: 'blob',
+      timeout: 180_000,
+    },
+  );
   return data;
 }

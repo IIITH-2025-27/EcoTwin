@@ -1,36 +1,52 @@
-from uuid import UUID
+import asyncio
 
 import structlog
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query, Response
 
+from app.core.config import settings
 from app.core.dependencies import DatabaseDep
-from app.repositories.region_repository import RegionRepository
-from app.schemas.report import ReportGenerateRequest, ReportResponse
-from app.services.report_service import ReportService
+from app.schemas.similarity import SimilarityMethod
+from app.services.report import build_report_context, render_report_pdf
 
 router = APIRouter(tags=["Reports"])
 logger = structlog.get_logger(__name__)
 
 
-def _service(db: DatabaseDep) -> ReportService:
-    return ReportService(region_repo=RegionRepository(db), session=db)
-
-
-@router.post("", response_model=ReportResponse)
+@router.post("/{lake_id}")
 async def generate_report(
-    body: ReportGenerateRequest,
-    svc: ReportService = Depends(_service),
-) -> ReportResponse:
+    lake_id: int,
+    db: DatabaseDep,
+    top_k: int = Query(settings.DEFAULT_TOP_K, ge=1, le=20),
+    method: SimilarityMethod = Query(
+        SimilarityMethod.COSINE,
+        description=(
+            "Vector similarity method used for the analog search: "
+            "cosine | euclidean | knn."
+        ),
+    ),
+) -> Response:
     """
-    Generate a PDF ecosystem report for the given region.
+    Generate and return a complete ecosystem discovery report (PDF) for a lake.
+
+    The report is rendered synchronously: context is assembled from the
+    database, maps are generated, and the result is returned as a
+    ``application/pdf`` response that the frontend opens in a new tab.
     """
-    return await svc.create_report_job(body)
+    context = await build_report_context(db, lake_id=lake_id, method=method, top_k=top_k)
 
+    pdf_bytes = await asyncio.to_thread(render_report_pdf, context)
 
-@router.get("/{report_id}", response_model=ReportResponse)
-async def get_report_status(
-    report_id: UUID,
-    svc: ReportService = Depends(_service),
-) -> ReportResponse:
-    """Poll report generation status and retrieve the PDF download URL when complete."""
-    return await svc.get_report(report_id)
+    filename = f"ecotwin-report-{lake_id}.pdf"
+    logger.info(
+        "Report generated",
+        lake_id=lake_id,
+        method=method.value,
+        top_k=top_k,
+        size_bytes=len(pdf_bytes),
+    )
+
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="{filename}"'},
+    )
