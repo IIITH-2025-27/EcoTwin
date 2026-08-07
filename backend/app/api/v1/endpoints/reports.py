@@ -1,4 +1,5 @@
 import asyncio
+import re
 
 import structlog
 from fastapi import APIRouter, Depends, Query, Response
@@ -10,6 +11,12 @@ from app.services.report import build_report_context, render_report_pdf
 
 router = APIRouter(tags=["Reports"])
 logger = structlog.get_logger(__name__)
+
+
+def _safe_filename(name: str) -> str:
+    """Sanitize a lake name into an ASCII filename-safe token."""
+    slug = re.sub(r"[^0-9A-Za-z]+", "_", name).strip("_")
+    return slug or "lake"
 
 
 @router.post("/{lake_id}")
@@ -36,7 +43,7 @@ async def generate_report(
 
     pdf_bytes = await asyncio.to_thread(render_report_pdf, context)
 
-    filename = f"ecotwin-report-{lake_id}.pdf"
+    filename = f"ecotwin-report-{_safe_filename(context.lake.name)}.pdf"
     logger.info(
         "Report generated",
         lake_id=lake_id,

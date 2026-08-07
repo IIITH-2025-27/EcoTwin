@@ -18,13 +18,13 @@ export function useReport() {
 
   const mutation = useMutation({
     mutationFn: (request: ReportRequest) => generateReportPDF(request),
-    onSuccess: (pdfBlob) => {
-      const url = URL.createObjectURL(pdfBlob);
+    onSuccess: ({ blob, filename }) => {
+      const url = URL.createObjectURL(blob);
       const newTab = window.open(url, '_blank');
       if (!newTab) {
         const anchor = document.createElement('a');
         anchor.href = url;
-        anchor.download = 'ecotwin-report.pdf';
+        anchor.download = filename;
         anchor.click();
       }
       setTimeout(() => URL.revokeObjectURL(url), 60_000);

@@ -51,6 +51,7 @@ def create_application() -> FastAPI:
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
+        expose_headers=["Content-Disposition"],
     )
     app.add_middleware(GZipMiddleware, minimum_size=1_000)
 
