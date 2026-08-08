@@ -50,9 +50,9 @@
     </svg>
     <div style="display:flex; flex-wrap:wrap; gap:14px; margin-top:6px;">
       {% for item in context.eco_forecast %}
-        <div style="display:flex; align-items:center; gap:5px;">
+        <div style="display:flex; align-items:center; gap:7px;">
           <span style="display:inline-block; width:10px; height:10px; border-radius:2px; background:{{ item.color }};"></span>
-          <span style="font-size:9pt; color:#334155;">{{ item.label }}</span>
+          <span style="font-size:9pt; color:#334155; white-space:nowrap;">{{ item.label }}</span>
         </div>
       {% endfor %}
     </div>
@@ -65,7 +65,7 @@
   <p class="lead" style="margin-top:16px;">Expected value change</p>
   {% set dir_arrow = {'up': '↑', 'down': '↓', 'stable': '→', 'uncertain': '?'} %}
   {% set dir_color = {'up': '#16a34a', 'down': '#dc2626', 'stable': '#64748b', 'uncertain': '#d97706'} %}
-  <table class="data">
+  <table class="data forecast-table">
     <thead>
       <tr>
         <th>Index</th>

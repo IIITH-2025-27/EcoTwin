@@ -152,9 +152,9 @@ export default function ReportPanel() {
               <p className="text-sm font-semibold text-emerald-400">
                 Report generated
               </p>
-              <p className="text-xs text-slate-400">
+              {/* <p className="text-xs text-slate-400">
                 The PDF has been opened in a new tab.
-              </p>
+              </p> */}
             </div>
           </div>
         </Card>
