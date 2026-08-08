@@ -7,8 +7,8 @@ indices on-the-fly, and produces a **per-year directional forecast**.
 Weighting
 ---------
 Fixed rank-based weights, not recalculated per year:
-  Rank 1 = 0.40,  Rank 2 = 0.25,  Rank 3 = 0.15,
-  Rank 4 = 0.12,  Rank 5 = 0.08
+  Rank 1 = 0.28,  Rank 2 = 0.24,  Rank 3 = 0.20,
+  Rank 4 = 0.16,  Rank 5 = 0.12
 
 If a twin has no data for a given forecast year, its weight becomes **0** for
 that year (excluded, not redistributed to other twins).
@@ -58,11 +58,11 @@ logger = structlog.get_logger(__name__)
 
 # Fixed rank-based weights (1-indexed rank → weight)
 _RANK_WEIGHTS: Dict[int, float] = {
-    1: 0.40,
-    2: 0.25,
-    3: 0.15,
-    4: 0.12,
-    5: 0.08,
+    1: 0.28,
+    2: 0.24,
+    3: 0.20,
+    4: 0.16,
+    5: 0.12,
 }
 
 # Classification threshold — weighted score above/below this → up/down
@@ -74,12 +74,13 @@ _MIN_TWINS_FOR_DIRECTION: int = 2
 # Forecast horizon (years into the future)
 _FORECAST_HORIZON: int = 3
 
-_INDEX_KEYS: List[str] = ["ndci", "ndvi_b7", "turbidity_ratio", "red_edge_slope"]
+_INDEX_KEYS: List[str] = ["ndci", "ndvi_b7", "ndwi", "turbidity_ratio", "red_edge_slope"]
 
 _INDEX_LABELS: Dict[str, str] = {
     "ndci": "NDCI (Chlorophyll-a)",
     "ndvi_b7": "NDVI-B7 (Vegetation Vigor)",
-    "turbidity_ratio": "Turbidity Ratio (Water Clarity)",
+    "ndwi": "NDWI (Water Mask)",
+    "turbidity_ratio": "Turbidity",
     "red_edge_slope": "Red Edge Slope (Pigment Trend)",
 }
 
@@ -192,7 +193,7 @@ class EcologicalForecastService:
     --------
     1. Fetch target lake's latest band means → compute anchor indices.
     2. Run embedding similarity search to find top-k twin lakes.
-    3. Assign fixed rank weights (0.40, 0.25, 0.15, 0.12, 0.08).
+    3. Assign fixed rank weights (0.28, 0.24, 0.20, 0.16, 0.12).
     4. For each twin, compute indices at matched_year and at each
        future offset (matched_year + 1, +2, +3).  Delta = future − base.
     5. For each index × each forecast year: sum (rank_weight × delta)

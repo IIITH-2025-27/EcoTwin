@@ -28,7 +28,9 @@ from app.models.lake import Lake
 from app.models.region import Region
 from app.repositories.embedding_repository import EmbeddingRepository
 from app.repositories.region_repository import RegionRepository
+from app.schemas.forecast import EcologicalForecastResponse
 from app.schemas.similarity import SimilarityMethod
+from app.services.ecological_forecast_service import EcologicalForecastService
 from app.services.report import maps
 from app.services.similarity_service import SimilarityService
 
@@ -77,6 +79,87 @@ def method_label(method: SimilarityMethod) -> str:
 def format_score(score: Optional[float]) -> str:
     """Format a similarity score as a one-decimal percentage (e.g. ``99.8%``)."""
     return f"{score * 100:.1f}%" if score is not None else "—"
+
+
+# Same five series, colours, and ordering as ECO_CHART_INDICES in
+# frontend/src/components/ForecastPanel/ForecastPanel.tsx, so the report
+# chart matches what the Forecast panel renders in the UI.
+_ECO_CHART_INDICES: list[tuple[str, str, str]] = [
+    ("ndci", "NDCI", "#06b6d4"),
+    ("ndvi_b7", "NDVI-B7", "#22c55e"),
+    ("ndwi", "NDWI", "#3b82f6"),
+    ("turbidity_ratio", "Turbidity", "#f59e0b"),
+    ("red_edge_slope", "RE Slope", "#a855f7"),
+]
+
+
+def _build_eco_forecast_items(
+    eco: EcologicalForecastResponse,
+) -> list[EcoIndexForecastItem]:
+    """Compute each index's chart series + expected value change.
+
+    Matches the ``ecoChartData`` calculation in ForecastPanel.tsx: each
+    forecast year's projected value is the current value plus that year's
+    already-computed twin-weighted score (``yearly_directions[i].weighted_score``),
+    the same offset-aligned delta driving the up/down/stable classification
+    and the audit report's per-year reasoning.
+    """
+    years = [eco.current_year, *eco.forecast_years]
+    forecast_by_index = {f.index_name: f for f in eco.index_forecasts}
+
+    items: list[EcoIndexForecastItem] = []
+    for key, label, color in _ECO_CHART_INDICES:
+        forecast_entry = forecast_by_index.get(key)
+        base_value = forecast_entry.current_value if forecast_entry else 0.0
+        yearly_directions = forecast_entry.yearly_directions if forecast_entry else []
+
+        points: list[tuple[int, float]] = [(years[0], base_value)]
+        for offset, year in enumerate(years[1:], start=0):
+            weighted_score = (
+                yearly_directions[offset].weighted_score
+                if offset < len(yearly_directions)
+                else 0.0
+            )
+            points.append((year, base_value + weighted_score))
+
+        yearly_changes: list[EcoIndexYearChange] = []
+        for offset, (year, value) in enumerate(points[1:]):
+            change = value - base_value
+            change_pct = (change / abs(base_value) * 100) if base_value else None
+            direction = (
+                yearly_directions[offset].direction
+                if offset < len(yearly_directions)
+                else "uncertain"
+            )
+            yearly_changes.append(
+                EcoIndexYearChange(
+                    year=year,
+                    value=value,
+                    change=change,
+                    change_pct=change_pct,
+                    direction=direction,
+                )
+            )
+
+        final_change = yearly_changes[-1].change if yearly_changes else 0.0
+        final_change_pct = yearly_changes[-1].change_pct if yearly_changes else None
+        final_direction = yearly_changes[-1].direction if yearly_changes else "uncertain"
+
+        items.append(
+            EcoIndexForecastItem(
+                key=key,
+                label=label,
+                color=color,
+                current_value=base_value,
+                points=points,
+                yearly_changes=yearly_changes,
+                final_change=final_change,
+                final_change_pct=final_change_pct,
+                final_direction=final_direction,
+            )
+        )
+
+    return items
 
 
 # ── Section dataclasses ──────────────────────────────────────────────────────
@@ -153,6 +236,36 @@ class TechnicalInfo:
 
 
 @dataclass
+class EcoIndexYearChange:
+    """One forecast year's projected value and change vs. the current value."""
+
+    year: int
+    value: float
+    change: float
+    change_pct: Optional[float]
+    direction: str  # "up" | "down" | "stable" | "uncertain"
+
+
+@dataclass
+class EcoIndexForecastItem:
+    """One ecological index's chart series + expected value change (Section 5).
+
+    Mirrors the series the Forecast panel chart renders in the UI so the
+    report shows the same trajectory the user already sees there.
+    """
+
+    key: str
+    label: str
+    color: str
+    current_value: float
+    points: list[tuple[int, float]] = field(default_factory=list)
+    yearly_changes: list[EcoIndexYearChange] = field(default_factory=list)
+    final_change: float = 0.0
+    final_change_pct: Optional[float] = None
+    final_direction: str = "uncertain"
+
+
+@dataclass
 class ReportContext:
     """Everything the report template needs, grouped by section."""
 
@@ -163,6 +276,10 @@ class ReportContext:
     summary: str = ""
     generated_at: str = ""
     has_analogs: bool = False
+    eco_forecast: list[EcoIndexForecastItem] = field(default_factory=list)
+    eco_forecast_years: list[int] = field(default_factory=list)
+    eco_forecast_current_year: Optional[int] = None
+    eco_forecast_twin_count: int = 0
 
 
 # ── Geometry helpers ─────────────────────────────────────────────────────────
@@ -391,6 +508,32 @@ async def build_report_context(
         similarity.best_match = analogs[0].name
         similarity.best_score = analogs[0].similarity_score
 
+    eco_forecast: list[EcoIndexForecastItem] = []
+    eco_forecast_years: list[int] = []
+    eco_forecast_current_year: Optional[int] = None
+    eco_forecast_twin_count = 0
+    try:
+        eco_forecast_service = EcologicalForecastService(
+            session=db,
+            region_repo=RegionRepository(db),
+            embedding_repo=EmbeddingRepository(db),
+        )
+        eco_forecast_response = await eco_forecast_service.generate_ecological_forecast(
+            region_id=region.region_id,
+            num_analogs=5,
+            method=method,
+        )
+        eco_forecast = _build_eco_forecast_items(eco_forecast_response)
+        eco_forecast_years = eco_forecast_response.forecast_years
+        eco_forecast_current_year = eco_forecast_response.current_year
+        eco_forecast_twin_count = len(eco_forecast_response.twins_used)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "Ecological forecast unavailable during report generation",
+            lake_id=lake_id,
+            error=str(exc),
+        )
+
     # ── Imagery (satellite + maps) ───────────────────────────────────────────
     bbox = _lake_bbox(geometry, center_lat, center_lon)
     cover_image = await maps.render_cover_satellite(bbox)
@@ -463,4 +606,8 @@ async def build_report_context(
         summary=_build_summary(lake_info.name, similarity, analogs),
         generated_at=generated_at,
         has_analogs=bool(analogs),
+        eco_forecast=eco_forecast,
+        eco_forecast_years=eco_forecast_years,
+        eco_forecast_current_year=eco_forecast_current_year,
+        eco_forecast_twin_count=eco_forecast_twin_count,
     )

@@ -10,6 +10,7 @@ lake-year, as required by the forecasting spec.
 
 from __future__ import annotations
 
+import math
 from typing import Dict, Optional
 
 # Same epsilon used by app/processing/spectral_indices.py
@@ -21,6 +22,16 @@ def _safe_ratio(numerator: float, denominator: float) -> float:
     if abs(denominator) < _EPSILON:
         return 0.0
     return numerator / denominator
+
+
+def _is_missing(value: Optional[float]) -> bool:
+    """Return True for None or non-finite numeric values."""
+    if value is None:
+        return True
+    try:
+        return not math.isfinite(float(value))
+    except (TypeError, ValueError):
+        return True
 
 
 def compute_ecological_indices(
@@ -54,6 +65,7 @@ def compute_ecological_indices(
         B5 = 705 nm,  B7 = 783 nm  →  Δλ = 78 nm
     """
     result: Dict[str, Optional[float]] = {
+        "ndwi": None,
         "ndci": None,
         "ndvi_b7": None,
         "turbidity_ratio": None,
@@ -61,14 +73,19 @@ def compute_ecological_indices(
     }
 
     # Guard: if any required band is missing, return all-None
-    if any(v is None for v in (b2_mean, b3_mean, b4_mean, b5_mean, b6_mean, b7_mean)):
+    if any(_is_missing(v) for v in (b2_mean, b3_mean, b4_mean, b5_mean, b6_mean, b7_mean)):
         return result
 
     # At this point all values are guaranteed non-None; cast for mypy
-    b4 = float(b4_mean)  # type: ignore[arg-type]
+    b2 = float(b2_mean)  # type: ignore[arg-type]
     b3 = float(b3_mean)  # type: ignore[arg-type]
+    b4 = float(b4_mean)  # type: ignore[arg-type]
     b5 = float(b5_mean)  # type: ignore[arg-type]
+    b6 = float(b6_mean)  # type: ignore[arg-type]
     b7 = float(b7_mean)  # type: ignore[arg-type]
+
+    # NDWI = (B3 − B7) / (B3 + B7)
+    result["ndwi"] = _safe_ratio(b3 - b7, b3 + b7)
 
     # NDCI = (B5 − B4) / (B5 + B4)
     result["ndci"] = _safe_ratio(b5 - b4, b5 + b4)
@@ -76,8 +93,8 @@ def compute_ecological_indices(
     # NDVI-B7 proxy = (B7 − B4) / (B7 + B4)
     result["ndvi_b7"] = _safe_ratio(b7 - b4, b7 + b4)
 
-    # Turbidity Ratio = B4 / B3
-    result["turbidity_ratio"] = _safe_ratio(b4, b3)
+    # Requested turbidity metric: (B4 - B3) / (B4 + B3)
+    result["turbidity_ratio"] = _safe_ratio(b4 - b3, b4 + b3)
 
     # Red Edge Slope = (B7 − B5) / (783 − 705)
     _DELTA_LAMBDA = 783.0 - 705.0  # 78 nm
