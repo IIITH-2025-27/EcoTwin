@@ -8,4 +8,4 @@ SELECT * FROM public.lakes ORDER BY lake_id ASC
 
 UPDATE public.lakes 
 SET is_active = false
-WHERE area_sqkm < 1;
+WHERE area_sqkm <2;

@@ -17,7 +17,7 @@ import time
 import urllib.request
 import urllib.error
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Sequence
 import datetime
 
 import structlog
@@ -55,6 +55,12 @@ class SentinelCompositeBuilder:
     def __init__(self, config: ImageAcquisitionConfig) -> None:
         self._cfg = config
         self._ee = _require_ee()
+
+    @property
+    def ee_module(self) -> Any:
+        """The initialized ``ee`` module, for callers that need direct GEE API access
+        (e.g. server-side reducers) beyond what this class wraps."""
+        return self._ee
 
     # ── AOI construction ──────────────────────────────────────────────────
 
@@ -95,7 +101,9 @@ class SentinelCompositeBuilder:
 
     # ── Composite construction ────────────────────────────────────────────
 
-    def build_composite(self, aoi: Any, year: int) -> Any:
+    def build_composite(
+        self, aoi: Any, year: int, bands: Optional[Sequence[str]] = None
+    ) -> Any:
         """
         Build a yearly median composite from Sentinel-2 SR for the given AOI.
 
@@ -103,7 +111,9 @@ class SentinelCompositeBuilder:
           1. Filter collection by AOI, date range, and cloud cover percentage.
           2. Apply SCL-based cloud masking to each image.
           3. Compute median composite.
-          4. Select Prithvi bands (B2–B7).
+          4. Select bands (defaults to the Prithvi bands, B2–B7; pass an
+             explicit ``bands`` list, e.g. ``["B8"]``, for other fetches —
+             this never mutates ``self._cfg.prithvi_bands``).
           5. Clip to AOI.
         """
         ee = self._ee
@@ -132,8 +142,9 @@ class SentinelCompositeBuilder:
         else:
             composite = collection.mosaic()
 
-        # Select Prithvi bands and clip to AOI
-        composite = composite.select(list(self._cfg.prithvi_bands)).clip(aoi)
+        # Select requested bands (default: Prithvi bands) and clip to AOI
+        select_bands = list(bands) if bands is not None else list(self._cfg.prithvi_bands)
+        composite = composite.select(select_bands).clip(aoi)
         return composite
 
     # ── GeoTIFF export ────────────────────────────────────────────────────
@@ -143,6 +154,7 @@ class SentinelCompositeBuilder:
         composite: Any,
         aoi: Any,
         dest_path: Path,
+        bands: Optional[Sequence[str]] = None,
         max_retries: int = 3,
         retry_delay: float = 5.0,
         retry_backoff: float = 2.0,
@@ -153,12 +165,16 @@ class SentinelCompositeBuilder:
 
         Uses ``ee.Image.getDownloadURL`` to stream the image as a
         single-file GeoTIFF.  Retries on transient / quota errors.
+
+        ``bands`` defaults to the Prithvi bands; pass the same band list
+        used in the matching ``build_composite()`` call (e.g. ``["B8"]``)
+        for other fetches.
         """
         ee = self._ee
         dest_path.parent.mkdir(parents=True, exist_ok=True)
 
         download_params = {
-            "bands": list(self._cfg.prithvi_bands),
+            "bands": list(bands) if bands is not None else list(self._cfg.prithvi_bands),
             "region": aoi,
             "scale": self._cfg.scale_metres,
             "crs": self._cfg.output_crs,

@@ -67,6 +67,40 @@ def compute_band_statistics(
     return result
 
 
+def compute_single_band_statistics(
+    band: np.ndarray,
+    name: str,
+    nodata: Optional[float] = None,
+) -> Dict[str, Optional[float]]:
+    """Mean/std/min/max/median for one named band.
+
+    Same computation as ``compute_band_statistics``, but for a single band
+    fetched outside the standard B2-B7 set (e.g. B8), which isn't part of
+    ``BAND_NAMES``/``NUM_BANDS``.
+
+    Parameters
+    ----------
+    band : (H, W) float32 array
+    name : band name prefix for the result keys, e.g. "b8"
+    nodata : nodata sentinel value
+    """
+    if nodata is not None:
+        valid = band[band != nodata]
+    else:
+        valid = band[np.isfinite(band)]
+
+    if valid.size == 0:
+        return {f"{name}_{stat}": None for stat in ("mean", "std", "min", "max", "median")}
+
+    return {
+        f"{name}_mean": float(np.mean(valid)),
+        f"{name}_std": float(np.std(valid)),
+        f"{name}_min": float(np.min(valid)),
+        f"{name}_max": float(np.max(valid)),
+        f"{name}_median": float(np.median(valid)),
+    }
+
+
 # ── Pixel Statistics ──────────────────────────────────────────────────────────
 
 

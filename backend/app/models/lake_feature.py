@@ -15,6 +15,7 @@ from sqlalchemy import (
     Double,
     Enum,
     Integer,
+    String,
     Text,
     UniqueConstraint,
     text,
@@ -101,6 +102,24 @@ class LakeFeature(Base):
     b7_min = Column(Double, nullable=True)
     b7_max = Column(Double, nullable=True)
     b7_median = Column(Double, nullable=True)
+
+    # ── Sentinel-2 Band Statistics (B8, NIR) ────────────────────────────────
+    # Fetched separately from B2-B7 — B8 is not part of the Prithvi band set
+    # used for embeddings, so it has its own dedicated acquisition pass.
+    # See app/services/b8_feature_generator.py.
+    # Plain text, not the lake_feature_status enum — kept independent of the
+    # main pipeline's status type/state machine on purpose.
+    b8_status = Column(
+        String(20),
+        nullable=False,
+        server_default="pending",
+        index=True,
+    )
+    b8_mean = Column(Double, nullable=True)
+    b8_std = Column(Double, nullable=True)
+    b8_min = Column(Double, nullable=True)
+    b8_max = Column(Double, nullable=True)
+    b8_median = Column(Double, nullable=True)
 
     # ── Vegetation Indices ────────────────────────────────────────────────
     ndvi_mean = Column(Double, nullable=True)
