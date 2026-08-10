@@ -1,0 +1,2239 @@
+\documentclass[12pt,a4paper,oneside]{report}
+
+% ============================================================
+% ECOTWIN PROJECT REPORT
+% ============================================================
+
+% -------------------- Page layout ----------------------------
+\usepackage[
+    a4paper,
+    left=1.25in,
+    right=1.0in,
+    top=1.0in,
+    bottom=1.0in
+]{geometry}
+
+% -------------------- Fonts / encoding -----------------------
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{microtype}
+
+% -------------------- Mathematics ----------------------------
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{amsfonts}
+
+% -------------------- Figures --------------------------------
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{subcaption}
+\usepackage{wrapfig}
+
+% -------------------- Tables ---------------------------------
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{multirow}
+\usepackage{tabularx}
+\usepackage{makecell}
+
+% -------------------- Lists / units ---------------------------
+\usepackage{enumitem}
+\usepackage{siunitx}
+
+% -------------------- Colors ---------------------------------
+\usepackage{xcolor}
+
+% -------------------- Code -----------------------------------
+\usepackage{listings}
+
+% -------------------- Diagrams -------------------------------
+\usepackage{tikz}
+\usetikzlibrary{
+    arrows.meta,
+    positioning,
+    shapes.geometric,
+    fit,
+    backgrounds
+}
+
+% -------------------- Headers / links ------------------------
+\usepackage{fancyhdr}
+\usepackage[
+    colorlinks=true,
+    linkcolor=black,
+    citecolor=black,
+    urlcolor=blue
+]{hyperref}
+\usepackage[nameinlink,noabbrev]{cleveref}
+
+
+% ============================================================
+% DOCUMENT INFORMATION
+% ============================================================
+
+\newcommand{\projecttitle}{EcoTwin}
+\newcommand{\projectsubtitle}{
+Ecosystem Analog Search and Forecasting Using Geospatial Foundation Models
+}
+\newcommand{\studentname}{Your Name}
+\newcommand{\studentroll}{Your Roll Number}
+\newcommand{\supervisorname}{Supervisor Name}
+\newcommand{\departmentname}{Computer Science and Engineering}
+\newcommand{\institutionname}{International Institute of Information Technology Hyderabad}
+\newcommand{\reportyear}{2026}
+
+% ============================================================
+% CUSTOM COMMANDS
+% ============================================================
+
+\newcommand{\code}[1]{\texttt{#1}}
+\newcommand{\topk}{Top-K}
+
+\newcommand{\placeholderfigure}[3][0.8\textwidth]{
+    \begin{figure}[H]
+        \centering
+        \fbox{
+            \begin{minipage}[c][#2][c]{#1}
+                \centering
+                \textit{Figure placeholder}\\[5pt]
+                #3
+            \end{minipage}
+        }
+        \caption{#3}
+    \end{figure}
+}
+
+% ============================================================
+% CODE STYLE
+% ============================================================
+
+\definecolor{codegray}{gray}{0.95}
+\definecolor{commentgreen}{RGB}{30,110,30}
+
+\lstset{
+    backgroundcolor=\color{codegray},
+    basicstyle=\ttfamily\small,
+    breaklines=true,
+    frame=single,
+    numbers=left,
+    numberstyle=\tiny,
+    keywordstyle=\bfseries,
+    commentstyle=\color{commentgreen},
+    showstringspaces=false,
+    tabsize=4
+}
+
+% ============================================================
+% HEADER / FOOTER
+% ============================================================
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\projecttitle}
+\fancyhead[R]{\leftmark}
+\fancyfoot[C]{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\footrulewidth}{0pt}
+\setlength{\headheight}{18pt}
+
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{6pt}
+\emergencystretch=3em
+\renewcommand{\arraystretch}{1.2}
+
+% ============================================================
+% DOCUMENT
+% ============================================================
+
+
+\begin{document}
+
+% ============================================================
+% TITLE PAGE
+% ============================================================
+
+\begin{titlepage}
+\begin{center}
+\vspace*{1cm}
+
+{\Large \textbf{\institutionname}}
+
+\vspace{0.5cm}
+{\large \departmentname}
+
+\vspace{2cm}
+
+{\Huge \textbf{\projecttitle}}
+
+\vspace{0.7cm}
+
+{\Large \textbf{\projectsubtitle}}
+
+\vspace{2cm}
+
+{\large Project Report}
+
+\vspace{1.5cm}
+
+Submitted by
+
+\vspace{0.4cm}
+{\Large \textbf{\studentname}}
+
+\vspace{0.2cm}
+{\large \studentroll}
+
+\vspace{1.5cm}
+
+Under the guidance of
+
+\vspace{0.4cm}
+{\Large \textbf{\supervisorname}}
+
+\vfill
+{\large \reportyear}
+
+\end{center}
+\end{titlepage}
+
+% % ============================================================
+% % CERTIFICATE
+% % ============================================================
+
+% \chapter*{Certificate}
+% \addcontentsline{toc}{chapter}{Certificate}
+
+% This is to certify that the project report entitled
+% \textbf{\projectsubtitle} is a record of the work carried out by
+% \textbf{\studentname} under my supervision and guidance.
+
+% \vspace{2cm}
+
+% \begin{flushright}
+% \textbf{\supervisorname}\\
+% Supervisor
+% \end{flushright}
+
+% \clearpage
+
+% % ============================================================
+% % DECLARATION
+% % ============================================================
+
+% \chapter*{Declaration}
+% \addcontentsline{toc}{chapter}{Declaration}
+
+% I hereby declare that this project report entitled
+% \textbf{\projectsubtitle} is the result of the work carried out
+% as part of the project requirements.
+
+% All external sources, datasets, models, and software components
+% used in the project have been appropriately acknowledged.
+
+% \vspace{2cm}
+
+% \begin{flushright}
+% \textbf{\studentname}\\
+% \studentroll
+% \end{flushright}
+
+% \clearpage
+
+% % ============================================================
+% % ACKNOWLEDGEMENTS
+% % ============================================================
+
+% \chapter*{Acknowledgements}
+% \addcontentsline{toc}{chapter}{Acknowledgements}
+
+% We would like to express our sincere gratitude to our supervisor,
+% faculty members, colleagues, and everyone who contributed to the
+% development of EcoTwin.
+
+% We also acknowledge the providers of the HydroLAKES, Sentinel-2,
+% Dynamic World, Google Earth Engine, and Prithvi resources, as well
+% as the open-source PostgreSQL, PostGIS, pgvector, Python, FastAPI,
+% React, Leaflet, Redis, Celery, and Docker ecosystems used during
+% development.
+
+% \clearpage
+
+% ============================================================
+% ABSTRACT
+% ============================================================
+
+\chapter*{Abstract}
+\addcontentsline{toc}{chapter}{Abstract}
+
+EcoTwin is an end-to-end geospatial ecosystem analog discovery
+platform designed around the question: \emph{which ecosystems
+elsewhere exhibit similar spatial structure, and what can their
+historical trajectories tell us about a target ecosystem?}
+
+The system combines a static lake inventory with multi-year
+Sentinel-2 observations, spatial tiling, environmental indicators,
+geospatial foundation-model embeddings, vector similarity search,
+and temporal ecosystem profiles. HydroLAKES polygons provide the
+initial ecosystem boundaries and metadata. For each selected lake,
+the pipeline projects and buffers the geometry, constructs a
+manageable imagery grid, retrieves annual Sentinel-2 composites
+from Google Earth Engine, stores the resulting GeoTIFFs locally,
+and subsequently subdivides the merged imagery into approximately
+one-kilometre analysis cells. Cells with insufficient lake coverage
+are discarded.
+
+The retained image cells are converted into the six-band input
+required by the Prithvi geospatial foundation model. The resulting
+768-dimensional representations are stored in PostgreSQL using
+pgvector. A query ecosystem can then be compared against the
+indexed collection using cosine similarity, producing a ranked set
+of analogous ecosystems. The web application exposes these results
+through an interactive map and profile views, together with
+historical NDVI, NDWI, and NBR trajectories.
+
+The project was implemented iteratively over approximately two
+months. A substantial part of the engineering work involved making
+large-scale Earth Engine extraction reliable, handling historical
+Sentinel-2 collection differences, reducing export sizes, merging
+local raster tiles, controlling concurrency, validating embeddings,
+and designing a database capable of preserving both spatial
+geometries and vector features. The forecasting layer is designed
+as an analog-based, non-parametric extension in which historical
+trajectories of retrieved twins provide empirical evidence for
+future ecosystem behaviour rather than requiring synthetic image
+generation.
+
+\textbf{Keywords:}
+Geospatial Foundation Models, Prithvi, Remote Sensing, Sentinel-2,
+HydroLAKES, Ecosystem Analogs, Vector Search, pgvector, NDVI, NDWI,
+NBR, Temporal Analysis
+
+\clearpage
+
+% ============================================================
+% CONTENTS
+% ============================================================
+
+\tableofcontents
+\clearpage
+\listoffigures
+\clearpage
+\listoftables
+\clearpage
+
+% ============================================================
+% CHAPTER 1
+% ============================================================
+
+\chapter{Introduction}
+\label{chap:introduction}
+
+\section{Background}
+
+Earth observation satellites provide repeated measurements of
+ecosystems at spatial scales that cannot be obtained economically
+through field observations alone. Sentinel-2 is particularly useful
+for this purpose because it provides multispectral optical
+observations suitable for vegetation, water, land-cover, and
+surface-condition analysis.
+
+A conventional ecosystem-analysis workflow normally begins with a
+specific question such as vegetation change, water extent, or land
+cover. EcoTwin approaches the problem from a complementary
+direction: instead of analysing a lake only in isolation, it first
+asks whether another ecosystem in a large reference collection
+looks similar in its spatial-spectral representation.
+
+The project therefore treats ecosystem comparison as a retrieval
+problem. Satellite observations are converted into learned feature
+vectors, and those vectors are indexed so that an ecosystem can be
+compared against a large collection without repeatedly processing
+the raw imagery.
+
+\section{Problem Statement}
+
+The practical problem is to identify geographically distributed
+ecosystems that are similar to a selected target ecosystem using
+information contained in satellite observations.
+
+The problem has several engineering constraints:
+
+\begin{enumerate}
+    \item lake boundaries are irregular polygons rather than
+    fixed-size image squares;
+    \item large satellite scenes are expensive to download and store;
+    \item historical Sentinel-2 collections do not expose identical
+    quality bands across all years;
+    \item cloud and invalid-pixel contamination must be controlled;
+    \item large ecosystems may require multiple image tiles;
+    \item the embedding pipeline must process many spatial regions;
+    \item embeddings must remain associated with their source
+    geometries and lake/year metadata; and
+    \item online similarity search must be substantially cheaper
+    than recomputing embeddings.
+\end{enumerate}
+
+\section{Core EcoTwin Hypothesis}
+
+EcoTwin is based on the operational hypothesis:
+
+\begin{quote}
+\emph{Ecosystems elsewhere that are structurally similar in
+geospatial feature space can provide useful analogs for understanding
+the spatial and historical behaviour of a target ecosystem.}
+\end{quote}
+
+The hypothesis separates two tasks:
+
+\begin{enumerate}
+    \item \textbf{Analog discovery:} find ecosystems that resemble
+    the target in the learned spatial-spectral representation.
+    \item \textbf{Trajectory analysis:} compare historical
+    environmental indicators of the target and its analogs.
+\end{enumerate}
+
+\section{Research Objectives}
+
+The project objectives are:
+
+\begin{enumerate}
+    \item construct a scalable geospatial data-ingestion pipeline;
+    \item represent lake environments using standardized satellite
+    image regions;
+    \item generate fixed-dimensional Prithvi embeddings;
+    \item store and index embeddings using PostgreSQL and pgvector;
+    \item retrieve ranked analog ecosystems using cosine similarity;
+    \item expose lake boundaries and analogs through an interactive
+    geospatial interface;
+    \item compare historical NDVI, NDWI, and NBR profiles; and
+    \item extend analog retrieval into an empirical forecasting
+    mechanism based on historical twin trajectories.
+\end{enumerate}
+
+\section{Project Evolution During Development}
+
+The implementation evolved considerably from the initial conceptual
+design. The early design considered standardized ecosystem blocks
+of approximately $5\times5$ km. During implementation, the data
+engineering problem became more important than the initial geometric
+assumption. Large lake polygons and Earth Engine export limits made
+it preferable to separate \emph{imagery acquisition tiles} from
+\emph{analysis cells}.
+
+The current implementation therefore uses a lake-centred buffered
+imagery extraction stage followed by local raster merging and
+approximately $1\times1$ km analysis cells. The larger imagery tiles
+are an I/O and Earth Engine management mechanism; the smaller cells
+are the units from which embeddings are generated. This distinction
+allows large lakes to be processed without forcing the foundation
+model to operate directly on irregular polygons.
+
+\section{Contributions}
+
+The project contributions are:
+
+\begin{itemize}
+    \item an end-to-end lake-to-embedding-to-analog pipeline;
+    \item a robust satellite-image acquisition strategy using
+    Google Earth Engine and local raster processing;
+    \item polygon-aware spatial subdivision and coverage filtering;
+    \item Prithvi-based six-band geospatial representations;
+    \item persistent 768-dimensional vector storage;
+    \item cosine-similarity analog retrieval;
+    \item temporal indicator comparison;
+    \item a FastAPI backend and React/Leaflet frontend; and
+    \item an engineering workflow for validation and database
+    consolidation across multiple development environments.
+\end{itemize}
+
+\section{Report Organization}
+
+Chapter~\ref{chap:data} describes the source datasets and data
+engineering process. Chapter~\ref{chap:methodology} presents the
+complete scientific pipeline. Chapter~\ref{chap:implementation}
+describes the software and database implementation.
+Chapter~\ref{chap:results} documents the current experimental
+outcomes and engineering observations. Chapter~\ref{chap:discussion}
+discusses interpretation and limitations. Chapter~\ref{chap:forecast}
+describes the analog-based forecasting layer. Chapter~\ref{chap:conclusion}
+summarizes the project and future work.
+
+% ============================================================
+% CHAPTER 2
+% ============================================================
+
+\chapter{Data Sources and Data Engineering}
+\label{chap:data}
+
+\section{Overview}
+
+EcoTwin combines static geographic information with repeated
+satellite observations. The static layer defines \emph{where} an
+ecosystem is, while the satellite layer defines \emph{what the
+ecosystem looks like through time}.
+
+The data-engineering pipeline was designed so that expensive
+satellite processing is performed offline. The online application
+then operates primarily on database records, precomputed features,
+and indexed embeddings.
+
+\section{HydroLAKES Ecosystem Inventory}
+
+HydroLAKES provides lake polygons and associated metadata. The
+database representation used by EcoTwin retains fields including:
+
+\begin{itemize}
+    \item \code{hylak\_id} / lake identifier;
+    \item lake name;
+    \item country;
+    \item lake area;
+    \item elevation;
+    \item pour-point latitude and longitude;
+    \item polygon geometry;
+    \item lake type;
+    \item average depth;
+    \item total volume; and
+    \item watershed area.
+\end{itemize}
+
+The complete HydroLAKES-derived inventory is much larger than the
+cohort used for the computationally expensive processing stages.
+The development pipeline was narrowed to a selected processing
+cohort of lakes so that multi-year imagery and embeddings could be
+generated within available storage, Earth Engine, and compute
+budgets.
+
+\begin{table}[H]
+\centering
+\caption{HydroLAKES-derived information used by EcoTwin.}
+\label{tab:hydrolakes_fields}
+\begin{tabularx}{\textwidth}{l l X}
+\toprule
+Field & Type & Role in EcoTwin \\
+\midrule
+Lake ID & Integer & Primary ecosystem identifier \\
+Lake name & Text & Human-readable identification \\
+Country & Text & Geographic filtering \\
+Lake area & Numeric & Size and metadata analysis \\
+Elevation & Numeric & Environmental context \\
+Pour latitude/longitude & Numeric & Geographic reference \\
+Geometry & PostGIS geometry & Spatial processing and mapping \\
+Lake type & Categorical & Ecosystem metadata \\
+Average depth & Numeric & Descriptive context \\
+Total volume & Numeric & Descriptive context \\
+Watershed area & Numeric & Catchment context \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{Sentinel-2}
+
+Sentinel-2 multispectral imagery is the primary remote-sensing
+input. Google Earth Engine is used for collection filtering,
+compositing, masking, and export. The principal collection used
+during development was:
+
+\begin{center}
+\code{COPERNICUS/S2\_SR\_HARMONIZED}
+\end{center}
+
+For years or locations where the surface-reflectance harmonized
+collection did not provide observations, the pipeline introduced
+a fallback to:
+
+\begin{center}
+\code{COPERNICUS/S2}
+\end{center}
+
+This fallback was particularly important for early Sentinel-2 years.
+
+\section{Temporal Coverage}
+
+The initial analytical design focused on a 2018--2025 operational
+window. During implementation, ingestion was extended to earlier
+Sentinel-2 observations where available, resulting in an attempted
+2016--2025 extraction window.
+
+The practical coverage is therefore lake- and year-dependent.
+Early years contain fewer observations and, in some cases, require
+the Level-1C fallback collection. The pipeline records the
+collection actually used so that missing or fallback observations
+are not silently treated as equivalent to the primary surface
+reflectance product.
+
+\section{Satellite Bands}
+
+The current embedding input uses six bands:
+
+\begin{center}
+\code{B2, B3, B4, B5, B6, B7}
+\end{center}
+
+These correspond to the blue, green, red, narrow near-infrared, and
+two short-wave infrared channels used by the selected Prithvi
+configuration.
+
+The bands are selected consistently from the exported GeoTIFFs
+before model inference.
+
+\section{Dynamic World}
+
+Dynamic World was evaluated as a complementary land-cover/context
+source. It can provide 10 m land-use/land-cover information and can
+be used to augment interpretation of the spatial analogs.
+
+In the current EcoTwin architecture, Sentinel-2 is the principal
+source for the embedding image, while Dynamic World is treated as a
+contextual layer rather than as a replacement for the Prithvi input.
+
+\section{Environmental Indices}
+
+EcoTwin maintains temporal environmental indicators for ecosystem
+comparison.
+
+\subsection{NDVI}
+
+\begin{equation}
+NDVI =
+\frac{NIR-Red}{NIR+Red}
+\end{equation}
+
+NDVI provides a vegetation-sensitive signal and is useful for
+studying seasonal and interannual vegetation behaviour.
+
+\subsection{NDWI}
+
+The water-sensitive index is computed as:
+
+\begin{equation}
+NDWI =
+\frac{Green-NIR}{Green+NIR}
+\end{equation}
+
+It provides a complementary signal for surface-water behaviour.
+
+\subsection{NBR}
+
+The Normalized Burn Ratio is:
+
+\begin{equation}
+NBR =
+\frac{NIR-SWIR}{NIR+SWIR}
+\end{equation}
+
+NBR provides information related to surface disturbance and
+burn-related spectral change.
+
+The exact band mapping used for each index is kept consistent with
+the final feature-extraction implementation.
+
+\section{Data Quality Requirements}
+
+A valid ecosystem record requires:
+
+\begin{enumerate}
+    \item a valid lake polygon;
+    \item a valid year;
+    \item a successful imagery query;
+    \item a usable composite;
+    \item valid exported raster data;
+    \item valid spatial cells after coverage filtering; and
+    \item a successfully generated embedding for each retained cell.
+\end{enumerate}
+
+The pipeline explicitly distinguishes successful, failed, skipped,
+and already-completed work so that long-running jobs can be resumed.
+
+% ============================================================
+% CHAPTER 3
+% ============================================================
+
+\chapter{Detailed EcoTwin Methodology}
+\label{chap:methodology}
+
+\section{End-to-End Pipeline}
+
+The implemented workflow is:
+
+\begin{equation}
+\begin{aligned}
+Lake\ Inventory
+&\rightarrow Boundary\ Validation\\
+&\rightarrow Buffering
+\rightarrow Imagery\ Tiling\\
+&\rightarrow Sentinel\text{-}2\ Composite
+\rightarrow GeoTIFF\\
+&\rightarrow Local\ Mosaic
+\rightarrow 1\,km\ Cells\\
+&\rightarrow Coverage\ Filter
+\rightarrow Prithvi\\
+&\rightarrow 768D\ Embeddings
+\rightarrow pgvector\\
+&\rightarrow Cosine\ Search
+\rightarrow Analogs\\
+&\rightarrow Temporal\ Profiles
+\rightarrow Forecast
+\end{aligned}
+\end{equation}
+
+\section{Step 1: Lake Boundary Retrieval}
+
+The pipeline begins by reading the target lake polygon from
+PostGIS. Keeping the original geometry in a spatial database avoids
+repeated conversion between shapefiles and application-specific
+formats.
+
+The geometry is checked for validity and transformed into an
+appropriate projected CRS before distance-based operations are
+performed.
+
+\section{Step 2: Buffering}
+
+The lake polygon is expanded using a configurable buffer. During
+development, a \SI{1200}{\meter} buffer was used for the imagery
+extraction stage.
+
+The buffer is important because the ecosystem representation is not
+restricted to the water polygon itself. The surrounding land,
+shoreline, vegetation, and local landscape context contribute to
+the spatial-spectral representation.
+
+\section{Step 3: Projected Grid Generation}
+
+The buffered polygon is projected into a metric CRS. A regular
+imagery grid is then generated around the buffered geometry.
+
+The imagery grid is deliberately different from the final
+analysis grid. During the latest extraction implementation, an
+approximately \SI{8500}{\meter} tile size was used to balance Earth
+Engine request size, memory use, and local processing cost.
+
+A lake may therefore produce one, two, or several imagery tiles
+depending on its size and shape.
+
+\section{Step 4: Earth Engine Collection Selection}
+
+For each lake-year combination, the pipeline first queries the
+preferred surface-reflectance collection. If no usable observation
+exists, the system falls back to the Level-1C collection.
+
+This decision is made before the export request and is recorded in
+the processing metadata.
+
+\begin{table}[H]
+\centering
+\caption{Sentinel-2 collection strategy.}
+\label{tab:collection_strategy}
+\begin{tabularx}{\textwidth}{c l X}
+\toprule
+Priority & Collection & Purpose \\
+\midrule
+1 & \code{COPERNICUS/S2\_SR\_HARMONIZED} &
+Preferred surface reflectance \\
+2 & \code{COPERNICUS/S2} &
+Fallback for early or unavailable surface-reflectance years \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{Step 5: Cloud and Invalid-Pixel Handling}
+
+Cloud contamination is one of the main sources of noise in optical
+remote sensing. The current preprocessing pipeline uses
+cloud-probability information and class-based masking where the
+required bands are available.
+
+The development configuration used a cloud-probability threshold
+of approximately $40\%$. Pixels classified as unusable are masked
+before compositing.
+
+The implementation had to account for historical collection
+differences. Early Sentinel-2 products exposed different quality
+bands; code that assumed the presence of \code{QA60},
+\code{MSK\_CLASSI\_OPAQUE}, or \code{MSK\_CLASSI\_CIRRUS} could fail
+when the selected collection did not expose the expected band.
+The final pipeline therefore treats cloud masking as a
+collection-aware operation rather than assuming one universal
+quality-band schema.
+
+\section{Step 6: Annual Composite Construction}
+
+For each lake-year-region, the filtered observations are combined
+into an annual composite.
+
+The median operation is used to reduce the influence of residual
+clouds, outliers, and individual acquisition anomalies:
+
+\begin{equation}
+I_{annual}(p,b)
+=
+median\left(
+I_1(p,b),I_2(p,b),\ldots,I_n(p,b)
+\right)
+\end{equation}
+
+where $p$ is a pixel and $b$ is a selected spectral band.
+
+The composite is clipped to the requested geographic extent before
+export.
+
+\section{Step 7: GeoTIFF Export}
+
+The selected six bands are exported as local GeoTIFF data. The
+development pipeline used 10 m spatial output for the selected
+Sentinel-2 bands and stored the raster in floating-point form.
+
+Local storage has two major advantages:
+
+\begin{enumerate}
+    \item the same Earth Engine composite does not need to be
+    recomputed for every downstream analysis cell; and
+    \item embedding generation can be repeated without repeatedly
+    consuming Earth Engine export capacity.
+\end{enumerate}
+
+\section{Step 8: Tile Completion and Resumability}
+
+Each imagery tile is represented by metadata including lake ID,
+year, tile index, geometry/bounding box, status, and local image
+path.
+
+The pipeline checks whether a tile has already completed before
+starting a new Earth Engine request. This makes the large batch
+pipeline resumable after failures or interruptions.
+
+\section{Step 9: Local Raster Merging}
+
+After all tiles belonging to a lake-year are available, the local
+processing stage merges them into a single raster mosaic.
+
+Rasterio is used for reading, reprojection/metadata handling,
+mosaicking, and writing. Compression settings are applied to
+reduce storage requirements while preserving the numerical data
+needed for model inference.
+
+The merged image becomes the stable source from which smaller
+analysis cells are extracted.
+
+\section{Step 10: Analysis-Cell Generation}
+
+The merged lake image is intersected with a regular approximately
+$1\times1$ km analysis grid.
+
+For each cell, the lake coverage is computed:
+
+\begin{equation}
+Coverage(c)
+=
+\frac{Area(c\cap Lake)}
+{Area(c)}
+\times 100
+\end{equation}
+
+Only cells above the configured minimum coverage threshold are
+retained. The development configuration used a threshold of
+approximately $15\%$.
+
+This prevents cells that only touch a small corner of a lake from
+being treated as representative ecosystem regions.
+
+\section{Step 11: Model Input Preparation}
+
+Each retained analysis cell is read from the local merged GeoTIFF.
+The six selected bands are converted into the model's expected
+tensor layout, numerical range, and spatial dimensions.
+
+The processing stage therefore separates:
+
+\begin{enumerate}
+    \item geographic geometry;
+    \item raster extraction;
+    \item model preprocessing; and
+    \item model inference.
+\end{enumerate}
+
+This separation makes it possible to change the model without
+re-downloading the underlying satellite data.
+
+\section{Step 12: Prithvi Embedding Generation}
+
+Prithvi is used as the geospatial foundation model. Each retained
+analysis cell is transformed into a fixed-length feature vector.
+
+For an input image $X$:
+
+\begin{equation}
+f(X) \rightarrow \mathbf{z},
+\qquad
+\mathbf{z}\in\mathbb{R}^{768}
+\end{equation}
+
+The six-band configuration used by EcoTwin is based on
+\code{B2--B7}, corresponding to the selected blue, green, red,
+narrow-NIR, SWIR1, and SWIR2 channels.
+
+The inference pipeline supports batched processing. During the
+development runs, a batch size of eight was used in CPU-based
+inference.
+
+\section{Step 13: Embedding Validation}
+
+Before insertion into the database, every embedding is checked for:
+
+\begin{itemize}
+    \item expected dimensionality;
+    \item missing or null values;
+    \item numerical validity;
+    \item correct lake association;
+    \item correct year association; and
+    \item correct spatial-cell association.
+\end{itemize}
+
+A failed inference is not inserted as a valid vector.
+
+\section{Step 14: Vector Persistence}
+
+The final embedding is stored in PostgreSQL using pgvector.
+
+The conceptual relationship is:
+
+\begin{equation}
+Lake
+\rightarrow
+Year
+\rightarrow
+Spatial\ Cell
+\rightarrow
+Embedding
+\end{equation}
+
+This preserves the provenance required to explain why an ecosystem
+was retrieved as an analog.
+
+\section{Step 15: Similarity Search}
+
+For a query embedding $\mathbf{q}$ and candidate embedding
+$\mathbf{x}$, EcoTwin uses cosine similarity:
+
+\begin{equation}
+sim(\mathbf{q},\mathbf{x})
+=
+\frac{\mathbf{q}^{T}\mathbf{x}}
+{\|\mathbf{q}\|_2\|\mathbf{x}\|_2}
+\end{equation}
+
+The candidates are ranked by decreasing similarity:
+
+\begin{equation}
+s_{(1)}\ge s_{(2)}\ge\cdots\ge s_{(K)}
+\end{equation}
+
+The highest-ranked ecosystems become the analog set displayed by
+the application.
+
+\section{Cell-to-Lake Interpretation}
+
+Because a lake can contain multiple analysis cells, the retrieval
+layer must preserve the relationship between cell-level embeddings
+and lake-level identity.
+
+This design has two advantages:
+
+\begin{enumerate}
+    \item it preserves local spatial detail instead of collapsing a
+    large lake into one opaque vector too early; and
+    \item it allows retrieved similarities to be traced back to the
+    actual spatial region that produced the embedding.
+\end{enumerate}
+
+Where a single lake-level representation is required, cell
+representations can be aggregated using a coverage- or area-aware
+strategy. The cell-level vectors remain the underlying evidence.
+
+\section{Step 16: Temporal Profile Generation}
+
+For the query lake and retrieved analogs, historical environmental
+records are assembled into time series.
+
+The primary indicators are:
+
+\begin{itemize}
+    \item NDVI;
+    \item NDWI; and
+    \item NBR.
+\end{itemize}
+
+The interface can show the indicators independently or as a
+multi-index comparison.
+
+\section{Step 17: Analog-Based Forecasting Concept}
+
+EcoTwin's forecasting design is not based on generating synthetic
+future satellite images. Instead, it uses the observed historical
+trajectory of an analogous ecosystem as empirical evidence.
+
+Let the target indicator be $y_t$ and an analog indicator be
+$a_t$. A simple trajectory-offset formulation is:
+
+\begin{equation}
+\Delta_t = y_t-a_t
+\end{equation}
+
+The future analog trajectory can then be transferred to the target
+through an estimated historical offset:
+
+\begin{equation}
+\hat{y}_{t+h}
+=
+a_{t+h}
++
+\widehat{\Delta}
+\end{equation}
+
+For multiple analogs, a weighted combination can be used:
+
+\begin{equation}
+\hat{y}_{t+h}
+=
+\sum_{i=1}^{K}
+w_i
+\left(
+a_{i,t+h}+\Delta_i
+\right)
+\end{equation}
+
+with weights related to the similarity scores and normalized so that
+
+\begin{equation}
+\sum_{i=1}^{K}w_i=1.
+\end{equation}
+
+This formulation keeps the forecast grounded in historically
+observed ecosystem trajectories.
+
+\section{Why the Analog Architecture is Explainable}
+
+A parametric time-series model produces a prediction through learned
+parameters that can be difficult to connect to a particular
+ecosystem.
+
+EcoTwin instead provides an explicit chain:
+
+\begin{equation}
+\text{Target}
+\rightarrow
+\text{Retrieved Twin}
+\rightarrow
+\text{Similarity}
+\rightarrow
+\text{Historical Trajectory}
+\rightarrow
+\text{Projected Trajectory}
+\end{equation}
+
+This makes it possible to inspect the analogs responsible for a
+forecast and compare their historical behaviour with the target.
+
+% ============================================================
+% CHAPTER 4
+% ============================================================
+
+\chapter{System Architecture and Implementation}
+\label{chap:implementation}
+
+\section{Architecture Overview}
+
+EcoTwin is implemented as a multi-component system. The offline
+pipeline performs the computationally expensive work, while the
+online application retrieves precomputed data.
+
+\placeholderfigure[0.95\textwidth]{10cm}{
+Recommended figure: EcoTwin end-to-end architecture showing
+HydroLAKES, Google Earth Engine, local raster processing, Prithvi,
+PostgreSQL/PostGIS/pgvector, FastAPI, and React/Leaflet.
+}
+
+\section{Technology Stack}
+
+\begin{table}[H]
+\centering
+\caption{EcoTwin implementation stack.}
+\label{tab:stack}
+\begin{tabularx}{\textwidth}{l l X}
+\toprule
+Layer & Technology & Responsibility \\
+\midrule
+Frontend & React, Vite, TypeScript & Interactive application \\
+Mapping & Leaflet / React-Leaflet & Spatial visualization \\
+Backend & FastAPI, Python & REST services and orchestration \\
+Database & PostgreSQL & Relational persistence \\
+Spatial database & PostGIS & Polygon and spatial queries \\
+Vector search & pgvector & Embedding storage and similarity search \\
+Remote sensing & Google Earth Engine & Satellite filtering/compositing \\
+Raster processing & Rasterio / Python & Local GeoTIFF processing \\
+ML inference & Prithvi & Geospatial embeddings \\
+Task queue & Celery / Redis & Asynchronous processing \\
+Monitoring & Flower & Celery task monitoring \\
+Administration & pgAdmin & Database administration \\
+Containerization & Docker Compose & Reproducible local deployment \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{Offline and Online Separation}
+
+The system is divided into two logical paths.
+
+\subsection{Offline Path}
+
+The offline path performs:
+
+\begin{enumerate}
+    \item lake preparation;
+    \item imagery acquisition;
+    \item raster merging;
+    \item spatial-cell extraction;
+    \item embedding generation;
+    \item temporal-feature preparation; and
+    \item vector indexing.
+\end{enumerate}
+
+\subsection{Online Path}
+
+The online path performs:
+
+\begin{enumerate}
+    \item lake lookup;
+    \item map rendering;
+    \item similarity query;
+    \item analog profile retrieval;
+    \item temporal-series retrieval; and
+    \item report generation.
+\end{enumerate}
+
+This architecture avoids running Earth Engine or the foundation
+model during every user request.
+
+\section{PostgreSQL and PostGIS}
+
+PostgreSQL is the central persistent store. PostGIS stores the
+original lake geometry, analysis-cell geometry, and spatial metadata.
+
+Spatial information remains in the database rather than being
+converted into plain latitude/longitude tables. This allows
+intersection, containment, area, and map-query operations to be
+performed directly in the database.
+
+\section{pgvector}
+
+The pgvector extension stores the 768-dimensional Prithvi vectors.
+
+The vector table maintains the association between:
+
+\begin{equation}
+Embedding
+\leftrightarrow
+Subregion
+\leftrightarrow
+Lake
+\leftrightarrow
+Year
+\end{equation}
+
+Cosine-distance/similarity operations can therefore be executed
+directly against the indexed database rather than exporting vectors
+to CSV or recomputing features.
+
+\section{Core Database Entities}
+
+The implementation evolved around entities including:
+
+\begin{itemize}
+    \item \code{lakes};
+    \item \code{lake\_tiles};
+    \item \code{lake\_images};
+    \item \code{sub\_regions};
+    \item \code{sub\_region\_features}; and
+    \item embedding/vector records.
+\end{itemize}
+
+\subsection{Lakes}
+
+Stores the master ecosystem identity, metadata, and PostGIS
+geometry.
+
+\subsection{Lake Images}
+
+Stores the merged or processed imagery associated with a lake-year,
+including local path and processing status.
+
+\subsection{Lake Tiles}
+
+Stores the intermediate imagery tiles generated for a lake-year,
+including tile index, geometry, bounding box, status, and image path.
+
+\subsection{Sub-Regions}
+
+Stores the smaller analysis cells generated from the merged lake
+image, including geometry and coverage information.
+
+\subsection{Sub-Region Features}
+
+Stores model-derived features and embeddings associated with
+individual spatial cells.
+
+\section{Backend Services}
+
+The FastAPI backend provides services for:
+
+\begin{itemize}
+    \item lake metadata lookup;
+    \item nearest lake/grid-cell lookup;
+    \item analog similarity search;
+    \item temporal feature retrieval;
+    \item forecast retrieval;
+    \item report generation; and
+    \item health/system status.
+\end{itemize}
+
+The API separates data retrieval from heavy batch processing. Long
+operations are handled asynchronously where appropriate.
+
+\section{Frontend}
+
+The frontend is implemented using React, Vite, and TypeScript.
+The map uses Leaflet/React-Leaflet.
+
+The main user interaction is:
+
+\begin{enumerate}
+    \item select or search for a lake;
+    \item display its geographic boundary;
+    \item inspect lake metadata;
+    \item request analogous ecosystems;
+    \item visualize the analog locations;
+    \item inspect similarity scores;
+    \item inspect analog profiles; and
+    \item compare temporal indicators and forecast information.
+\end{enumerate}
+
+\section{Map Rendering and Geometry Provenance}
+
+An important implementation requirement is that displayed lake
+boundaries must come from the same PostGIS geometry used for the
+analysis. Analog markers are derived from their stored geographic
+coordinates and lake identities.
+
+This prevents a common failure mode in which the analytical result
+and the displayed map use different coordinate transformations or
+different numbering systems.
+
+\section{Asynchronous Processing}
+
+Celery and Redis are used for background processing. This is
+important because imagery downloads, raster merging, and model
+inference can take substantially longer than a normal HTTP request.
+
+Flower is used to inspect worker activity and task progress during
+development.
+
+\section{Dockerized Development Environment}
+
+The local development environment was organized as a multi-service
+Docker Compose deployment containing services such as:
+
+\begin{itemize}
+    \item PostgreSQL;
+    \item Redis;
+    \item FastAPI backend;
+    \item Celery worker;
+    \item pipeline worker;
+    \item Flower; and
+    \item pgAdmin.
+\end{itemize}
+
+The containerized design makes service dependencies explicit and
+allows the same architecture to be reproduced on another machine.
+
+\section{Configuration Management}
+
+The processing pipeline uses environment/configuration values for
+items such as:
+
+\begin{itemize}
+    \item Earth Engine project/authentication;
+    \item date ranges;
+    \item cloud thresholds;
+    \item imagery buffer distance;
+    \item imagery tile size;
+    \item analysis-cell size;
+    \item coverage threshold;
+    \item local storage paths;
+    \item database credentials; and
+    \item worker/batch settings.
+\end{itemize}
+
+This prevents experiment-specific values from being hard-coded
+throughout the processing code.
+
+% ============================================================
+% CHAPTER 5
+% ============================================================
+
+\chapter{Experimental Results and Engineering Evaluation}
+\label{chap:results}
+
+\section{Current Processing Cohort}
+
+During development, a processing cohort of approximately 829 lakes
+was targeted for multi-year processing. The wider HydroLAKES-derived
+Indian inventory is substantially larger, so the 829-lake cohort
+represents the computationally processed subset rather than the
+entire source inventory.
+
+\begin{table}[H]
+\centering
+\caption{Current EcoTwin processing configuration.}
+\label{tab:current_config}
+\begin{tabular}{ll}
+\toprule
+Parameter & Current configuration \\
+\midrule
+Lake source & HydroLAKES \\
+Target processing cohort & $\sim$829 lakes \\
+Imagery window & 2016--2025 attempted \\
+Primary Sentinel collection & S2 SR Harmonized \\
+Fallback collection & S2 Level-1C \\
+Imagery buffer & 1200 m \\
+Imagery tile size & approximately 8500 m \\
+Analysis cell & approximately 1 km $\times$ 1 km \\
+Coverage threshold & approximately 15\% \\
+Embedding model & Prithvi \\
+Embedding dimension & 768 \\
+Input bands & B2--B7 \\
+Similarity metric & Cosine similarity \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Temporal Availability Observations}
+
+The Earth Engine collection checks demonstrated that early years
+have substantially less usable surface-reflectance coverage than
+recent years. In particular, the 2016--2017 period required special
+handling, while later years provided much denser observation sets.
+
+This is an important distinction between the \emph{requested}
+temporal window and the \emph{available valid observations}. EcoTwin
+therefore stores year-level processing status rather than assuming
+that every lake has a complete ten-year sequence.
+
+\section{Embedding Pipeline Performance}
+
+The embedding stage was implemented as batch inference. During
+development, inference logs showed CPU execution with a batch size
+of eight.
+
+The pipeline is designed so that:
+
+\begin{equation}
+N_{embeddings}
+=
+N_{valid\ cells}
+\end{equation}
+
+rather than
+
+\begin{equation}
+N_{embeddings}
+=
+N_{lakes}.
+\end{equation}
+
+This distinction is fundamental to EcoTwin: a large lake can
+generate several spatial embeddings, and the vector index therefore
+contains spatially localized ecosystem representations.
+
+\section{Similarity Search Demonstration}
+
+A representative similarity-analysis run used a large candidate
+collection and returned a ranked set of analogs. In a previously
+observed application run, approximately 12,458 candidate lake/region
+records were compared, the interface returned the top 10 analogs,
+and the best displayed similarity was approximately 0.942.
+
+These values should be treated as \emph{current demonstration
+results} rather than final benchmark claims until the final
+production database is frozen and the experiment is repeated under
+a documented configuration.
+
+\begin{table}[H]
+\centering
+\caption{Representative similarity-search demonstration.}
+\label{tab:similarity_demo}
+\begin{tabular}{ll}
+\toprule
+Metric & Observed value \\
+\midrule
+Candidate records & $\sim$12,458 \\
+Returned analogs & 10 \\
+Best displayed similarity & $\sim$0.942 \\
+Similarity metric & Cosine similarity \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Interpretation of Similarity Scores}
+
+A similarity score indicates closeness in the learned representation
+space. It does not directly imply identical ecological processes.
+
+A high score can therefore be interpreted as:
+
+\begin{quote}
+The target and analog contain similar spatial-spectral information
+under the selected satellite bands, preprocessing procedure, and
+Prithvi representation.
+\end{quote}
+
+Ecological interpretation requires additional evidence from lake
+metadata, spatial maps, and temporal environmental indicators.
+
+\section{Temporal Profile Results}
+
+The temporal layer provides a second axis of validation. Two lakes
+can be spatially similar but exhibit different historical
+trajectories, while two lakes with different geographic locations
+may show similar seasonal behaviour.
+
+EcoTwin therefore presents:
+
+\begin{itemize}
+    \item NDVI trajectories;
+    \item NDWI trajectories;
+    \item NBR trajectories;
+    \item observation availability;
+    \item yearly summaries; and
+    \item comparison against retrieved analogs.
+\end{itemize}
+
+\section{Processing Reliability}
+
+The system was intentionally designed to tolerate partial failure.
+
+A lake-year can be in states such as:
+
+\begin{itemize}
+    \item pending;
+    \item processing;
+    \item completed;
+    \item failed; or
+    \item skipped because output already exists.
+\end{itemize}
+
+This makes large multi-year extraction jobs restartable instead of
+requiring a complete restart after a single failed Earth Engine
+request.
+
+\section{Engineering Problems Encountered}
+
+\subsection{Earth Engine Memory Limits}
+
+Large requests sometimes produced Earth Engine memory-limit errors.
+The solution was to reduce the size of each export region and to
+move part of the processing to local raster operations.
+
+\subsection{Earth Engine Concurrency Limits}
+
+Parallel workers caused HTTP 429 errors when too many requests were
+issued simultaneously. Connection-pool saturation was also observed.
+
+The pipeline was consequently changed toward smaller controlled
+worker counts, resumable jobs, and local reuse of already-generated
+imagery.
+
+\subsection{Historical Band Differences}
+
+The early Sentinel-2 Level-1C fallback exposed a different set of
+quality bands from assumptions made for other collections. For
+example, requests that selected \code{MSK\_CLASSI\_CIRRUS},
+\code{MSK\_CLASSI\_OPAQUE}, or \code{QA60} could fail depending on
+the actual image schema.
+
+This led to collection-aware preprocessing rather than a single
+hard-coded cloud-mask implementation.
+
+\subsection{Large Raster Storage}
+
+Merged rasters can become much larger than individual source tiles.
+Compression, floating-point type control, tiled GeoTIFF writing,
+and local reuse were therefore important.
+
+\subsection{Disk Constraints}
+
+During development, the local root filesystem reached 100\%
+utilization, causing raster and Docker operations to fail with
+``No space left on device''. This demonstrated that the data
+pipeline must account for intermediate storage, not only final
+dataset size.
+
+\subsection{Network and Authentication Constraints}
+
+Earth Engine authentication and access depend on external network
+services. Authentication failures and inability to reach
+OAuth endpoints temporarily prevented pipeline execution.
+
+The implementation therefore separates authentication from
+per-lake processing and records failures instead of silently
+producing incomplete datasets.
+
+\section{Data Migration Between Team Members}
+
+Because the project was developed by multiple team members, a
+database consolidation procedure was designed.
+
+Each developer can create a PostgreSQL custom-format dump. The dump
+is restored into a temporary database, validated through a Python
+ETL process, and then merged into the production database.
+
+The procedure preserves:
+
+\begin{itemize}
+    \item PostGIS geometries;
+    \item pgvector embeddings;
+    \item indexes;
+    \item constraints; and
+    \item PostgreSQL data types.
+\end{itemize}
+
+This approach is safer than CSV-based migration because CSV does not
+naturally preserve PostGIS geometry and vector types.
+
+% ============================================================
+% CHAPTER 6
+% ============================================================
+
+\chapter{Discussion}
+\label{chap:discussion}
+
+\section{Why Foundation-Model Embeddings}
+
+Traditional similarity systems require manually specifying which
+variables should define similarity. EcoTwin instead uses a learned
+geospatial representation derived from multispectral imagery.
+
+This changes the problem from:
+
+\[
+Similarity =
+f(\text{manually selected attributes})
+\]
+
+to:
+
+\[
+Similarity =
+f(\text{learned spatial-spectral representation})
+\]
+
+The advantage is that spatial context can be represented jointly
+rather than through a small set of manually selected scalar
+attributes.
+
+\section{Why Spatial Cells Instead of One Lake Image}
+
+A lake is not spatially homogeneous. Shoreline vegetation,
+surrounding land cover, built-up regions, agricultural land,
+mountain slopes, and water surfaces can coexist in the same
+analysis area.
+
+Using smaller cells preserves this heterogeneity.
+
+The cell-level representation also improves explainability because
+a retrieved similarity can be associated with a geographic region
+rather than only with an entire lake.
+
+\section{Why Local Raster Processing}
+
+Downloading the complete India-scale satellite archive would be
+impractical for the project. EcoTwin therefore uses an
+``extract once, reuse many times'' strategy:
+
+\[
+Earth\ Engine
+\rightarrow
+Local\ GeoTIFF
+\rightarrow
+Multiple\ Downstream\ Features
+\]
+
+This substantially reduces repeated remote requests.
+
+\section{Why Vector Database Search}
+
+Without vector persistence, every query would require model
+inference on the candidate ecosystem collection.
+
+With pgvector:
+
+\[
+Query\ Image
+\rightarrow
+One\ Embedding
+\rightarrow
+Vector\ Search
+\rightarrow
+Top\text{-}K
+\]
+
+The expensive foundation-model inference is therefore moved into
+the offline indexing stage.
+
+\section{Spatial Similarity versus Temporal Similarity}
+
+EcoTwin deliberately keeps spatial and temporal similarity
+conceptually separate.
+
+Spatial similarity answers:
+
+\begin{quote}
+Which ecosystems look similar to the target in the learned
+representation?
+\end{quote}
+
+Temporal similarity answers:
+
+\begin{quote}
+Do those ecosystems exhibit similar historical behaviour?
+\end{quote}
+
+A robust analog should ideally provide useful evidence on both axes.
+
+\section{Strengths}
+
+The implemented system provides:
+
+\begin{itemize}
+    \item scalable offline preprocessing;
+    \item resumable Earth Engine extraction;
+    \item explicit spatial provenance;
+    \item foundation-model representations;
+    \item persistent vector search;
+    \item temporal contextualization;
+    \item interactive geospatial visualization; and
+    \item a path toward explainable analog-based forecasting.
+\end{itemize}
+
+\section{Limitations}
+
+\subsection{Observation Availability}
+
+The ten-year target window does not guarantee ten complete years
+for every lake. Historical collection availability and cloud
+filtering can create gaps.
+
+\subsection{Optical Cloud Dependence}
+
+Sentinel-2 is an optical sensor. Cloud cover and atmospheric
+conditions can reduce valid observations.
+
+\subsection{Embedding Semantics}
+
+A high embedding similarity does not guarantee ecological
+equivalence. The embedding is a representation of the selected
+satellite inputs and model.
+
+\subsection{Spatial Grid Dependence}
+
+Changing the analysis-cell size or coverage threshold changes the
+resulting embeddings. The spatial discretization is therefore a
+model parameter.
+
+\subsection{Model Input Dependence}
+
+Changing bands, preprocessing, normalization, temporal compositing,
+or image extent can change the embedding space.
+
+\subsection{Forecasting Dependence on Analogs}
+
+Analog forecasting is only as strong as the retrieved historical
+twins. Poor analogs lead to poor forecasts, even if the mathematical
+forecasting procedure itself is correct.
+
+\section{Validation Strategy}
+
+The system should be validated at four levels:
+
+\begin{enumerate}
+    \item \textbf{Data validation:} check image completeness,
+    geometry validity, and temporal availability.
+    \item \textbf{Representation validation:} verify embedding
+    dimensionality and numerical validity.
+    \item \textbf{Retrieval validation:} inspect similarity rankings
+    and compare retrieved maps and metadata.
+    \item \textbf{Temporal validation:} determine whether high-ranked
+    analogs also provide useful historical trajectories.
+\end{enumerate}
+
+Independent ecological or field observations would provide the
+strongest external validation but were not available as a complete
+ground-truth source during the present development cycle.
+
+% ============================================================
+% CHAPTER 7
+% ============================================================
+
+\chapter{Analog-Based Forecasting}
+\label{chap:forecast}
+
+\section{Forecasting Philosophy}
+
+The EcoTwin forecasting layer follows the same analog architecture
+as the retrieval system. Instead of treating forecasting as an
+independent machine-learning problem, it reuses the evidence already
+identified by similarity search.
+
+The logic is:
+
+\begin{equation}
+\text{Current Target}
+\rightarrow
+\text{Historical Twin}
+\rightarrow
+\text{Observed Future Trajectory}
+\rightarrow
+\text{Target Forecast}
+\end{equation}
+
+\section{Historical Twin Alignment}
+
+Suppose the target ecosystem has an indicator sequence
+$Y_t$ and an analog has sequence $A_t$. A historical overlap period
+is used to estimate how the target differs from the analog.
+
+A simple offset estimate is:
+
+\begin{equation}
+\widehat{\Delta}
+=
+\frac{1}{T}
+\sum_{t=1}^{T}
+(Y_t-A_t)
+\end{equation}
+
+The future analog trajectory is then adjusted using this offset.
+
+\section{Multiple Analog Forecast}
+
+For $K$ analogs, each analog receives a weight $w_i$ derived from
+its similarity. A generic normalization is:
+
+\begin{equation}
+w_i =
+\frac{s_i}
+{\sum_{j=1}^{K}s_j}
+\end{equation}
+
+for non-negative similarity scores $s_i$.
+
+The predicted trajectory becomes:
+
+\begin{equation}
+\widehat{Y}_{t+h}
+=
+\sum_{i=1}^{K}
+w_i
+\left(
+A_{i,t+h}+\widehat{\Delta}_i
+\right).
+\end{equation}
+
+The application can therefore explain a prediction through the
+analog lakes that contributed to it.
+
+\section{Forecasted Variables}
+
+The principal targets are:
+
+\begin{itemize}
+    \item NDVI;
+    \item NDWI;
+    \item NBR; and
+    \item a combined ecosystem indicator derived from these series,
+    where implemented.
+\end{itemize}
+
+\section{Forecast Uncertainty}
+
+The spread among analog predictions can provide an empirical
+uncertainty signal.
+
+For example, if the analog trajectories are widely separated,
+forecast confidence should be lower than when the trajectories
+closely agree.
+
+This is not equivalent to a formally calibrated probabilistic
+forecast and should be described as an analog-dispersion measure
+unless a formal uncertainty model is added.
+
+\section{Forecast Evaluation}
+
+Once a sufficiently long historical sequence is available, a
+hindcasting experiment can be performed:
+
+\begin{enumerate}
+    \item hide the latest observed period;
+    \item retrieve analogs using only information available before
+    the cutoff;
+    \item generate a forecast;
+    \item compare the forecast against the held-out observations.
+\end{enumerate}
+
+Recommended metrics include:
+
+\begin{equation}
+MAE =
+\frac{1}{n}\sum_{i=1}^{n}|y_i-\hat{y}_i|
+\end{equation}
+
+and
+
+\begin{equation}
+RMSE =
+\sqrt{
+\frac{1}{n}
+\sum_{i=1}^{n}
+(y_i-\hat{y}_i)^2
+}.
+\end{equation}
+
+The evaluation should be performed separately for NDVI, NDWI, and
+NBR rather than reporting only a single aggregate number.
+
+% ============================================================
+% CHAPTER 8
+% ============================================================
+
+\chapter{Conclusion and Future Work}
+\label{chap:conclusion}
+
+\section{Conclusion}
+
+EcoTwin evolved from a conceptual ecosystem-comparison idea into
+an end-to-end geospatial retrieval system.
+
+The final architecture separates the problem into several stages:
+a lake inventory defines the ecosystem boundary; Google Earth Engine
+provides multi-year Sentinel-2 observations; a buffered and tiled
+raster pipeline makes large exports manageable; local mosaicking
+creates reusable lake-year images; one-kilometre analysis cells
+provide spatially consistent units; Prithvi converts these cells into
+768-dimensional representations; pgvector makes those
+representations searchable; and the web application exposes the
+retrieved analogs together with spatial and temporal context.
+
+The most significant engineering contribution of the project is
+therefore not a single model component but the integration of
+geospatial data engineering, foundation-model inference, vector
+retrieval, temporal analysis, and interactive visualization into one
+reproducible workflow.
+
+The development experience also demonstrated that large-scale
+Earth-observation systems require careful handling of external
+service limits, historical data differences, raster storage,
+concurrency, resumability, and database provenance.
+
+\section{Future Work}
+
+Future work should focus on:
+
+\begin{enumerate}
+    \item completing and systematically evaluating the analog-based
+    forecasting layer;
+    \item performing temporal hindcasting experiments;
+    \item calibrating forecast uncertainty using analog dispersion
+    and historical error;
+    \item adding independent ecological validation;
+    \item improving the lake-level aggregation strategy;
+    \item experimenting with alternative cell sizes and coverage
+    thresholds;
+    \item incorporating additional environmental variables;
+    \item improving temporal compositing;
+    \item supporting larger ecosystem inventories;
+    \item optimizing vector indexing for larger collections;
+    \item improving asynchronous pipeline orchestration; and
+    \item deploying a shared production database and hosted
+    processing infrastructure.
+\end{enumerate}
+
+\section{Final Remarks}
+
+EcoTwin provides a practical bridge between modern geospatial
+foundation models and ecosystem-scale comparative analysis. Its
+central idea is to use historically observed ecosystems as
+computationally retrievable analogs rather than treating every
+ecosystem as an isolated forecasting problem.
+
+% ============================================================
+% REFERENCES
+% ============================================================
+
+\begin{thebibliography}{99}
+
+\bibitem{gorelick2017gee}
+N. Gorelick, M. Hancher, M. Dixon, S. Ilyushchenko, D. Thau, and
+R. Moore, ``Google Earth Engine: Planetary-scale geospatial analysis
+for everyone,'' \textit{Remote Sensing of Environment}, vol. 202,
+pp. 18--27, 2017.
+
+\bibitem{sentinel2}
+European Space Agency, ``Sentinel-2 Mission,'' Copernicus
+documentation.
+
+\bibitem{hydrolakes}
+HydroLAKES, Global lake database and associated lake-boundary
+information used as the static ecosystem inventory.
+
+\bibitem{prithvi}
+NASA and IBM, ``Prithvi-EO: Geospatial foundation model for Earth
+observation,'' official model documentation and associated
+publication.
+
+\bibitem{dynamicworld}
+C. F. Brown \textit{et al.}, ``Dynamic World, near real-time global
+10 m land use land cover mapping,'' 2022.
+
+\bibitem{pettorelli2005ndvi}
+N. Pettorelli, J. O. Vik, A. Mysterud, J.-M. Gaillard, C. J. Tucker,
+and N. C. Stenseth, ``Using the satellite-derived NDVI to assess
+ecological responses to environmental change,'' \textit{Trends in
+Ecology \& Evolution}, vol. 20, no. 9, pp. 503--510, 2005.
+
+\bibitem{huete2002modis}
+A. Huete, K. Didan, T. Miura, E. P. Rodriguez, X. Gao, and
+L. G. Ferreira, ``Overview of the radiometric and biophysical
+performance of the MODIS vegetation indices,'' \textit{Remote
+Sensing of Environment}, vol. 83, no. 1--2, pp. 195--213, 2002.
+
+\end{thebibliography}
+
+% ============================================================
+% APPENDIX A
+% ============================================================
+
+\appendix
+
+\chapter{Database Schema}
+
+\section{Lake Table}
+
+\begin{table}[H]
+\centering
+\caption{Principal lake table fields.}
+\label{tab:lake_schema}
+\begin{tabularx}{\textwidth}{l l X}
+\toprule
+Column & Type & Description \\
+\midrule
+lake\_id & Integer & Unique lake identifier \\
+lake\_name & Text & Lake name \\
+country & Text & Country \\
+lake\_area & Numeric & Lake area \\
+elevation & Numeric & Elevation \\
+pour\_lat & Numeric & Pour-point latitude \\
+pour\_long & Numeric & Pour-point longitude \\
+geometry & PostGIS Geometry & Lake boundary \\
+lake\_type & Text & Lake classification \\
+depth\_avg & Numeric & Average depth \\
+vol\_total & Numeric & Total volume \\
+wshd\_area & Numeric & Watershed area \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{Lake Images}
+
+\begin{table}[H]
+\centering
+\caption{Lake imagery metadata.}
+\begin{tabularx}{\textwidth}{l l X}
+\toprule
+Field & Type & Description \\
+\midrule
+lake\_id & Integer & Source lake \\
+year & Integer & Observation/composite year \\
+image\_path & Text & Local GeoTIFF path \\
+status & Text & Processing status \\
+collection\_used & Text & Sentinel collection used \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{Lake Tiles}
+
+\begin{table}[H]
+\centering
+\caption{Intermediate imagery-tile metadata.}
+\begin{tabularx}{\textwidth}{l l X}
+\toprule
+Field & Type & Description \\
+\midrule
+tile\_id & Integer & Tile identifier \\
+lake\_id & Integer & Source lake \\
+year & Integer & Composite year \\
+tile\_index & Text & Grid position/index \\
+tile\_geometry & Geometry & Tile polygon \\
+bbox & Geometry/Text & Export bounding box \\
+status & Text & Tile state \\
+image\_path & Text & Local tile path \\
+created\_at & Timestamp & Creation time \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{Sub-Regions}
+
+\begin{table}[H]
+\centering
+\caption{Analysis-cell representation.}
+\begin{tabularx}{\textwidth}{l l X}
+\toprule
+Field & Type & Description \\
+\midrule
+sub\_region\_id & Integer & Unique cell identifier \\
+lake\_id & Integer & Parent lake \\
+year & Integer & Associated imagery year \\
+geometry & Geometry & Analysis-cell polygon \\
+coverage\_ratio & Numeric & Lake coverage within cell \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{Embeddings}
+
+Each valid analysis cell has an associated Prithvi embedding with
+768 numerical dimensions. The vector is stored with sufficient
+metadata to recover its lake, year, and spatial region.
+
+% ============================================================
+% APPENDIX B
+% ============================================================
+
+\chapter{Data Processing State Machine}
+
+The processing state of an individual lake-year-tile follows the
+general pattern:
+
+\[
+Pending
+\rightarrow
+Processing
+\rightarrow
+Completed
+\]
+
+or:
+
+\[
+Processing
+\rightarrow
+Failed
+\]
+
+A previously completed item can be recognized and skipped:
+
+\[
+Completed + Existing\ Output
+\rightarrow
+Skipped
+\]
+
+This stateful design is important for large Earth Engine jobs because
+a failure in one lake-year should not invalidate successfully
+completed work.
+
+% ============================================================
+% APPENDIX C
+% ============================================================
+
+\chapter{Representative API Structure}
+
+\begin{table}[H]
+\centering
+\caption{Representative EcoTwin API groups.}
+\label{tab:api}
+\begin{tabularx}{\textwidth}{l l X}
+\toprule
+Method & Endpoint family & Purpose \\
+\midrule
+GET & Lake lookup & Retrieve lake metadata and geometry \\
+GET & Similarity query & Retrieve analogous ecosystems \\
+GET & Temporal profile & Retrieve NDVI/NDWI/NBR history \\
+GET & Forecast & Retrieve analog-based forecast information \\
+GET & Report & Retrieve report-generation information \\
+GET & Health/status & Check service availability \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+% ============================================================
+% APPENDIX D
+% ============================================================
+
+\chapter{Database Migration Procedure}
+
+The project requires safe consolidation of data generated by
+different team members.
+
+\section{Backup}
+
+Each developer creates a PostgreSQL custom-format dump:
+
+\begin{lstlisting}
+pg_dump \
+  -h localhost \
+  -U postgres \
+  -d ecotwin \
+  -Fc \
+  -f member.dump
+\end{lstlisting}
+
+The custom dump preserves PostgreSQL-native structures including
+PostGIS geometries and pgvector embeddings.
+
+\section{Temporary Restore}
+
+A temporary database is created:
+
+\begin{lstlisting}
+createdb -h localhost -U postgres ecotwin_member
+\end{lstlisting}
+
+The dump is restored:
+
+\begin{lstlisting}
+pg_restore \
+  -h localhost \
+  -U postgres \
+  -d ecotwin_member \
+  member.dump
+\end{lstlisting}
+
+\section{ETL Validation}
+
+The ETL process reads from the temporary database and validates:
+
+\begin{itemize}
+    \item missing embeddings;
+    \item invalid geometries;
+    \item duplicate records;
+    \item vector dimensions;
+    \item lake/year uniqueness;
+    \item image-path existence; and
+    \item expected row counts.
+\end{itemize}
+
+Validated records are then inserted into the production database.
+
+\section{Production Merge}
+
+Typical tables involved in consolidation include:
+
+\begin{itemize}
+    \item \code{lake\_embeddings};
+    \item \code{lake\_tiles}; and
+    \item \code{lake\_images}.
+\end{itemize}
+
+Conflict handling can use database uniqueness constraints and
+\code{INSERT ... ON CONFLICT} logic where appropriate.
+
+\section{Cleanup}
+
+After validation, the temporary database can be removed:
+
+\begin{lstlisting}
+dropdb -h localhost -U postgres ecotwin_member
+\end{lstlisting}
+
+% ============================================================
+% APPENDIX E
+% ============================================================
+
+\chapter{Recommended Final Report Figures}
+
+The following figures should be inserted before final submission:
+
+\begin{enumerate}
+    \item EcoTwin system architecture.
+    \item HydroLAKES study-area map.
+    \item Lake polygon and 1200 m buffer.
+    \item Approximately 8.5 km imagery tile grid.
+    \item Example Sentinel-2 annual composite.
+    \item Merged lake-year GeoTIFF.
+    \item 1 km analysis-cell grid and 15\% coverage filtering.
+    \item Prithvi embedding pipeline.
+    \item PostgreSQL/PostGIS/pgvector schema.
+    \item Similarity-search workflow.
+    \item Query lake and Top-$K$ analog map.
+    \item Analog lake profile cards.
+    \item NDVI temporal comparison.
+    \item NDWI temporal comparison.
+    \item NBR temporal comparison.
+    \item Analog-based forecast plot.
+    \item Frontend screenshots.
+    \item PDF/report-generation screenshot.
+\end{enumerate}
+
+\chapter{Final Experimental Tables}
+
+Before submission, populate the following values directly from the
+final production database and pipeline logs:
+
+\begin{table}[H]
+\centering
+\caption{Final production statistics to be reported.}
+\begin{tabular}{lr}
+\toprule
+Metric & Final value \\
+\midrule
+Source lakes & TBD \\
+Processed lakes & TBD \\
+Lake-years attempted & TBD \\
+Lake-years completed & TBD \\
+Imagery tiles generated & TBD \\
+Merged lake images & TBD \\
+Analysis cells generated & TBD \\
+Valid analysis cells & TBD \\
+Embeddings generated & TBD \\
+Embedding failures & TBD \\
+Indexed vectors & TBD \\
+Temporal records & TBD \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[H]
+\centering
+\caption{Final performance metrics to be reported.}
+\begin{tabular}{lr}
+\toprule
+Operation & Final measurement \\
+\midrule
+Average imagery extraction time & TBD \\
+Average raster merge time & TBD \\
+Average embedding time/cell & TBD \\
+Similarity query latency & TBD \\
+Temporal retrieval latency & TBD \\
+Report generation time & TBD \\
+Total preprocessing time & TBD \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ============================================================
+% END DOCUMENT
+% ============================================================
+
+\end{document}

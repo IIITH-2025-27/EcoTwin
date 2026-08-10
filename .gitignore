@@ -58,3 +58,29 @@ backend/app/secrets/*.json
 backend/backups/*.dump
 backend/.env.prod
 backend/.env.local
+
+# =========================
+# LaTeX generated files
+# =========================
+
+*.aux
+*.log
+*.out
+*.toc
+*.lof
+*.lot
+*.fls
+*.fdb_latexmk
+*.synctex.gz
+*.synctex
+*.bbl
+*.blg
+*.bcf
+*.run.xml
+*.nav
+*.snm
+*.vrb
+*.xdv
+
+# LaTeX build output
+# *.pdf
