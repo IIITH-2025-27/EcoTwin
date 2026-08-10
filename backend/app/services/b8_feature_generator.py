@@ -49,7 +49,7 @@ _B8_BANDS = ["B8"]
 # Lakes per reduceRegions() call. Keeps each server-side call and its
 # getInfo() response small/fast and avoids Earth Engine per-request
 # computation limits; tuned conservatively, not maximised.
-_REDUCE_BATCH_SIZE = 1
+_REDUCE_BATCH_SIZE = 10
 
 # reduceRegions() retry settings for transient Earth Engine errors.
 _REDUCE_MAX_RETRIES = 3
