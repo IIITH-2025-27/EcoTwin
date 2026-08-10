@@ -46,6 +46,7 @@ from app.schemas.forecast import (
     ForecastAuditReport,
     IndexForecast,
     TwinContribution,
+    TwinDeltaContribution,
     YearlyDirection,
 )
 from app.schemas.similarity import SimilarityMethod
@@ -363,30 +364,65 @@ class EcologicalForecastService:
 
             for h in range(1, _FORECAST_HORIZON + 1):
                 forecast_yr = anchor_year + h
+
+                # Twins with usable data for this specific offset. A twin's
+                # fixed rank weight only reflects its relative influence when
+                # ALL twins contribute; if some are missing this year, their
+                # weight must not simply vanish from the sum — that would
+                # shrink the score toward "stable" purely from missing data,
+                # not from an actual weaker ecological signal. So weights are
+                # renormalized over only the twins that have data this year,
+                # keeping the score a true weighted average (denominator 1.0)
+                # regardless of how many twins dropped out.
+                available: List[Tuple[dict, float]] = [
+                    (twin, twin["deltas"][idx_key][h])
+                    for twin in twin_data
+                    if twin["deltas"].get(idx_key, {}).get(h) is not None
+                ]
+                twins_contributing = len(available)
+                total_fixed_weight = sum(twin["fixed_weight"] for twin, _ in available)
+
                 weighted_score = 0.0
-                twins_contributing = 0
-
                 contributions_detail: List[str] = []
+                twin_deltas: List[TwinDeltaContribution] = []
 
-                for twin in twin_data:
-                    delta = twin["deltas"].get(idx_key, {}).get(h)
-                    if delta is None:
-                        # Twin has no data for this offset → weight = 0
-                        continue
-                    w = twin["fixed_weight"]
-                    weighted_score += w * delta
-                    twins_contributing += 1
+                for twin, delta in available:
+                    fixed_w = twin["fixed_weight"]
+                    normalized_w = (
+                        fixed_w / total_fixed_weight if total_fixed_weight > 0 else 0.0
+                    )
+                    weighted_contribution = normalized_w * delta
+                    weighted_score += weighted_contribution
                     contributions_detail.append(
-                        f"Twin#{twin['rank']}(Δ={delta:+.4f}, w={w:.2f})"
+                        f"Twin#{twin['rank']}(Δ={delta:+.4f}, "
+                        f"w={normalized_w:.2f} [fixed {fixed_w:.2f}])"
+                    )
+                    twin_deltas.append(
+                        TwinDeltaContribution(
+                            lake_id=twin["lake_id"],
+                            rank=twin["rank"],
+                            matched_year=twin["matched_year"],
+                            delta=round(delta, 6),
+                            fixed_weight=fixed_w,
+                            normalized_weight=round(normalized_w, 6),
+                            weighted_contribution=round(weighted_contribution, 6),
+                        )
                     )
 
                 direction = _classify(weighted_score, twins_contributing)
+                expected_value = (
+                    round(current_val + weighted_score, 6)
+                    if current_val is not None
+                    else None
+                )
                 yearly_dirs.append(
                     YearlyDirection(
                         year=forecast_yr,
                         direction=direction,
                         weighted_score=round(weighted_score, 6),
                         twins_contributing=twins_contributing,
+                        expected_value=expected_value,
+                        twin_deltas=twin_deltas,
                     )
                 )
 
@@ -529,6 +565,8 @@ class EcologicalForecastService:
                     direction="uncertain",
                     weighted_score=0.0,
                     twins_contributing=0,
+                    expected_value=val if val is not None else None,
+                    twin_deltas=[],
                 )
                 for yr in forecast_years
             ]

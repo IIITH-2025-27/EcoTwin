@@ -74,6 +74,18 @@ class EmbeddingForecastResult(BaseModel):
 # ── Ecological Index Forecast I/O ─────────────────────────────────────────────
 
 
+class TwinDeltaContribution(BaseModel):
+    """One twin lake's raw delta contribution to a single forecast year."""
+
+    lake_id: int
+    rank: int                          # 1-based rank by similarity
+    matched_year: int                  # twin's own base year the delta is measured from
+    delta: float                       # index_value(matched_year + h) - index_value(matched_year)
+    fixed_weight: float                # rank-based weight (0.28, 0.24, …), before renormalization
+    normalized_weight: float           # fixed_weight rescaled so this year's contributing twins sum to 1.0
+    weighted_contribution: float       # normalized_weight * delta — this twin's share of weighted_score
+
+
 class YearlyDirection(BaseModel):
     """Classification for one index at one forecast year."""
 
@@ -81,6 +93,8 @@ class YearlyDirection(BaseModel):
     direction: str                     # "up" | "down" | "stable" | "uncertain"
     weighted_score: float              # combined weighted delta for this year
     twins_contributing: int            # how many twins had data for this year
+    expected_value: Optional[float] = None   # current_value + weighted_score, or None if no anchor
+    twin_deltas: List[TwinDeltaContribution] = Field(default_factory=list)
 
 
 class IndexForecast(BaseModel):

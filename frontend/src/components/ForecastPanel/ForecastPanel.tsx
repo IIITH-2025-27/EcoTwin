@@ -3,6 +3,8 @@ import {
   ComposedChart,
   Line,
   Area,
+  BarChart,
+  Bar,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -19,13 +21,14 @@ import Badge, { trendToBadgeVariant } from '@/components/common/Badge';
 import { useForecast } from '@/hooks/useForecast';
 import { useEcologicalForecast } from '@/hooks/useEcologicalForecast';
 import { useMapStore } from '@/store/mapStore';
-import type { TrendDirection, EcologicalForecastData, EcoDirection } from '@/types';
+import type { TrendDirection, EcologicalForecastData, EcoDirection, IndexForecast } from '@/types';
 
 type IndicatorKey = 'ndvi' | 'ndwi' | 'nbr';
 
 const ECO_CHART_INDICES = [
   { key: 'ndci', label: 'NDCI', color: '#06b6d4' },
   { key: 'ndvi_b7', label: 'NDVI-B7', color: '#22c55e' },
+  { key: 'ndwi', label: 'NDWI', color: '#3b82f6' },
   { key: 'turbidity_ratio', label: 'Turbidity', color: '#f59e0b' },
   { key: 'red_edge_slope', label: 'RE Slope', color: '#a855f7' },
 ] as const;
@@ -132,6 +135,44 @@ function CustomTooltip({
   );
 }
 
+function DeltaTooltip({
+  active,
+  payload,
+  label,
+}: {
+  active?: boolean;
+  payload?: Array<{ name: string; value: number; color: string }>;
+  label?: string;
+}) {
+  if (!active || !payload?.length) return null;
+  return (
+    <div className="rounded-lg bg-surface-800 border border-slate-700/60 px-3 py-2 shadow-xl">
+      <p className="mb-1.5 text-xs font-semibold text-slate-300">{label}</p>
+      {payload.map((entry) =>
+        entry.value !== null && entry.value !== undefined ? (
+          <div
+            key={entry.name}
+            className="flex items-center justify-between gap-4 text-xs"
+          >
+            <span className="flex items-center gap-1.5 text-slate-400">
+              <span
+                className="h-2 w-2 rounded-full"
+                style={{ backgroundColor: entry.color }}
+              />
+              {entry.name}
+            </span>
+            <span className="font-mono font-medium text-slate-200">
+              {typeof entry.value === 'number' ? entry.value.toFixed(4) : entry.value}
+            </span>
+          </div>
+        ) : null,
+      )}
+    </div>
+  );
+}
+
+const DELTA_YEAR_COLORS = ['#38bdf8', '#a78bfa', '#fb7185', '#facc15', '#34d399'];
+
 export default function ForecastPanel() {
   const { selectedRegionId, similarityMethod } = useMapStore();
   const [selectedEcoSeries, setSelectedEcoSeries] = useState<EcoChartKey | 'all'>('all');
@@ -147,42 +188,20 @@ export default function ForecastPanel() {
     const years = [ecoForecast.current_year, ...(ecoForecast.forecast_years ?? [])];
     const indexForecastMap = new Map(ecoForecast.index_forecasts?.map((item) => [item.index_name, item]) ?? []);
 
+    // expected_value is computed by the backend (current_value + that year's
+    // twin-weighted score) — see EcologicalForecastService. The frontend just plots it.
     return years.map((year, index) => {
       const row: Record<string, number | string | null> = { year };
 
       ECO_CHART_INDICES.forEach(({ key }) => {
         const forecastEntry = indexForecastMap.get(key);
-        const baseValue = forecastEntry?.current_value ?? 0;
 
         if (index === 0) {
-          row[key] = baseValue;
+          row[key] = forecastEntry?.current_value ?? null;
           return;
         }
 
-        const targetYear = year;
-        const values = (ecoForecast.twins_used ?? [])
-          .map((twin) => {
-            const yearMap = twin.index_values?.[key];
-            const rawValue = yearMap ? yearMap[String(targetYear)] ?? yearMap[targetYear as unknown as string] : undefined;
-            return rawValue == null ? null : { value: Number(rawValue), weight: twin.fixed_weight };
-          })
-          .filter((item): item is { value: number; weight: number } => item !== null);
-
-        if (values.length) {
-          const totalWeight = values.reduce((sum, item) => sum + item.weight, 0);
-          const weightedValue = values.reduce((sum, item) => sum + item.value * item.weight, 0) / totalWeight;
-          row[key] = weightedValue;
-          return;
-        }
-
-        const yearlyDirections = forecastEntry?.yearly_directions ?? [];
-        const priorValue = index === 1 ? baseValue : row[key] ?? baseValue;
-        const numericPriorValue = typeof priorValue === 'number' ? priorValue : Number(priorValue ?? 0);
-        const yearOffset = index - 1;
-        const cumulativeDelta = yearlyDirections
-          .slice(0, yearOffset)
-          .reduce((sum, item) => sum + (item.weighted_score ?? 0), 0);
-        row[key] = numericPriorValue + cumulativeDelta;
+        row[key] = forecastEntry?.yearly_directions[index - 1]?.expected_value ?? null;
       });
 
       return row;
@@ -356,7 +375,8 @@ export default function ForecastPanel() {
 const ECO_INDICES = [
   { key: 'ndci', label: 'NDCI', desc: 'Chlorophyll-a', color: '#06b6d4' },
   { key: 'ndvi_b7', label: 'NDVI-B7', desc: 'Vegetation Vigor', color: '#22c55e' },
-  { key: 'turbidity_ratio', label: 'Turbidity', desc: 'Water Clarity', color: '#f59e0b' },
+  { key: 'ndwi', label: 'NDWI', desc: 'Water mask / wetness', color: '#3b82f6' },
+  { key: 'turbidity_ratio', label: 'Turbidity', desc: 'NDWI-conditioned turbidity metric', color: '#f59e0b' },
   { key: 'red_edge_slope', label: 'RE Slope', desc: 'Pigment Trend', color: '#a855f7' },
 ] as const;
 
@@ -390,6 +410,69 @@ function EcoTrendIcon({ direction }: { direction: EcoTrendDirection }) {
   }
 
   return <span className={`${base} text-amber-400`}>?</span>;
+}
+
+function TwinDeltaChart({ forecast, label }: { forecast: IndexForecast; label: string }) {
+  const chartData = useMemo(() => {
+    const rows = new Map<number, Record<string, number | string>>();
+    forecast.yearly_directions.forEach((yd) => {
+      yd.twin_deltas.forEach((td) => {
+        if (!rows.has(td.rank)) {
+          rows.set(td.rank, {
+            twin: `#${td.rank} · Lake ${td.lake_id}`,
+            rank: td.rank,
+          });
+        }
+        rows.get(td.rank)![String(yd.year)] = td.delta;
+      });
+    });
+    return Array.from(rows.values()).sort(
+      (a, b) => (a.rank as number) - (b.rank as number),
+    );
+  }, [forecast]);
+
+  const years = forecast.yearly_directions.map((yd) => yd.year);
+
+  if (chartData.length === 0) return null;
+
+  return (
+    <div className="mt-3 rounded-lg bg-surface-900/60 border border-slate-700/30 p-3">
+      <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+        Twin lake deltas driving {label} forecast
+      </p>
+      <ResponsiveContainer width="100%" height={180}>
+        <BarChart data={chartData} margin={{ top: 8, right: 8, left: -20, bottom: 0 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+          <XAxis
+            dataKey="twin"
+            tick={{ fill: '#64748b', fontSize: 9 }}
+            axisLine={{ stroke: '#334155' }}
+            tickLine={false}
+          />
+          <YAxis
+            tick={{ fill: '#64748b', fontSize: 10 }}
+            axisLine={{ stroke: '#334155' }}
+            tickLine={false}
+          />
+          <Tooltip content={<DeltaTooltip />} />
+          <Legend wrapperStyle={{ fontSize: 10 }} />
+          <ReferenceLine y={0} stroke="#475569" />
+          {years.map((yr, i) => (
+            <Bar
+              key={yr}
+              dataKey={String(yr)}
+              name={`${yr}`}
+              fill={DELTA_YEAR_COLORS[i % DELTA_YEAR_COLORS.length]}
+              radius={[2, 2, 0, 0]}
+            />
+          ))}
+        </BarChart>
+      </ResponsiveContainer>
+      <p className="mt-1 text-[9px] text-slate-500">
+        Each twin's raw index delta (matched year → matched year + offset), before rank weighting — summed into the weighted score for that year.
+      </p>
+    </div>
+  );
 }
 
 function EcologicalForecastSection({ data, isLoading }: { data: EcologicalForecastData | undefined; isLoading: boolean }) {
@@ -476,8 +559,11 @@ function EcologicalForecastSection({ data, isLoading }: { data: EcologicalForeca
                         {DIR_LABEL[yd.direction] ?? 'Unknown'}
                       </span>
                     </div>
-                    <p className="mt-1 text-[9px] text-slate-500">
-                      {yd.twins_contributing} twins • {yd.weighted_score.toFixed(2)}
+                    <p className="mt-1 font-mono text-[11px] text-slate-300">
+                      {yd.expected_value !== null ? yd.expected_value.toFixed(4) : '—'}
+                    </p>
+                    <p className="mt-0.5 text-[9px] text-slate-500">
+                      {yd.twins_contributing} twins • score {yd.weighted_score.toFixed(2)}
                     </p>
                   </div>
                 );
@@ -489,6 +575,10 @@ function EcologicalForecastSection({ data, isLoading }: { data: EcologicalForeca
               <span>Contributing twins: {totalTwins ?? 0}</span>
             </div>
           </div>
+        )}
+
+        {activeForecast && (
+          <TwinDeltaChart forecast={activeForecast} label={activeMeta.label} />
         )}
       </div>
 

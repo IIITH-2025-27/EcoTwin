@@ -47,6 +47,15 @@
       {% endfor %}
       <line x1="70" y1="40" x2="70" y2="190" stroke="#94a3b8" stroke-width="1" stroke-dasharray="4 3"/>
       <text x="70" y="32" text-anchor="middle" font-size="9" fill="#64748b">Now</text>
+
+      <!-- Y-axis value labels -->
+      <text x="55" y="43" text-anchor="end" font-size="8" fill="#64748b">{{ "%.3f"|format(max_value) }}</text>
+      <text x="55" y="118" text-anchor="end" font-size="8" fill="#64748b">{{ "%.3f"|format((max_value + min_value) / 2) }}</text>
+      <text x="55" y="193" text-anchor="end" font-size="8" fill="#64748b">{{ "%.3f"|format(min_value) }}</text>
+
+      <!-- Axis titles -->
+      <text x="16" y="115" text-anchor="middle" font-size="8.5" fill="#475569" transform="rotate(-90 16 115)">Index value</text>
+      <text x="290" y="230" text-anchor="middle" font-size="8.5" fill="#475569">Forecast year</text>
     </svg>
     <div style="display:flex; flex-wrap:wrap; gap:14px; margin-top:6px;">
       {% for item in context.eco_forecast %}
@@ -102,6 +111,75 @@
     <span style="color:#64748b; font-weight:700;">&#8594;</span> Stable &nbsp;
     <span style="color:#d97706; font-weight:700;">?</span> Uncertain (fewer than 2 contributing twins)
   </p>
+
+  {% set delta_year_colors = ['#38bdf8', '#a78bfa', '#fb7185', '#facc15', '#34d399'] %}
+  {% set has_twin_deltas = context.eco_forecast | selectattr('twin_delta_rows') | list %}
+  {% if has_twin_deltas %}
+    <p class="lead" style="margin-top:16px;">Twin lake deltas driving each forecast</p>
+    <p style="font-size:8.5pt; color:#64748b; margin-bottom:8px;">
+      Each twin lake's own raw index change between its matched year and matched year + offset —
+      before weighting. These are summed, using each contributing twin's rank weight renormalized
+      so that year's contributing twins sum to 100%, into the weighted score behind each year's
+      expected value above.
+    </p>
+    {% for item in context.eco_forecast %}
+      {% if item.twin_delta_rows %}
+        {% set dvals = namespace(values=[0.0]) %}
+        {% for row in item.twin_delta_rows %}
+          {% for year, bar in row.bars.items() %}
+            {% set dvals.values = dvals.values + [bar.delta] %}
+          {% endfor %}
+        {% endfor %}
+        {% set min_d = dvals.values|min %}
+        {% set max_d = dvals.values|max %}
+        {% set d_span = (max_d - min_d) if max_d > min_d else 1 %}
+        {% set num_rows = item.twin_delta_rows|length %}
+        {% set num_years = context.eco_forecast_years|length %}
+        {% set group_w = (460 / num_rows) if num_rows > 0 else 460 %}
+        {% set bar_w = (group_w / (num_years + 1)) if num_years > 0 else group_w %}
+        {% set y0_raw = 150 - ((0 - min_d) / d_span) * 120 %}
+        {% set y0 = [[y0_raw, 150] | min, 30] | max %}
+
+        <div class="planned-box" style="margin-bottom:12px;">
+          <p style="font-size:9pt; font-weight:700; color:{{ item.color }}; margin-bottom:4px;">{{ item.label }}</p>
+          <svg viewBox="0 0 560 180" width="100%" height="150" xmlns="http://www.w3.org/2000/svg">
+            <rect x="0" y="0" width="560" height="180" rx="8" fill="#f7fbff" stroke="#dce8f3"/>
+            <line x1="60" y1="{{ y0 }}" x2="520" y2="{{ y0 }}" stroke="#94a3b8" stroke-width="1"/>
+            {% for row in item.twin_delta_rows %}
+              {% set gx = 60 + (loop.index0 * group_w) %}
+              {% for year in context.eco_forecast_years %}
+                {% if year in row.bars %}
+                  {% set bar = row.bars[year] %}
+                  {% set bx = gx + (loop.index0 * bar_w) + 4 %}
+                  {% set by = 150 - ((bar.delta - min_d) / d_span) * 120 %}
+                  {% set bar_top = [by, y0] | min %}
+                  {% set bar_h = ([by, y0] | max) - bar_top %}
+                  <rect x="{{ bx }}" y="{{ bar_top }}" width="{{ (bar_w - 6) | round(1) }}" height="{{ bar_h | round(1) }}" fill="{{ delta_year_colors[loop.index0 % 5] }}" rx="1.5"/>
+                {% endif %}
+              {% endfor %}
+              <text x="{{ gx + group_w / 2 }}" y="166" text-anchor="middle" font-size="7.5" fill="#4b5563">#{{ row.rank }}&middot;L{{ row.lake_id }}</text>
+            {% endfor %}
+
+            <!-- Y-axis value labels -->
+            <text x="55" y="33" text-anchor="end" font-size="7.5" fill="#64748b">{{ "%+.3f"|format(max_d) }}</text>
+            <text x="55" y="{{ y0 + 3 }}" text-anchor="end" font-size="7.5" fill="#64748b">0.000</text>
+            <text x="55" y="153" text-anchor="end" font-size="7.5" fill="#64748b">{{ "%+.3f"|format(min_d) }}</text>
+
+            <!-- Axis title -->
+            <text x="16" y="90" text-anchor="middle" font-size="8" fill="#475569" transform="rotate(-90 16 90)">&Delta; index (twin)</text>
+          </svg>
+          <div style="display:flex; flex-wrap:wrap; gap:12px; margin-top:4px;">
+            {% for year in context.eco_forecast_years %}
+              <div style="display:flex; align-items:center; gap:4px;">
+                <span style="display:inline-block; width:9px; height:9px; border-radius:2px; background:{{ delta_year_colors[loop.index0 % 5] }};"></span>
+                <span style="font-size:8pt; color:#334155;">{{ year }}</span>
+              </div>
+            {% endfor %}
+          </div>
+        </div>
+      {% endif %}
+    {% endfor %}
+  {% endif %}
 {% else %}
   <div class="underdev">
     <span class="status-badge">⚠️ Limited Data</span>

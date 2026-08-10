@@ -93,16 +93,44 @@ _ECO_CHART_INDICES: list[tuple[str, str, str]] = [
 ]
 
 
+def _build_twin_delta_rows(yearly_directions: list) -> list["TwinDeltaRow"]:
+    """Pivot per-year twin deltas into one row per twin lake, keyed by year.
+
+    Mirrors the ``TwinDeltaChart`` pivot in ForecastPanel.tsx: each twin
+    (identified by its rank) becomes a row, and its raw delta at each
+    forecast year (matched_year -> matched_year + offset, from the twin's
+    own observed data) becomes one bar in that row.
+    """
+    by_rank: dict[int, TwinDeltaRow] = {}
+    for yd in yearly_directions:
+        for td in yd.twin_deltas:
+            row = by_rank.get(td.rank)
+            if row is None:
+                row = TwinDeltaRow(
+                    lake_id=td.lake_id,
+                    rank=td.rank,
+                    fixed_weight=td.fixed_weight,
+                    matched_year=td.matched_year,
+                )
+                by_rank[td.rank] = row
+            row.bars[yd.year] = TwinDeltaBar(
+                year=yd.year,
+                delta=td.delta,
+                normalized_weight=td.normalized_weight,
+                weighted_contribution=td.weighted_contribution,
+            )
+    return sorted(by_rank.values(), key=lambda r: r.rank)
+
+
 def _build_eco_forecast_items(
     eco: EcologicalForecastResponse,
 ) -> list[EcoIndexForecastItem]:
     """Compute each index's chart series + expected value change.
 
-    Matches the ``ecoChartData`` calculation in ForecastPanel.tsx: each
-    forecast year's projected value is the current value plus that year's
-    already-computed twin-weighted score (``yearly_directions[i].weighted_score``),
-    the same offset-aligned delta driving the up/down/stable classification
-    and the audit report's per-year reasoning.
+    Uses the ``expected_value`` and ``twin_deltas`` the backend already
+    computed in ``EcologicalForecastService`` (current_value + that year's
+    twin-weighted score) — the same fields the Forecast panel chart and its
+    twin-delta chart consume, so the report matches the UI exactly.
     """
     years = [eco.current_year, *eco.forecast_years]
     forecast_by_index = {f.index_name: f for f in eco.index_forecasts}
@@ -115,12 +143,12 @@ def _build_eco_forecast_items(
 
         points: list[tuple[int, float]] = [(years[0], base_value)]
         for offset, year in enumerate(years[1:], start=0):
-            weighted_score = (
-                yearly_directions[offset].weighted_score
-                if offset < len(yearly_directions)
-                else 0.0
-            )
-            points.append((year, base_value + weighted_score))
+            if offset < len(yearly_directions):
+                yd = yearly_directions[offset]
+                value = yd.expected_value if yd.expected_value is not None else base_value
+            else:
+                value = base_value
+            points.append((year, value))
 
         yearly_changes: list[EcoIndexYearChange] = []
         for offset, (year, value) in enumerate(points[1:]):
@@ -156,6 +184,7 @@ def _build_eco_forecast_items(
                 final_change=final_change,
                 final_change_pct=final_change_pct,
                 final_direction=final_direction,
+                twin_delta_rows=_build_twin_delta_rows(yearly_directions),
             )
         )
 
@@ -247,6 +276,27 @@ class EcoIndexYearChange:
 
 
 @dataclass
+class TwinDeltaBar:
+    """One twin lake's raw delta bar for one forecast year."""
+
+    year: int
+    delta: float
+    normalized_weight: float  # this twin's renormalized weight for this specific year
+    weighted_contribution: float
+
+
+@dataclass
+class TwinDeltaRow:
+    """One twin lake's delta bars across all forecast years, for one index."""
+
+    lake_id: int
+    rank: int
+    fixed_weight: float  # rank-based weight, constant across years — see normalized_weight per bar
+    matched_year: int
+    bars: dict[int, TwinDeltaBar] = field(default_factory=dict)
+
+
+@dataclass
 class EcoIndexForecastItem:
     """One ecological index's chart series + expected value change (Section 5).
 
@@ -263,6 +313,7 @@ class EcoIndexForecastItem:
     final_change: float = 0.0
     final_change_pct: Optional[float] = None
     final_direction: str = "uncertain"
+    twin_delta_rows: list[TwinDeltaRow] = field(default_factory=list)
 
 
 @dataclass

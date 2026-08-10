@@ -157,11 +157,23 @@ export interface ForecastData {
 
 export type EcoDirection = 'up' | 'down' | 'stable' | 'uncertain';
 
+export interface TwinDeltaContribution {
+  lake_id: number;
+  rank: number;
+  matched_year: number;
+  delta: number;
+  fixed_weight: number;
+  normalized_weight: number;
+  weighted_contribution: number;
+}
+
 export interface YearlyDirection {
   year: number;
   direction: EcoDirection;
   weighted_score: number;
   twins_contributing: number;
+  expected_value: number | null;
+  twin_deltas: TwinDeltaContribution[];
 }
 
 export interface IndexForecast {
