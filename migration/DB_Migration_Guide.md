@@ -25,7 +25,7 @@ pg_dump \
   -U postgres \
   -d ecotwin \
   -Fc \
-  -f member1.dump
+  -f v5_ecotwin_till_b8.dump
 ```
 
 This preserves:
