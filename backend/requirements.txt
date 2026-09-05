@@ -51,6 +51,7 @@ rasterio==1.3.10
 # Requires system libraries (Debian): libpango-1.0-0 libpangocairo-1.0-0
 # libgdk-pixbuf-2.0-0 libffi-dev shared-mime-info (installed in the Dockerfile).
 weasyprint==69.0
+jinja2==3.1.4
 
 # ── HTTP Client ───────────────────────────────────────────────────────────────
 httpx==0.27.2

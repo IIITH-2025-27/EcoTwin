@@ -76,9 +76,7 @@
 \newcommand{\projectsubtitle}{
 Ecosystem Analog Search and Forecasting Using Geospatial Foundation Models
 }
-\newcommand{\studentname}{Your Name}
-\newcommand{\studentroll}{Your Roll Number}
-\newcommand{\supervisorname}{Supervisor Name}
+\newcommand{\supervisorname}{Ramachandra Prasad P}
 \newcommand{\departmentname}{Computer Science and Engineering}
 \newcommand{\institutionname}{International Institute of Information Technology Hyderabad}
 \newcommand{\reportyear}{2026}
@@ -130,12 +128,13 @@ Ecosystem Analog Search and Forecasting Using Geospatial Foundation Models
 
 \pagestyle{fancy}
 \fancyhf{}
-\fancyhead[L]{\projecttitle}
-\fancyhead[R]{\leftmark}
+\fancyhead[L]{\small\projecttitle}
+\fancyhead[R]{\small\leftmark}
 \fancyfoot[C]{\thepage}
 \renewcommand{\headrulewidth}{0.4pt}
 \renewcommand{\footrulewidth}{0pt}
 \setlength{\headheight}{18pt}
+\renewcommand{\chaptermark}[1]{\markboth{\thechapter.\ #1}{}}
 
 \setlength{\parindent}{0pt}
 \setlength{\parskip}{6pt}
@@ -179,10 +178,13 @@ Ecosystem Analog Search and Forecasting Using Geospatial Foundation Models
 Submitted by
 
 \vspace{0.4cm}
-{\Large \textbf{\studentname}}
-
-\vspace{0.2cm}
-{\large \studentroll}
+{\large
+\begin{tabular}{ll}
+\textbf{Ankit Kumar}   & 2025201022 \\[4pt]
+\textbf{Vikash Kumar}  & 2025201012 \\[4pt]
+\textbf{Peeyush Kumar} & 2025201102 \\
+\end{tabular}
+}
 
 \vspace{1.5cm}
 
@@ -206,7 +208,8 @@ Under the guidance of
 
 % This is to certify that the project report entitled
 % \textbf{\projectsubtitle} is a record of the work carried out by
-% \textbf{\studentname} under my supervision and guidance.
+% Ankit Kumar (2025201022), Vikash Kumar (2025201012), and
+% Peeyush Kumar (2025201102) under my supervision and guidance.
 
 % \vspace{2cm}
 
@@ -234,8 +237,9 @@ Under the guidance of
 % \vspace{2cm}
 
 % \begin{flushright}
-% \textbf{\studentname}\\
-% \studentroll
+% \textbf{Ankit Kumar} (2025201022)\\
+% \textbf{Vikash Kumar} (2025201012)\\
+% \textbf{Peeyush Kumar} (2025201102)
 % \end{flushright}
 
 % \clearpage
@@ -269,45 +273,35 @@ Under the guidance of
 EcoTwin is an end-to-end geospatial ecosystem analog discovery
 platform designed around the question: \emph{which ecosystems
 elsewhere exhibit similar spatial structure, and what can their
-historical trajectories tell us about a target ecosystem?}
+historical trajectories tell us about a target ecosystem?} HydroLAKES
+polygons provide ecosystem boundaries; a buffered, tiled Sentinel-2
+acquisition pipeline through Google Earth Engine yields
+one-kilometre analysis cells, converted into six-band Prithvi
+embeddings, coverage-pooled to one 768-dimensional lake-year vector
+and indexed in PostgreSQL/pgvector. A query ecosystem is compared as
+a \emph{five-year trajectory} rather than a single snapshot, sliding
+across each candidate's history to find its best-matching window,
+and the ranked results are exposed through an interactive map and
+profile views with historical index trajectories.
 
-The system combines a static lake inventory with multi-year
-Sentinel-2 observations, spatial tiling, environmental indicators,
-geospatial foundation-model embeddings, vector similarity search,
-and temporal ecosystem profiles. HydroLAKES polygons provide the
-initial ecosystem boundaries and metadata. For each selected lake,
-the pipeline projects and buffers the geometry, constructs a
-manageable imagery grid, retrieves annual Sentinel-2 composites
-from Google Earth Engine, stores the resulting GeoTIFFs locally,
-and subsequently subdivides the merged imagery into approximately
-one-kilometre analysis cells. Cells with insufficient lake coverage
-are discarded.
-
-The retained image cells are converted into the six-band input
-required by the Prithvi geospatial foundation model. The resulting
-768-dimensional representations are stored in PostgreSQL using
-pgvector. A query ecosystem can then be compared against the
-indexed collection using cosine similarity, producing a ranked set
-of analogous ecosystems. The web application exposes these results
-through an interactive map and profile views, together with
-historical NDVI, NDWI, and NBR trajectories.
-
-The project was implemented iteratively over approximately two
-months. A substantial part of the engineering work involved making
-large-scale Earth Engine extraction reliable, handling historical
-Sentinel-2 collection differences, reducing export sizes, merging
-local raster tiles, controlling concurrency, validating embeddings,
-and designing a database capable of preserving both spatial
-geometries and vector features. The forecasting layer is designed
-as an analog-based, non-parametric extension in which historical
-trajectories of retrieved twins provide empirical evidence for
-future ecosystem behaviour rather than requiring synthetic image
-generation.
+The deployed system holds a complete, fully processed cohort ---
+\textbf{829 active lakes across 26 Indian states}, ten consecutive
+years (2016--2025), \textbf{8{,}227 lake-year embeddings},
+\textbf{19{,}046} imagery tiles, and \textbf{233{,}002} analysis
+cells, with no outstanding failures at any pipeline stage. The
+forecasting layer is analog-based and non-parametric: rather than
+decoding an embedding back into reflectance, it uses the embedding
+space only to \emph{rank} analogs, then transfers their measured
+year-on-year changes onto the target as a rank-weighted directional
+forecast, traceable to the specific lakes, years, and deltas that
+produced it. The system is demonstrated on five Ramsar-designated
+wetlands --- Chilika, Wular, Loktak, Tso Morari, and Vembanad ---
+reported in full in Chapter~\ref{chap:ramsar}.
 
 \textbf{Keywords:}
 Geospatial Foundation Models, Prithvi, Remote Sensing, Sentinel-2,
-HydroLAKES, Ecosystem Analogs, Vector Search, pgvector, NDVI, NDWI,
-NBR, Temporal Analysis
+HydroLAKES, Ecosystem Analogs, Vector Search, pgvector, NDCI,
+Red-Edge Indices, Ramsar Wetlands, Trajectory Similarity
 
 \clearpage
 
@@ -317,10 +311,6 @@ NBR, Temporal Analysis
 
 \tableofcontents
 \clearpage
-\listoffigures
-\clearpage
-\listoftables
-\clearpage
 
 % ============================================================
 % CHAPTER 1
@@ -329,50 +319,31 @@ NBR, Temporal Analysis
 \chapter{Introduction}
 \label{chap:introduction}
 
-\section{Background}
+\section{Background and Problem Statement}
 
 Earth observation satellites provide repeated measurements of
 ecosystems at spatial scales that cannot be obtained economically
-through field observations alone. Sentinel-2 is particularly useful
-for this purpose because it provides multispectral optical
-observations suitable for vegetation, water, land-cover, and
-surface-condition analysis.
+through field observations alone, and Sentinel-2's multispectral
+optical imagery is well suited to vegetation, water, land-cover, and
+surface-condition analysis. Rather than beginning with a specific
+question such as vegetation change or water extent, EcoTwin treats
+ecosystem comparison as a retrieval problem: satellite observations
+are converted into learned feature vectors and indexed, so a lake can
+be compared against a large reference collection without repeatedly
+processing raw imagery, asking whether another ecosystem looks
+similar in its spatial-spectral representation.
 
-A conventional ecosystem-analysis workflow normally begins with a
-specific question such as vegetation change, water extent, or land
-cover. EcoTwin approaches the problem from a complementary
-direction: instead of analysing a lake only in isolation, it first
-asks whether another ecosystem in a large reference collection
-looks similar in its spatial-spectral representation.
-
-The project therefore treats ecosystem comparison as a retrieval
-problem. Satellite observations are converted into learned feature
-vectors, and those vectors are indexed so that an ecosystem can be
-compared against a large collection without repeatedly processing
-the raw imagery.
-
-\section{Problem Statement}
-
-The practical problem is to identify geographically distributed
-ecosystems that are similar to a selected target ecosystem using
-information contained in satellite observations.
-
-The problem has several engineering constraints:
-
-\begin{enumerate}
-    \item lake boundaries are irregular polygons rather than
-    fixed-size image squares;
-    \item large satellite scenes are expensive to download and store;
-    \item historical Sentinel-2 collections do not expose identical
-    quality bands across all years;
-    \item cloud and invalid-pixel contamination must be controlled;
-    \item large ecosystems may require multiple image tiles;
-    \item the embedding pipeline must process many spatial regions;
-    \item embeddings must remain associated with their source
-    geometries and lake/year metadata; and
-    \item online similarity search must be substantially cheaper
-    than recomputing embeddings.
-\end{enumerate}
+Several engineering constraints shape how this is actually solved.
+Lake boundaries are irregular polygons rather than fixed-size image
+squares, and large satellite scenes are expensive to download and
+store, so large ecosystems may require multiple image tiles rather
+than a single export. Historical Sentinel-2 collections do not
+expose identical quality bands across all years, and cloud or
+invalid-pixel contamination must be controlled for regardless of
+collection; every resulting embedding must remain associated with
+its source geometry and lake/year metadata rather than existing as
+an anonymous vector, and online similarity search must be
+substantially cheaper than recomputing embeddings from scratch.
 
 \section{Core EcoTwin Hypothesis}
 
@@ -384,80 +355,56 @@ geospatial feature space can provide useful analogs for understanding
 the spatial and historical behaviour of a target ecosystem.}
 \end{quote}
 
-The hypothesis separates two tasks:
+The hypothesis separates two tasks. The first is \textbf{analog
+discovery}: finding ecosystems that resemble the target in the
+learned spatial-spectral representation. The second is
+\textbf{trajectory analysis}: comparing the historical environmental
+indicators of the target against those of its discovered analogs.
 
-\begin{enumerate}
-    \item \textbf{Analog discovery:} find ecosystems that resemble
-    the target in the learned spatial-spectral representation.
-    \item \textbf{Trajectory analysis:} compare historical
-    environmental indicators of the target and its analogs.
-\end{enumerate}
+\section{Project Evolution and Contributions}
 
-\section{Research Objectives}
+The implementation evolved from an initial design of standardized
+$5\times5$ km ecosystem blocks toward a lake-centred buffered
+imagery stage, local raster merging, and $1\times1$ km analysis
+cells: the larger imagery tiles are an I/O and Earth Engine
+management mechanism, while the smaller cells are the units from
+which embeddings are generated, which lets large lakes be processed
+without forcing the foundation model to operate directly on
+irregular polygons.
 
-The project objectives are:
+Two further pivots shaped the final system. First,
+\textbf{snapshot similarity gave way to trajectory similarity}:
+comparing single query and candidate embeddings proved too weak a
+notion of ecosystem resemblance, since two lakes can coincide in one
+year and diverge over a decade, so the implemented system instead
+compares a \emph{five-year trajectory} of the query against every
+five-year sliding window in each candidate's history, scoring by the
+best-matching window and retaining its position in time
+(Section~\ref{sec:trajectory}). Second, an \textbf{embedding decoder
+was designed and then abandoned}: the original design intended to
+decode a predicted future embedding back into spectral indices,
+which would have required training an inversion of Prithvi's
+768-dimensional space --- not calibrated, and exactly the kind of
+opacity the analog architecture exists to avoid. The implemented
+layer instead uses embeddings \emph{only} to rank analogs, and
+computes predicted quantities from the analogs' measured band
+statistics already in the database
+(Section~\ref{sec:forecast_method}): a transfer of observed change,
+not a reconstruction of an imagined image.
 
-\begin{enumerate}
-    \item construct a scalable geospatial data-ingestion pipeline;
-    \item represent lake environments using standardized satellite
-    image regions;
-    \item generate fixed-dimensional Prithvi embeddings;
-    \item store and index embeddings using PostgreSQL and pgvector;
-    \item retrieve ranked analog ecosystems using cosine similarity;
-    \item expose lake boundaries and analogs through an interactive
-    geospatial interface;
-    \item compare historical NDVI, NDWI, and NBR profiles; and
-    \item extend analog retrieval into an empirical forecasting
-    mechanism based on historical twin trajectories.
-\end{enumerate}
-
-\section{Project Evolution During Development}
-
-The implementation evolved considerably from the initial conceptual
-design. The early design considered standardized ecosystem blocks
-of approximately $5\times5$ km. During implementation, the data
-engineering problem became more important than the initial geometric
-assumption. Large lake polygons and Earth Engine export limits made
-it preferable to separate \emph{imagery acquisition tiles} from
-\emph{analysis cells}.
-
-The current implementation therefore uses a lake-centred buffered
-imagery extraction stage followed by local raster merging and
-approximately $1\times1$ km analysis cells. The larger imagery tiles
-are an I/O and Earth Engine management mechanism; the smaller cells
-are the units from which embeddings are generated. This distinction
-allows large lakes to be processed without forcing the foundation
-model to operate directly on irregular polygons.
-
-\section{Contributions}
-
-The project contributions are:
-
-\begin{itemize}
-    \item an end-to-end lake-to-embedding-to-analog pipeline;
-    \item a robust satellite-image acquisition strategy using
-    Google Earth Engine and local raster processing;
-    \item polygon-aware spatial subdivision and coverage filtering;
-    \item Prithvi-based six-band geospatial representations;
-    \item persistent 768-dimensional vector storage;
-    \item cosine-similarity analog retrieval;
-    \item temporal indicator comparison;
-    \item a FastAPI backend and React/Leaflet frontend; and
-    \item an engineering workflow for validation and database
-    consolidation across multiple development environments.
-\end{itemize}
-
-\section{Report Organization}
-
-Chapter~\ref{chap:data} describes the source datasets and data
-engineering process. Chapter~\ref{chap:methodology} presents the
-complete scientific pipeline. Chapter~\ref{chap:implementation}
-describes the software and database implementation.
-Chapter~\ref{chap:results} documents the current experimental
-outcomes and engineering observations. Chapter~\ref{chap:discussion}
-discusses interpretation and limitations. Chapter~\ref{chap:forecast}
-describes the analog-based forecasting layer. Chapter~\ref{chap:conclusion}
-summarizes the project and future work.
+The project's contribution is the resulting end-to-end
+lake-to-embedding-to-analog pipeline, executed to completion over an
+829-lake, ten-year cohort with no residual failures: a satellite-image
+acquisition strategy built on Google Earth Engine and local raster
+processing with polygon-aware spatial subdivision and coverage
+filtering; Prithvi-based six-band representations with
+coverage-weighted pooling from cell to lake level, persisted as
+768-dimensional vectors and retrieved through trajectory-based
+analog search; the decoder-free forecasting method above; a
+band-honest ecological index set computed only from channels the
+imagery actually contains; and a FastAPI/React-Leaflet application
+with automated PDF reporting, evaluated on five Ramsar wetlands of
+international importance.
 
 % ============================================================
 % CHAPTER 2
@@ -468,41 +415,19 @@ summarizes the project and future work.
 
 \section{Overview}
 
-EcoTwin combines static geographic information with repeated
-satellite observations. The static layer defines \emph{where} an
-ecosystem is, while the satellite layer defines \emph{what the
-ecosystem looks like through time}.
-
-The data-engineering pipeline was designed so that expensive
-satellite processing is performed offline. The online application
-then operates primarily on database records, precomputed features,
-and indexed embeddings.
-
-\section{HydroLAKES Ecosystem Inventory}
-
-HydroLAKES provides lake polygons and associated metadata. The
-database representation used by EcoTwin retains fields including:
-
-\begin{itemize}
-    \item \code{hylak\_id} / lake identifier;
-    \item lake name;
-    \item country;
-    \item lake area;
-    \item elevation;
-    \item pour-point latitude and longitude;
-    \item polygon geometry;
-    \item lake type;
-    \item average depth;
-    \item total volume; and
-    \item watershed area.
-\end{itemize}
-
+EcoTwin combines static geographic information (HydroLAKES polygons
+and metadata) with repeated satellite observations (Sentinel-2), so
+that the static layer defines \emph{where} an ecosystem is while the
+satellite layer defines \emph{what it looks like through time}. The
+database representation retains the identifying, geographic, and
+descriptive fields it needs downstream --- lake identifier and name,
+country, polygon geometry, area, elevation, pour-point coordinates,
+lake type, average depth, total volume, and watershed area ---
+summarised with their pipeline role in Table~\ref{tab:hydrolakes_fields}.
 The complete HydroLAKES-derived inventory is much larger than the
-cohort used for the computationally expensive processing stages.
-The development pipeline was narrowed to a selected processing
-cohort of lakes so that multi-year imagery and embeddings could be
-generated within available storage, Earth Engine, and compute
-budgets.
+processing cohort: the pipeline was narrowed to a selected subset of
+lakes so that multi-year imagery and embeddings could be generated
+within available storage, Earth Engine, and compute budgets.
 
 \begin{table}[H]
 \centering
@@ -527,123 +452,184 @@ Watershed area & Numeric & Catchment context \\
 \end{tabularx}
 \end{table}
 
-\section{Sentinel-2}
+\begin{figure}[H]
+\centering
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[
+    node distance=1.0cm and 1.6cm,
+    stg/.style={rectangle, rounded corners, draw, thick, minimum height=1.1cm, align=center, font=\small},
+    flow/.style={-Stealth, thick, blue!60!black}
+]
 
-Sentinel-2 multispectral imagery is the primary remote-sensing
-input. Google Earth Engine is used for collection filtering,
-compositing, masking, and export. The principal collection used
-during development was:
+\node[stg, fill=gray!12, minimum width=3.0cm] (shp) {HydroLAKES\\shapefile\\(country filter)};
+\node[stg, fill=cyan!10, minimum width=3.2cm, right=of shp] (import) {Import\\validate geometry\\assign \code{state}, centroid};
+\node[stg, fill=green!12, minimum width=3.0cm, right=of import] (lakes) {\code{lakes} table\\11{,}130 rows};
+\node[stg, fill=orange!12, minimum width=2.8cm, right=of lakes] (active) {\code{is\_active}\\flag: 829-lake\\processing cohort};
 
-\begin{center}
-\code{COPERNICUS/S2\_SR\_HARMONIZED}
-\end{center}
+\draw[flow] (shp) -- (import);
+\draw[flow] (import) -- (lakes);
+\draw[flow] (lakes) -- node[above,font=\scriptsize]{manual/scripted} node[below,font=\scriptsize]{selection} (active);
 
-For years or locations where the surface-reflectance harmonized
-collection did not provide observations, the pipeline introduced
-a fallback to:
+\end{tikzpicture}%
+}
+\caption{Stage 1 (Sync Lakes): the HydroLAKES shapefile is imported
+once per country into the full \code{lakes} inventory (11{,}130
+rows), and \code{is\_active} marks the 829-lake processing cohort
+that the remaining six stages operate on.}
+\label{fig:stage1_sync}
+\end{figure}
 
-\begin{center}
-\code{COPERNICUS/S2}
-\end{center}
+\section{Sentinel-2 and Temporal Coverage}
 
-This fallback was particularly important for early Sentinel-2 years.
+Sentinel-2 multispectral imagery, filtered, composited, and exported
+through Google Earth Engine, is the primary remote-sensing input. The
+principal collection is \code{COPERNICUS/S2\_SR\_HARMONIZED}, with a
+fallback to \code{COPERNICUS/S2} where the surface-reflectance
+harmonized collection provides no observations --- particularly
+important for early Sentinel-2 years.
 
-\section{Temporal Coverage}
+Ingestion was extended from an initially planned 2018--2025 window
+back to 2016, giving ten consecutive years. Table~\ref{tab:year_coverage}
+shows the result: from 2018 onward every one of the 829 active lakes
+has a complete, embedded, feature-extracted record, while 2016 and
+2017 fall slightly short because Sentinel-2B did not launch until
+March 2017, leaving a single-satellite, longer-revisit period in
+which some lakes lacked enough cloud-free acquisitions for a usable
+annual composite.
 
-The initial analytical design focused on a 2018--2025 operational
-window. During implementation, ingestion was extended to earlier
-Sentinel-2 observations where available, resulting in an attempted
-2016--2025 extraction window.
+\begin{table}[H]
+\centering
+\caption{Achieved temporal coverage across the 829-lake cohort.
+Every retained lake-year carries both an embedding and a completed
+feature record; there are no partial rows.}
+\label{tab:year_coverage}
+\begin{tabular}{lrrr}
+\toprule
+Year & Lake-years & Embeddings & Features \\
+\midrule
+2025 & 829 & 829 & 829 \\
+2024 & 829 & 829 & 829 \\
+2023 & 829 & 829 & 829 \\
+2022 & 829 & 829 & 829 \\
+2021 & 829 & 829 & 829 \\
+2020 & 829 & 829 & 829 \\
+2019 & 829 & 829 & 829 \\
+2018 & 829 & 829 & 829 \\
+2017 & 808 & 808 & 808 \\
+2016 & 787 & 787 & 787 \\
+\midrule
+\textbf{Total} & \textbf{8{,}227} & \textbf{8{,}227} &
+\textbf{8{,}227} \\
+\bottomrule
+\end{tabular}
+\end{table}
 
-The practical coverage is therefore lake- and year-dependent.
-Early years contain fewer observations and, in some cases, require
-the Level-1C fallback collection. The pipeline records the
-collection actually used so that missing or fallback observations
-are not silently treated as equivalent to the primary surface
-reflectance product.
+The 42 absent lake-years are recorded as such rather than
+interpolated, since the similarity layer requires five consecutive
+years to form a comparison window: a lake missing 2016 simply
+contributes fewer candidate windows rather than a fabricated one.
 
-\section{Satellite Bands}
+The embedding input uses six bands, \code{B2--B7} (blue, green, red,
+narrow near-infrared, and two short-wave infrared channels),
+selected consistently from the exported GeoTIFFs before model
+inference.
 
-The current embedding input uses six bands:
+\section{Environmental Indices: A Band-Honest Index Set}
 
-\begin{center}
-\code{B2, B3, B4, B5, B6, B7}
-\end{center}
+The merged lake imagery contains only \code{B2--B7} --- not B8
+(broad NIR), B11, or B12 (SWIR) --- so the textbook forms of NDVI,
+NDWI, and NBR, which all require B8 or SWIR, cannot be computed.
+Computing them from substituted bands while still calling them
+NDVI, NDWI, or NBR would misreport what was measured, so EcoTwin
+instead uses five indices chosen to be fully supported by the bands
+actually present and named for what they really are, computed from
+the per-band \emph{mean} reflectance of each lake-year over pixels
+inside the lake polygon: NDCI ($\frac{B5-B4}{B5+B4}$), the primary
+eutrophication/algal-bloom indicator, since B5 (705\,nm, red edge)
+is where chlorophyll-a reflectance rises sharply while B4 (665\,nm)
+remains absorbed; NDVI-B7 ($\frac{B7-B4}{B7+B4}$), substituting the
+absent B8 with the narrow-NIR red-edge channel B7 (783\,nm) for a
+vegetation-vigor measure that tracks floating and emergent
+vegetation --- macrophytes, water hyacinth, and the \emph{phumdi}
+mats of some Indian wetlands --- with the substitution recorded in
+the name rather than concealed; NDWI ($\frac{B3-B7}{B3+B7}$), the
+same substitution applied to the water index, which falls as
+vegetation raises B7 and so acts as NDVI-B7's natural mirror signal;
+Turbidity ($\frac{B4-B3}{B4+B3}$), which rises with suspended
+sediment; and Red-Edge Slope ($\frac{B7-B5}{78\text{nm}}$), the
+gradient across the red-edge region, sensitive to pigment
+concentration and canopy density independently of the
+normalized-difference family.
 
-These correspond to the blue, green, red, narrow near-infrared, and
-two short-wave infrared channels used by the selected Prithvi
-configuration.
+\begin{table}[H]
+\centering
+\caption{Implemented ecological index set and ecological meaning.}
+\label{tab:indices}
+\begin{tabularx}{\textwidth}{l l X}
+\toprule
+Index & Formula & Ecological interpretation \\
+\midrule
+NDCI & $(B5-B4)/(B5+B4)$ &
+Chlorophyll-a; eutrophication and algal bloom intensity \\
+NDVI-B7 & $(B7-B4)/(B7+B4)$ &
+Vegetation vigor; macrophyte and floating-weed encroachment \\
+NDWI & $(B3-B7)/(B3+B7)$ &
+Open-water extent; falls as vegetation colonises the surface \\
+Turbidity & $(B4-B3)/(B4+B3)$ &
+Suspended sediment load and water clarity \\
+Red-edge slope & $(B7-B5)/\SI{78}{\nano\meter}$ &
+Pigment concentration and canopy density trend \\
+\bottomrule
+\end{tabularx}
+\end{table}
 
-The bands are selected consistently from the exported GeoTIFFs
-before model inference.
+All five are computed in
+\code{app/services/index\_calculator.py}, which returns \code{None}
+for any index whose input bands are missing rather than substituting
+a default --- so a gap in the data propagates as a gap, never as a
+spurious zero.
 
-\section{Dynamic World}
+\begin{figure}[H]
+\centering
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[
+    node distance=1.0cm and 1.5cm,
+    stg/.style={rectangle, rounded corners, draw, thick, minimum height=1.1cm, align=center, font=\small},
+    flow/.style={-Stealth, thick, blue!60!black}
+]
 
-Dynamic World was evaluated as a complementary land-cover/context
-source. It can provide 10 m land-use/land-cover information and can
-be used to augment interpretation of the spatial analogs.
+\node[stg, fill=green!12, minimum width=2.6cm] (mosaic) {merged mosaic\\(same file as\\Figure~\ref{fig:step9_merge}b)};
+\node[stg, fill=cyan!10, minimum width=2.6cm, right=of mosaic] (clip) {clip to lake\\polygon\\(no buffer)};
+\node[stg, fill=violet!14, minimum width=3.0cm, right=of clip] (stats) {per-band mean/std/\\min/max $+$ GLCM\\texture};
+\node[stg, fill=orange!12, minimum width=3.0cm, right=of stats] (row) {\code{lake\_features}\\row\\(\code{status=completed})};
 
-In the current EcoTwin architecture, Sentinel-2 is the principal
-source for the embedding image, while Dynamic World is treated as a
-contextual layer rather than as a replacement for the Prithvi input.
+\draw[flow] (mosaic) -- (clip);
+\draw[flow] (clip) -- (stats);
+\draw[flow] (stats) -- node[above,font=\scriptsize]{indices derived} node[below,font=\scriptsize]{on demand later} (row);
 
-\section{Environmental Indices}
+\end{tikzpicture}%
+}
+\caption{Stage 6 (Generate Lake Features): unlike Prithvi inference,
+this stage clips the merged mosaic to the bare lake polygon (no
+buffer, no cell grid) and computes per-band statistics and GLCM
+texture directly; only the band means are persisted, and each index
+of Table~\ref{tab:indices} is recomputed on demand
+(Section~\ref{sec:forecast_method}).}
+\label{fig:stage6_features}
+\end{figure}
 
-EcoTwin maintains temporal environmental indicators for ecosystem
-comparison.
+B8 is deliberately excluded from the Prithvi input, whose band count
+and normalization constants are fixed by the model's training
+configuration, but is useful as an independent descriptor, so it is
+acquired separately (Section~\ref{sec:b8}) and stored alongside the
+other band statistics for every lake-year.
 
-\subsection{NDVI}
-
-\begin{equation}
-NDVI =
-\frac{NIR-Red}{NIR+Red}
-\end{equation}
-
-NDVI provides a vegetation-sensitive signal and is useful for
-studying seasonal and interannual vegetation behaviour.
-
-\subsection{NDWI}
-
-The water-sensitive index is computed as:
-
-\begin{equation}
-NDWI =
-\frac{Green-NIR}{Green+NIR}
-\end{equation}
-
-It provides a complementary signal for surface-water behaviour.
-
-\subsection{NBR}
-
-The Normalized Burn Ratio is:
-
-\begin{equation}
-NBR =
-\frac{NIR-SWIR}{NIR+SWIR}
-\end{equation}
-
-NBR provides information related to surface disturbance and
-burn-related spectral change.
-
-The exact band mapping used for each index is kept consistent with
-the final feature-extraction implementation.
-
-\section{Data Quality Requirements}
-
-A valid ecosystem record requires:
-
-\begin{enumerate}
-    \item a valid lake polygon;
-    \item a valid year;
-    \item a successful imagery query;
-    \item a usable composite;
-    \item valid exported raster data;
-    \item valid spatial cells after coverage filtering; and
-    \item a successfully generated embedding for each retained cell.
-\end{enumerate}
-
-The pipeline explicitly distinguishes successful, failed, skipped,
-and already-completed work so that long-running jobs can be resumed.
+A valid ecosystem record requires a valid lake polygon and year, a
+successful imagery query and usable composite, valid exported raster
+data, valid spatial cells after coverage filtering, and a
+successfully generated embedding for each retained cell; the
+pipeline distinguishes successful, failed, skipped, and
+already-completed work so that long-running jobs can be resumed.
 
 % ============================================================
 % CHAPTER 3
@@ -677,29 +663,177 @@ Lake\ Inventory
 \end{aligned}
 \end{equation}
 
-\section{Step 1: Lake Boundary Retrieval}
+\section{Data-Fetching Workflow: The Seven Operator-Triggered Stages}
+\label{sec:data_fetch_workflow}
 
-The pipeline begins by reading the target lake polygon from
-PostGIS. Keeping the original geometry in a spatial database avoids
-repeated conversion between shapefiles and application-specific
-formats.
+The seventeen-step scientific pipeline above is what EcoTwin
+\emph{computes}; Figure~\ref{fig:data_fetch_workflow} shows how an
+operator actually \emph{runs} it, as the seven sequential stages
+exposed by the control strip of Figure~\ref{fig:pipeline_toolbar}.
+Each stage is a separate API call, a separate FastAPI
+\code{BackgroundTasks} job, and a separate database write --- so a
+failure at stage 4 leaves stages 1--3 fully intact and does not
+require re-fetching imagery already on disk.
 
-The geometry is checked for validity and transformed into an
-appropriate projected CRS before distance-based operations are
-performed.
+\begin{figure}[H]
+\centering
+\begin{minipage}[t]{0.38\textwidth}
+\centering
+\vspace{0pt}
+\begin{tikzpicture}[
+    node distance=0.55cm and 0cm,
+    stage/.style={
+        rectangle, rounded corners, draw, thick,
+        minimum width=3.6cm, minimum height=1.3cm,
+        align=center, font=\small\bfseries
+    },
+    flow/.style={-Stealth, thick, teal!60!black},
+    s1/.style={stage, fill=blue!10},
+    s2/.style={stage, fill=cyan!10},
+    s3/.style={stage, fill=orange!12},
+    s4/.style={stage, fill=violet!12},
+    s5/.style={stage, fill=violet!8},
+    s6/.style={stage, fill=green!10},
+    s7/.style={stage, fill=gray!12}
+]
 
-\section{Step 2: Buffering}
+% -- Stage nodes, top to bottom -----------------------------------
+\node[s1] (s1) {1. Sync Lakes};
+\node[s2, below=of s1] (s2) {2. Fetch Images};
+\node[s3, below=of s2] (s3) {3. Merge Image Tiles};
+\node[s4, below=of s3] (s4) {4. Generate Embeddings};
+\node[s5, below=of s4] (s5) {5. Merge Embeddings};
+\node[s6, below=of s5] (s6) {6. Generate Lake Features};
+\node[s7, below=of s6] (s7) {7. Fetch B8};
 
-The lake polygon is expanded using a configurable buffer. During
-development, a \SI{1200}{\meter} buffer was used for the imagery
-extraction stage.
+% -- Sequential flow ------------------------------------------------
+\draw[flow] (s1) -- (s2);
+\draw[flow] (s2) -- (s3);
+\draw[flow] (s3) -- (s4);
+\draw[flow] (s4) -- (s5);
+\draw[flow] (s5) -- (s6);
+\draw[flow] (s6) -- (s7);
 
-The buffer is important because the ecosystem representation is not
-restricted to the water polygon itself. The surrounding land,
+\end{tikzpicture}
+\end{minipage}%
+\hfill
+\begin{minipage}[t]{0.58\textwidth}
+\vspace{0pt}
+\small
+\textbf{1. Sync Lakes} --- import HydroLAKES into the \code{lakes}
+table (Figure~\ref{fig:stage1_sync}).
+
+\smallskip
+\textbf{2. Fetch Images} --- buffer, tile, and export Sentinel-2
+GeoTIFFs per lake-year (Steps 1--8 below).
+
+\smallskip
+\textbf{3. Merge Image Tiles} --- mosaic a lake-year's tiles into one
+raster (Step 9).
+
+\smallskip
+\textbf{4. Generate Embeddings} --- split the mosaic into cells and
+run Prithvi inference (Steps 10--12).
+
+\smallskip
+\textbf{5. Merge Embeddings} --- pool cell embeddings into one
+lake-year vector (Step 12a).
+
+\smallskip
+\textbf{6. Generate Lake Features} --- compute per-band statistics
+and ecological indices (Step 16, Figure~\ref{fig:stage6_features}).
+
+\smallskip
+\textbf{7. Fetch B8} --- server-side \code{reduceRegions()} enriches
+\code{lake\_features} with the auxiliary NIR band
+(Figure~\ref{fig:stage7_b8}).
+
+\smallskip
+The remainder of this chapter walks through these seven stages at
+step-by-step granularity, numbered independently of the stage list
+above.
+\end{minipage}
+\caption{The seven-stage data-fetching workflow, in the order an
+operator triggers them via the control strip
+(Figure~\ref{fig:pipeline_toolbar}). Each stage reads the previous
+stage's database output as its own input, never the raw upstream
+source directly --- stage 3 reads \code{lake\_tiles}, not Earth
+Engine again; stage 6 reads the merged mosaic already on disk, not a
+fresh GEE export. Stage 7 (B8) is independent of stages 4--5 and
+can run in parallel with them, since it enriches existing
+\code{lake\_features} rows rather than depending on embeddings.}
+\label{fig:data_fetch_workflow}
+\end{figure}
+
+Every stage is \textbf{idempotent at the row level}: each writes a
+status column (\code{pending}/\code{processing}/\code{completed}/
+\code{failed}) before doing any work, and a re-run skips rows
+already \code{completed} rather than reprocessing them. Stage 7
+(B8) has no code dependency on stages 4--5 despite the drawn order,
+since B8 statistics are written directly onto an existing
+\code{lake\_features} row, so it can be fetched before, after, or
+concurrently with embedding generation.
+
+\section{Steps 1--2: Lake Boundary Retrieval and Buffering}
+\label{sec:step2_buffering}
+
+The pipeline reads the target lake polygon from PostGIS, keeping the
+original geometry in a spatial database to avoid repeated conversion
+between shapefiles and application-specific formats, checks it for
+validity, and transforms it into a projected CRS. The polygon is
+then expanded using a configurable buffer (\SI{1200}{\meter} during
+development), since the ecosystem representation is not restricted
+to the water polygon itself. The surrounding land,
 shoreline, vegetation, and local landscape context contribute to
 the spatial-spectral representation.
 
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[scale=1.0]
+
+% -- Panel 1: the original PostGIS lake polygon (irregular shape) --
+\begin{scope}[shift={(0,0)}]
+  \draw[thick, fill=blue!25] plot [smooth cycle, tension=0.7]
+    coordinates {
+      (0,1.3) (0.6,1.6) (1.3,1.2) (1.1,0.4)
+      (1.5,-0.3) (0.8,-1.1) (0.1,-1.3) (-0.6,-0.8)
+      (-1.0,0.0) (-0.7,0.9)
+    };
+  \node at (0,-2.0) {\small \textbf{(a) Original polygon}};
+  \node at (0,-2.4) {\scriptsize \code{lakes.geom} (PostGIS)};
+\end{scope}
+
+% -- Arrow 1 -------------------------------------------------------
+\draw[-Stealth, thick, teal!60!black] (2.1,0) -- node[above,font=\scriptsize]{buffer} node[below,font=\scriptsize]{1200 m} (3.3,0);
+
+% -- Panel 2: buffered polygon (dashed outer ring, expanded) --------
+\begin{scope}[shift={(5.3,0)}]
+  \draw[thick, dashed, fill=orange!12] plot [smooth cycle, tension=0.7]
+    coordinates {
+      (0,2.0) (0.95,2.4) (2.0,1.8) (1.7,0.6)
+      (2.3,-0.5) (1.2,-1.7) (0.15,-2.0) (-0.95,-1.25)
+      (-1.55,0.0) (-1.1,1.4)
+    };
+  \draw[thick, fill=blue!25] plot [smooth cycle, tension=0.7]
+    coordinates {
+      (0,1.3) (0.6,1.6) (1.3,1.2) (1.1,0.4)
+      (1.5,-0.3) (0.8,-1.1) (0.1,-1.3) (-0.6,-0.8)
+      (-1.0,0.0) (-0.7,0.9)
+    };
+  \node at (0,-2.7) {\small \textbf{(b) Buffered extent}};
+  \node at (0,-3.1) {\scriptsize water $+$ 1200\,m shoreline margin};
+\end{scope}
+
+\end{tikzpicture}
+\caption{Step 2 (Buffering): the original polygon (a) is expanded by
+a fixed 1200\,m buffer (b); everything between the two boundaries is
+retained as part of the ecosystem representation, not discarded as
+``outside the lake.''}
+\label{fig:step2_buffer}
+\end{figure}
+
 \section{Step 3: Projected Grid Generation}
+\label{sec:step3_grid}
 
 The buffered polygon is projected into a metric CRS. A regular
 imagery grid is then generated around the buffered geometry.
@@ -712,14 +846,64 @@ Engine request size, memory use, and local processing cost.
 A lake may therefore produce one, two, or several imagery tiles
 depending on its size and shape.
 
-\section{Step 4: Earth Engine Collection Selection}
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[scale=1.0]
+
+% -- Panel 1: buffered polygon overlaid with an 8.5km tile grid -----
+\begin{scope}[shift={(0,0)}]
+  \clip (-2.1,-2.3) rectangle (2.5,2.6);
+  \draw[thick, dashed, fill=orange!10] plot [smooth cycle, tension=0.7]
+    coordinates {
+      (0,2.0) (0.95,2.4) (2.0,1.8) (1.7,0.6)
+      (2.3,-0.5) (1.2,-1.7) (0.15,-2.0) (-0.95,-1.25)
+      (-1.55,0.0) (-1.1,1.4)
+    };
+  \foreach \x in {-2,-1,0,1,2}{
+    \draw[gray!70, thin] (\x,-2.5) -- (\x,2.7);
+  }
+  \foreach \y in {-2,-1,0,1,2}{
+    \draw[gray!70, thin] (-2.2,\y) -- (2.6,\y);
+  }
+  \node[fill=white, fill opacity=0.8, text opacity=1, font=\scriptsize] at (0.5,1.5) {tile 1};
+  \node[fill=white, fill opacity=0.8, text opacity=1, font=\scriptsize] at (1.5,0.3) {tile 2};
+  \node[fill=white, fill opacity=0.8, text opacity=1, font=\scriptsize] at (0.5,-1.2) {tile 3};
+  \node[fill=white, fill opacity=0.8, text opacity=1, font=\scriptsize] at (-1.2,-0.5) {tile 4};
+\end{scope}
+\node at (0.15,-3.0) {\small \textbf{(a) $\sim$8.5\,km imagery tile grid}};
+\node at (0.15,-3.4) {\scriptsize grid clipped to buffered extent};
+
+% -- Arrow ----------------------------------------------------------
+\draw[-Stealth, thick, blue!60!black] (3.1,0) -- node[above,font=\scriptsize]{one GEE request} node[below,font=\scriptsize]{per tile} (4.4,0);
+
+% -- Panel 2: each tile -> Earth Engine composite -> GeoTIFF --------
+\begin{scope}[shift={(7.3,1.55)},
+    stg/.style={rectangle, rounded corners, draw, thick, minimum width=2.6cm, minimum height=0.8cm, align=center, font=\scriptsize}]
+  \node[stg, fill=gray!12] (t) {Tile bbox\\(lat/lon)};
+  \node[stg, fill=cyan!10, below=0.3cm of t] (gee) {Earth Engine:\\S2\_SR\_HARMONIZED\\(fallback: S2)};
+  \node[stg, fill=green!10, below=0.3cm of gee] (comp) {Cloud mask $+$\\median composite};
+  \node[stg, fill=violet!10, below=0.3cm of comp] (tif) {Export: GeoTIFF\\(B2--B7, 10 m)};
+  \draw[-Stealth, thick] (t) -- (gee);
+  \draw[-Stealth, thick] (gee) -- (comp);
+  \draw[-Stealth, thick] (comp) -- (tif);
+\end{scope}
+\node at (7.3,-3.0) {\small \textbf{(b) Per-tile Earth Engine request}};
+\node at (7.3,-3.4) {\scriptsize repeated for every tile, every year};
+
+\end{tikzpicture}
+\caption{Step 3 (Imagery Tiling): the buffered extent (a) is clipped
+against a $\sim$8.5\,km grid (here four tiles); each tile drives one
+Earth Engine request (b) --- the ``Fetch Images'' data-fetching
+stage of Figure~\ref{fig:data_fetch_workflow}.}
+\label{fig:step3_tiling}
+\end{figure}
+
+\section{Steps 4--8: Sentinel-2 Compositing, Export, and Resumability}
 
 For each lake-year combination, the pipeline first queries the
-preferred surface-reflectance collection. If no usable observation
-exists, the system falls back to the Level-1C collection.
-
-This decision is made before the export request and is recorded in
-the processing metadata.
+preferred surface-reflectance collection; if no usable observation
+exists, it falls back to the Level-1C collection (Table~\ref{tab:collection_strategy}). This decision is made before the export
+request and is recorded in the processing metadata.
 
 \begin{table}[H]
 \centering
@@ -737,33 +921,15 @@ Fallback for early or unavailable surface-reflectance years \\
 \end{tabularx}
 \end{table}
 
-\section{Step 5: Cloud and Invalid-Pixel Handling}
-
-Cloud contamination is one of the main sources of noise in optical
-remote sensing. The current preprocessing pipeline uses
-cloud-probability information and class-based masking where the
-required bands are available.
-
-The development configuration used a cloud-probability threshold
-of approximately $40\%$. Pixels classified as unusable are masked
-before compositing.
-
-The implementation had to account for historical collection
-differences. Early Sentinel-2 products exposed different quality
-bands; code that assumed the presence of \code{QA60},
-\code{MSK\_CLASSI\_OPAQUE}, or \code{MSK\_CLASSI\_CIRRUS} could fail
-when the selected collection did not expose the expected band.
-The final pipeline therefore treats cloud masking as a
-collection-aware operation rather than assuming one universal
-quality-band schema.
-
-\section{Step 6: Annual Composite Construction}
-
-For each lake-year-region, the filtered observations are combined
-into an annual composite.
-
-The median operation is used to reduce the influence of residual
-clouds, outliers, and individual acquisition anomalies:
+Scenes are filtered before compositing: the deployed configuration
+excludes those whose reported cloud cover exceeds $20\%$
+(\code{GEE\_CLOUD\_COVER\_MAX}) and masks individual unusable pixels
+using cloud-probability and class-based information where available
+--- collection-aware, since early Sentinel-2 products expose
+different quality bands (\code{QA60}, \code{MSK\_CLASSI\_OPAQUE},
+\code{MSK\_CLASSI\_CIRRUS}) than later ones. The filtered
+observations are then combined into an annual per-pixel, per-band
+median composite,
 
 \begin{equation}
 I_{annual}(p,b)
@@ -773,55 +939,69 @@ I_1(p,b),I_2(p,b),\ldots,I_n(p,b)
 \right)
 \end{equation}
 
-where $p$ is a pixel and $b$ is a selected spectral band.
-
-The composite is clipped to the requested geographic extent before
-export.
-
-\section{Step 7: GeoTIFF Export}
-
-The selected six bands are exported as local GeoTIFF data. The
-development pipeline used 10 m spatial output for the selected
-Sentinel-2 bands and stored the raster in floating-point form.
-
-Local storage has two major advantages:
-
-\begin{enumerate}
-    \item the same Earth Engine composite does not need to be
-    recomputed for every downstream analysis cell; and
-    \item embedding generation can be repeated without repeatedly
-    consuming Earth Engine export capacity.
-\end{enumerate}
-
-\section{Step 8: Tile Completion and Resumability}
-
-Each imagery tile is represented by metadata including lake ID,
-year, tile index, geometry/bounding box, status, and local image
-path.
-
-The pipeline checks whether a tile has already completed before
-starting a new Earth Engine request. This makes the large batch
-pipeline resumable after failures or interruptions.
+clipped to the requested extent, and exported as local GeoTIFF at
+10 m resolution in floating-point form, so the same composite never
+needs recomputing for a later analysis cell. Each tile carries status
+metadata (lake ID, year, tile index, bounding box, local path), and
+the pipeline checks this before starting a new Earth Engine request
+for the same tile --- concrete, tile-level idempotency
+(Section~\ref{sec:data_fetch_workflow}): a batch interrupted partway
+through a lake resumes from its first incomplete tile.
 
 \section{Step 9: Local Raster Merging}
+\label{sec:step9_merge}
 
-After all tiles belonging to a lake-year are available, the local
-processing stage merges them into a single raster mosaic.
+After all tiles belonging to a lake-year are available, rasterio
+merges them into a single raster mosaic --- reading, reprojecting,
+and writing with compression settings that reduce storage while
+preserving the numerical data model inference needs. The merged
+image becomes the stable source from which smaller analysis cells
+are extracted.
 
-Rasterio is used for reading, reprojection/metadata handling,
-mosaicking, and writing. Compression settings are applied to
-reduce storage requirements while preserving the numerical data
-needed for model inference.
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[scale=1.0]
 
-The merged image becomes the stable source from which smaller
-analysis cells are extracted.
+% -- Panel 1: four separate tile GeoTIFFs on disk -------------------
+\begin{scope}[shift={(0,0)}]
+  \draw[thick, fill=violet!10] (-1.6,0.2) rectangle (-0.15,1.65);
+  \node[font=\scriptsize, align=center] at (-0.875,0.9) {tile\_01};
+  \draw[thick, fill=violet!10] (0.15,0.2) rectangle (1.6,1.65);
+  \node[font=\scriptsize, align=center] at (0.875,0.9) {tile\_02};
+  \draw[thick, fill=violet!10] (-1.6,-1.65) rectangle (-0.15,-0.2);
+  \node[font=\scriptsize, align=center] at (-0.875,-0.9) {tile\_03};
+  \draw[thick, fill=violet!10] (0.15,-1.65) rectangle (1.6,-0.2);
+  \node[font=\scriptsize, align=center] at (0.875,-0.9) {tile\_04};
+\end{scope}
+\node at (0,-2.3) {\small \textbf{(a) Independent tile GeoTIFFs}};
+\node at (0,-2.7) {\scriptsize separate files, own extent, own nodata border};
+
+% -- Arrow -----------------------------------------------------------
+\draw[-Stealth, thick, teal!60!black] (2.4,0) -- node[above,font=\scriptsize]{rasterio merge} node[below,font=\scriptsize]{reproject + mosaic} (3.9,0);
+
+% -- Panel 2: single seamless mosaic ----------------------------------
+\begin{scope}[shift={(6.0,0)}]
+  \draw[thick, fill=green!12] (-1.6,-1.65) rectangle (1.6,1.65);
+  \draw[gray!50, thin] (-1.6,0) -- (1.6,0);
+  \draw[gray!50, thin] (0,-1.65) -- (0,1.65);
+  \node[font=\scriptsize, align=center] at (0,0) {merged mosaic};
+  \node[font=\scriptsize, align=center] at (0,-1.3) {\texttt{lake\_images}};
+\end{scope}
+\node at (6.0,-2.3) {\small \textbf{(b) Single seamless mosaic}};
+\node at (6.0,-2.7) {\scriptsize one \code{lake\_images} row per lake-year};
+
+\end{tikzpicture}
+\caption{Step 9 (Local Raster Merging): independent tile GeoTIFFs (a)
+are mosaicked by \code{rasterio.merge} into one seamless lake-year
+raster (b), recorded in \code{lake\_images} --- the ``Merge Image
+Tiles'' stage of Figure~\ref{fig:data_fetch_workflow}.}
+\label{fig:step9_merge}
+\end{figure}
 
 \section{Step 10: Analysis-Cell Generation}
 
-The merged lake image is intersected with a regular approximately
-$1\times1$ km analysis grid.
-
-For each cell, the lake coverage is computed:
+The merged lake image is intersected with a regular $1\times1$ km
+analysis grid, and for each cell the lake coverage is computed,
 
 \begin{equation}
 Coverage(c)
@@ -831,209 +1011,444 @@ Coverage(c)
 \times 100
 \end{equation}
 
-Only cells above the configured minimum coverage threshold are
-retained. The development configuration used a threshold of
-approximately $15\%$.
+with only cells above a $15\%$ threshold retained, which prevents
+cells that only touch a small corner of a lake from being treated as
+representative ecosystem regions.
 
-This prevents cells that only touch a small corner of a lake from
-being treated as representative ecosystem regions.
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[scale=1.0]
+
+\begin{scope}[shift={(0,0)}]
+  \clip (-2.3,-2.3) rectangle (2.3,2.3);
+  \draw[thick, fill=green!10] plot [smooth cycle, tension=0.7]
+    coordinates {
+      (0,2.0) (0.95,2.4) (2.0,1.8) (1.7,0.6)
+      (2.3,-0.5) (1.2,-1.7) (0.15,-2.0) (-0.95,-1.25)
+      (-1.55,0.0) (-1.1,1.4)
+    };
+  \foreach \x in {-2,-1.35,-0.7,-0.05,0.6,1.25,1.9}{
+    \draw[gray!60, thin] (\x,-2.5) -- (\x,2.7);
+  }
+  \foreach \y in {-2,-1.35,-0.7,-0.05,0.6,1.25,1.9}{
+    \draw[gray!60, thin] (-2.4,\y) -- (2.4,\y);
+  }
+  % retained cells (coverage >= 15%) -- solid green fill
+  \fill[green!45, opacity=0.55] (-2,-0.05) rectangle (-1.35,0.6);
+  \fill[green!45, opacity=0.55] (-1.35,-1.35) rectangle (-0.7,-0.7);
+  \fill[green!45, opacity=0.55] (-1.35,-0.7) rectangle (-0.7,-0.05);
+  \fill[green!45, opacity=0.55] (-1.35,-0.05) rectangle (-0.7,0.6);
+  \fill[green!45, opacity=0.55] (-1.35,0.6) rectangle (-0.7,1.25);
+  \fill[green!45, opacity=0.55] (-1.35,1.25) rectangle (-0.7,1.9);
+  \fill[green!45, opacity=0.55] (-0.7,-2) rectangle (-0.05,-1.35);
+  \fill[green!45, opacity=0.55] (-0.7,-1.35) rectangle (-0.05,-0.7);
+  \fill[green!45, opacity=0.55] (-0.7,-0.7) rectangle (-0.05,-0.05);
+  \fill[green!45, opacity=0.55] (-0.7,-0.05) rectangle (-0.05,0.6);
+  \fill[green!45, opacity=0.55] (-0.7,0.6) rectangle (-0.05,1.25);
+  \fill[green!45, opacity=0.55] (-0.7,1.25) rectangle (-0.05,1.9);
+  \fill[green!45, opacity=0.55] (-0.05,-2) rectangle (0.6,-1.35);
+  \fill[green!45, opacity=0.55] (-0.05,-1.35) rectangle (0.6,-0.7);
+  \fill[green!45, opacity=0.55] (-0.05,-0.7) rectangle (0.6,-0.05);
+  \fill[green!45, opacity=0.55] (-0.05,-0.05) rectangle (0.6,0.6);
+  \fill[green!45, opacity=0.55] (-0.05,0.6) rectangle (0.6,1.25);
+  \fill[green!45, opacity=0.55] (-0.05,1.25) rectangle (0.6,1.9);
+  \fill[green!45, opacity=0.55] (0.6,-2) rectangle (1.25,-1.35);
+  \fill[green!45, opacity=0.55] (0.6,-1.35) rectangle (1.25,-0.7);
+  \fill[green!45, opacity=0.55] (0.6,-0.7) rectangle (1.25,-0.05);
+  \fill[green!45, opacity=0.55] (0.6,-0.05) rectangle (1.25,0.6);
+  \fill[green!45, opacity=0.55] (0.6,0.6) rectangle (1.25,1.25);
+  \fill[green!45, opacity=0.55] (0.6,1.25) rectangle (1.25,1.9);
+  \fill[green!45, opacity=0.55] (1.25,-1.35) rectangle (1.9,-0.7);
+  \fill[green!45, opacity=0.55] (1.25,-0.7) rectangle (1.9,-0.05);
+  \fill[green!45, opacity=0.55] (1.25,-0.05) rectangle (1.9,0.6);
+  \fill[green!45, opacity=0.55] (1.25,0.6) rectangle (1.9,1.25);
+  \fill[green!45, opacity=0.55] (1.25,1.25) rectangle (1.9,1.9);
+  % discarded cells (coverage < 15%, corner touch only) -- red fill
+  \fill[red!45, opacity=0.5] (-2,-0.7) rectangle (-1.35,-0.05);
+  \fill[red!45, opacity=0.5] (-2,0.6) rectangle (-1.35,1.25);
+  \fill[red!45, opacity=0.5] (-1.35,-2) rectangle (-0.7,-1.35);
+  \fill[red!45, opacity=0.5] (1.25,-2) rectangle (1.9,-1.35);
+\end{scope}
+\node at (0,-2.9) {\small \textbf{1 km $\times$ 1 km analysis grid}};
+\node[align=center, font=\scriptsize] at (0,-3.35)
+  {\textcolor{green!55!black}{\rule{6pt}{6pt}}~retained ($\geq$15\% coverage)
+   \quad
+   \textcolor{red!55!black}{\rule{6pt}{6pt}}~discarded (corner touch only)};
+
+\end{tikzpicture}
+\caption{Step 10 (Analysis-Cell Generation): the merged mosaic is
+intersected with a 1\,km grid; cells with substantial coverage
+(green) are retained as embedding units, corner-touch cells below
+15\% (red) are discarded.}
+\label{fig:step10_cells}
+\end{figure}
 
 \section{Step 11: Model Input Preparation}
 
-Each retained analysis cell is read from the local merged GeoTIFF.
-The six selected bands are converted into the model's expected
-tensor layout, numerical range, and spatial dimensions.
-
-The processing stage therefore separates:
-
-\begin{enumerate}
-    \item geographic geometry;
-    \item raster extraction;
-    \item model preprocessing; and
-    \item model inference.
-\end{enumerate}
-
-This separation makes it possible to change the model without
-re-downloading the underlying satellite data.
+Each retained analysis cell is read from the local merged GeoTIFF and
+the six selected bands are converted into the model's expected
+tensor layout, numerical range, and spatial dimensions. Separating
+geographic geometry, raster extraction, model preprocessing, and
+model inference into distinct stages makes it possible to change the
+model without re-downloading the underlying satellite data.
 
 \section{Step 12: Prithvi Embedding Generation}
 
-Prithvi is used as the geospatial foundation model. Each retained
-analysis cell is transformed into a fixed-length feature vector.
+Prithvi is used as the geospatial foundation model: each retained
+analysis cell, as a six-band \code{B2--B7} image $X$, is transformed
+into a fixed-length feature vector $f(X) \rightarrow \mathbf{z} \in
+\mathbb{R}^{768}$, batched eight at a time
+(\code{EMBEDDING\_GPU\_BATCH\_SIZE}) on CPU inference. Every output
+vector is L2-normalised, so that for unit-norm vectors the cosine
+similarity reduces exactly to the inner product and the entire
+similarity search can be executed as matrix multiplication.
 
-For an input image $X$:
+\begin{figure}[H]
+\centering
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[
+    node distance=1.4cm and 1.9cm,
+    stg/.style={rectangle, rounded corners, draw, thick, minimum height=1.0cm, align=center, font=\small},
+    flow/.style={-Stealth, thick, blue!60!black}
+]
 
-\begin{equation}
-f(X) \rightarrow \mathbf{z},
-\qquad
-\mathbf{z}\in\mathbb{R}^{768}
-\end{equation}
+\useasboundingbox (-0.3,-1.3) rectangle (14.8,1.3);
 
-The six-band configuration used by EcoTwin is based on
-\code{B2--B7}, corresponding to the selected blue, green, red,
-narrow-NIR, SWIR1, and SWIR2 channels.
+\node[stg, fill=green!12, minimum width=2.4cm] (cell) {retained\\1\,km cell};
+\node[stg, fill=cyan!10, minimum width=2.9cm, right=of cell] (tensor) {6-band tensor\\$224\times224$ px\\B2--B7, normalised};
+\node[stg, fill=violet!14, minimum width=3.1cm, right=of tensor] (prithvi) {Prithvi-EO-1.0-100M\\ViT encoder (12 layer)\\batch size 8};
+\node[stg, fill=orange!12, minimum width=2.6cm, right=of prithvi] (vec) {$\mathbf{z}\in\mathbb{R}^{768}$\\L2-normalised};
 
-The inference pipeline supports batched processing. During the
-development runs, a batch size of eight was used in CPU-based
-inference.
+\draw[flow] (cell) -- node[above,font=\scriptsize]{clip $+$ read} (tensor);
+\draw[flow] (tensor) -- node[above,font=\scriptsize]{per-band} node[below,font=\scriptsize]{mean/std normalise} (prithvi);
+\draw[flow] (prithvi) -- node[above,font=\scriptsize]{$f(X)$} (vec);
 
-\section{Step 13: Embedding Validation}
+\end{tikzpicture}%
+}
+\caption{Steps 11--12: each retained cell is clipped and read as a
+$224\times224$-pixel, six-band tensor, normalised using Prithvi's
+own per-band mean/std (\code{PRITHVI\_BAND\_MEAN}/\code{\_STD}),
+then batched into the Prithvi-EO-1.0-100M encoder --- the only stage
+where the foundation model is invoked --- producing a 768-d,
+L2-normalised vector.}
+\label{fig:step12_prithvi}
+\end{figure}
 
-Before insertion into the database, every embedding is checked for:
+\section{Step 12a: Coverage-Weighted Lake-Level Pooling}
+\label{sec:pooling}
 
-\begin{itemize}
-    \item expected dimensionality;
-    \item missing or null values;
-    \item numerical validity;
-    \item correct lake association;
-    \item correct year association; and
-    \item correct spatial-cell association.
-\end{itemize}
-
-A failed inference is not inserted as a valid vector.
-
-\section{Step 14: Vector Persistence}
-
-The final embedding is stored in PostgreSQL using pgvector.
-
-The conceptual relationship is:
-
-\begin{equation}
-Lake
-\rightarrow
-Year
-\rightarrow
-Spatial\ Cell
-\rightarrow
-Embedding
-\end{equation}
-
-This preserves the provenance required to explain why an ecosystem
-was retrieved as an analog.
-
-\section{Step 15: Similarity Search}
-
-For a query embedding $\mathbf{q}$ and candidate embedding
-$\mathbf{x}$, EcoTwin uses cosine similarity:
+Cell-level embeddings preserve spatial detail, but retrieval and
+forecasting operate on lakes, so for a lake-year with cells
+$c_1,\dots,c_N$ having embeddings $\mathbf{e}_i$ and lake-coverage
+percentages $w_i$, the lake embedding is the coverage-weighted mean,
+re-normalised:
 
 \begin{equation}
-sim(\mathbf{q},\mathbf{x})
+\mathbf{z}_{lake}
 =
-\frac{\mathbf{q}^{T}\mathbf{x}}
-{\|\mathbf{q}\|_2\|\mathbf{x}\|_2}
+\frac{\sum_{i=1}^{N} w_i \mathbf{e}_i}
+{\left\|\sum_{i=1}^{N} w_i \mathbf{e}_i\right\|_2}
 \end{equation}
 
-The candidates are ranked by decreasing similarity:
+so that a cell almost entirely filled by the lake contributes more
+than one that merely clips its margin; cells with zero coverage,
+zero vectors, or the wrong dimensionality are excluded before
+pooling. Across the cohort this reduces \textbf{233{,}002} cell
+embeddings to \textbf{8{,}227} lake-year vectors, an average of
+\textbf{28.3} cells per lake-year, and the cell-level vectors are
+retained as the underlying evidence for any result the pooled vector
+produces.
+
+\begin{figure}[H]
+\centering
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[
+    node distance=0.5cm and 2.3cm,
+    cellbox/.style={rectangle, rounded corners, draw, thick, fill=green!12, minimum width=2.5cm, minimum height=0.75cm, align=center, font=\scriptsize},
+    flow/.style={-Stealth, thick, gray!50}
+]
+
+\node[cellbox] (c1) {cell 1: $\mathbf{e}_1$\\coverage $w_1$=62\%};
+\node[cellbox, below=of c1] (c2) {cell 2: $\mathbf{e}_2$\\coverage $w_2$=88\%};
+\node[cellbox, below=of c2] (c3) {cell 3: $\mathbf{e}_3$\\coverage $w_3$=41\%};
+\node[font=\scriptsize, below=0.15cm of c3] (dots) {$\vdots$ (28.3 cells avg.)};
+
+\node[rectangle, rounded corners, draw, thick, fill=orange!14,
+      minimum width=3.6cm, minimum height=2.9cm, align=center, font=\small,
+      right=of c2] (pool)
+      {Coverage-weighted\\mean pooling\\[4pt]
+       \scriptsize $\mathbf{z}=\dfrac{\sum_i w_i\mathbf{e}_i}{\|\sum_i w_i\mathbf{e}_i\|_2}$};
+
+\node[rectangle, rounded corners, draw, thick, fill=violet!14,
+      minimum width=2.8cm, minimum height=1.0cm, align=center, font=\small,
+      right=2.3cm of pool] (lakevec)
+      {$\mathbf{z}_{lake}\in\mathbb{R}^{768}$\\one per lake-year};
+
+\draw[flow] (c1) -- (pool);
+\draw[flow] (c2) -- (pool);
+\draw[flow] (c3) -- (pool);
+\draw[-Stealth, thick, blue!60!black] (pool) -- node[above,font=\scriptsize]{L2-renormalise} (lakevec);
+
+\end{tikzpicture}%
+}
+\caption{Step 12a (Coverage-Weighted Pooling) --- the ``Merge
+Embeddings'' stage of Figure~\ref{fig:data_fetch_workflow}: each
+cell embedding contributes in proportion to its coverage $w_i$
+(e.g.\ 88\% outweighs 41\%), and the weighted sum is L2-renormalised
+for comparability in \code{regions}.}
+\label{fig:step12a_pooling}
+\end{figure}
+
+Before insertion into the database, every embedding is checked for
+expected dimensionality, missing or null values, numerical validity,
+and correct lake, year, and spatial-cell association; a failed
+inference is not inserted as a valid vector. The final embedding is
+then stored in PostgreSQL using pgvector under the conceptual
+relationship Lake $\rightarrow$ Year $\rightarrow$ Spatial Cell
+$\rightarrow$ Embedding, which preserves the provenance required to
+explain why an ecosystem was retrieved as an analog.
+
+\section{Step 15: Trajectory Similarity Search}
+\label{sec:trajectory}
+
+Comparing one query embedding against one candidate embedding asks
+only \emph{which lake looked like this lake, in this year?} --- too
+weak a question for forecasting, since two lakes can coincide in a
+single year and diverge over the following decade. EcoTwin instead
+asks which lake has been \textbf{moving through} the representation
+space the way this lake has been moving: a shared five-year path is
+a far better basis for projecting the next three.
+
+For a query lake with embeddings ordered by year, EcoTwin forms the
+trajectory ending at anchor year $t_0$ with window size $W=5$,
 
 \begin{equation}
-s_{(1)}\ge s_{(2)}\ge\cdots\ge s_{(K)}
+Q = \left(\mathbf{q}_{t_0-4},\ \mathbf{q}_{t_0-3},\
+\mathbf{q}_{t_0-2},\ \mathbf{q}_{t_0-1},\ \mathbf{q}_{t_0}\right)
 \end{equation}
 
-The highest-ranked ecosystems become the analog set displayed by
-the application.
+and each candidate lake with at least $W$ years of history is
+expanded into every contiguous five-year window (ten years of data
+yields six windows),
 
-\section{Cell-to-Lake Interpretation}
+\begin{equation}
+C^{(j)} = \left(\mathbf{c}_{y_j},\dots,\mathbf{c}_{y_j+4}\right),
+\qquad j = 1,\dots,\,n-W+1
+\end{equation}
 
-Because a lake can contain multiple analysis cells, the retrieval
-layer must preserve the relationship between cell-level embeddings
-and lake-level identity.
+which need not align in calendar time with the query: a lake that
+underwent in 2017--2021 the transition another lake is undergoing in
+2021--2025 is precisely the analog sought, since it has already
+lived through the target's near future. Each window is scored as the
+mean of the year-by-year cosine similarities between corresponding
+positions,
 
-This design has two advantages:
+\begin{equation}
+S\!\left(Q, C^{(j)}\right)
+=
+\frac{1}{W}
+\sum_{i=1}^{W}
+\frac{\mathbf{q}_i^{\top}\mathbf{c}^{(j)}_i}
+{\|\mathbf{q}_i\|_2\,\|\mathbf{c}^{(j)}_i\|_2}
+\end{equation}
 
-\begin{enumerate}
-    \item it preserves local spatial detail instead of collapsing a
-    large lake into one opaque vector too early; and
-    \item it allows retrieved similarities to be traced back to the
-    actual spatial region that produced the embedding.
-\end{enumerate}
+which (all embeddings being unit-norm) reduces to a mean of inner
+products, and each candidate lake is represented by its single best
+window,
 
-Where a single lake-level representation is required, cell
-representations can be aggregated using a coverage- or area-aware
-strategy. The cell-level vectors remain the underlying evidence.
+\begin{equation}
+S^{*}_{lake} = \max_{j} S\!\left(Q, C^{(j)}\right),
+\qquad
+j^{*} = \arg\max_{j} S\!\left(Q, C^{(j)}\right)
+\end{equation}
+
+whose end year $y_{j^{*}}+4$ is the pivot on which the forecasting
+layer turns: the analog's observed behaviour \emph{after} that year
+is the evidence used to project the target's future.
+
+Because every vector is unit-norm and drawn from one model, raw
+cosine scores cluster tightly just below $1.0$ (measured top analogs
+span roughly 0.986--0.999 in Chapter~\ref{chap:ramsar}), which would
+make every analog read as ``99\% similar'' if displayed directly.
+EcoTwin therefore linearly rescales $[\phi, 1.0] \to [0,1]$ with
+floor $\phi=0.5$,
+
+\begin{equation}
+S_{display} = \mathrm{clip}_{[0,1]}\!\left(\frac{S^{*}-\phi}{1-\phi}\right)
+\end{equation}
+
+a monotone transform that changes no ranking; raw scores are
+reported alongside the rescaled ones in Chapter~\ref{chap:ramsar} so
+the distinction stays visible. Two further metrics are implemented
+and selectable per query (Euclidean distance mapped by $1/(1+d)$,
+and inner-product mapped by $(\langle
+\mathbf{a},\mathbf{b}\rangle+1)/2$), though cosine is the default
+used throughout this report.
+
+The current implementation compares in Python across all candidate
+windows: with $L$ lakes, $n$ years, and dimension $d$, the cost is
+$O(L\cdot(n{-}W{+}1)\cdot W\cdot d)$, roughly $829\times6\times5\times768
+\approx 1.9\times10^7$ multiply-accumulates per query --- measured
+at \textbf{141--172\,ms} in Chapter~\ref{chap:ramsar}, comfortably
+interactive but linear in lake count, which motivates the pgvector
+ANN migration under future work.
 
 \section{Step 16: Temporal Profile Generation}
 
-For the query lake and retrieved analogs, historical environmental
-records are assembled into time series.
+For the query lake and its retrieved analogs, the stored band
+statistics are assembled into per-year index series using the
+formulas of Table~\ref{tab:indices}, computed on demand from the
+persisted band means (the single source of truth for measured
+reflectance) rather than stored pre-computed, so a change to an
+index definition takes effect everywhere at once without a database
+migration.
 
-The primary indicators are:
+\section{Step 17: Directional Ecological Forecasting}
+\label{sec:forecast_method}
 
-\begin{itemize}
-    \item NDVI;
-    \item NDWI; and
-    \item NBR.
-\end{itemize}
+The forecasting layer transfers \emph{measured change} from the
+analogs onto the target, presented here in implementation order. The
+most recent completed feature row for the target lake fixes the
+anchor year $t_0$ and anchor values $v_k(t_0)$ for each index $k$;
+forecasts are produced for $t_0+1,t_0+2,t_0+3$ (\code{\_FORECAST\_HORIZON}).
+The trajectory search of Section~\ref{sec:trajectory} then runs with
+an enlarged candidate pool, walked in rank order: a candidate is
+admitted as a \emph{twin} only if it is a different lake than the
+target, has a completed feature row at its matched window end year,
+and has at least one usable year after that, so the five twins that
+emerge are the five best \emph{usable} analogs rather than merely
+the five highest-scoring rows.
 
-The interface can show the indicators independently or as a
-multi-index comparison.
-
-\section{Step 17: Analog-Based Forecasting Concept}
-
-EcoTwin's forecasting design is not based on generating synthetic
-future satellite images. Instead, it uses the observed historical
-trajectory of an analogous ecosystem as empirical evidence.
-
-Let the target indicator be $y_t$ and an analog indicator be
-$a_t$. A simple trajectory-offset formulation is:
+For twin $i$ with matched window ending at year $m_i$, the change
+transferred at offset $h$ is $\delta_{i,k,h} = v_{i,k}(m_i+h) -
+v_{i,k}(m_i)$ --- not the analog's absolute index value, which
+reflects its own climate, geology, and catchment, but the
+\emph{change} it underwent, comparable across lakes in a way
+absolute values are not. Twins receive fixed weights by rank rather
+than weights derived from their similarity scores,
 
 \begin{equation}
-\Delta_t = y_t-a_t
+\omega_1 = 0.28,\quad
+\omega_2 = 0.24,\quad
+\omega_3 = 0.20,\quad
+\omega_4 = 0.16,\quad
+\omega_5 = 0.12
 \end{equation}
 
-The future analog trajectory can then be transferred to the target
-through an estimated historical offset:
+precisely because raw similarity scores compress into a narrow band
+near $1.0$ (Section~\ref{sec:trajectory}), where score-proportional
+weights would be nearly uniform and discard the ranking the search
+worked to establish. Twins do not all have data at every offset, so
+with $\mathcal{A}_{k,h}$ the set of twins with a usable delta for
+index $k$ at offset $h$, weights are renormalised over exactly that
+set,
 
 \begin{equation}
-\hat{y}_{t+h}
+\tilde{\omega}_{i,k,h}
 =
-a_{t+h}
-+
-\widehat{\Delta}
+\frac{\omega_i}{\sum_{j \in \mathcal{A}_{k,h}} \omega_j},
+\qquad i \in \mathcal{A}_{k,h}
 \end{equation}
 
-For multiple analogs, a weighted combination can be used:
+so the denominator is always $1.0$ and a year with only two twins
+does not silently shrink toward ``stable''; the twin count is
+reported separately as confidence. The score for index $k$ at offset
+$h$ is
 
 \begin{equation}
-\hat{y}_{t+h}
+\Sigma_{k,h}
 =
-\sum_{i=1}^{K}
-w_i
-\left(
-a_{i,t+h}+\Delta_i
-\right)
+\sum_{i \in \mathcal{A}_{k,h}}
+\tilde{\omega}_{i,k,h}\,\delta_{i,k,h}
 \end{equation}
 
-with weights related to the similarity scores and normalized so that
+classified against threshold $\tau=0.005$:
 
 \begin{equation}
-\sum_{i=1}^{K}w_i=1.
+D_{k,h} =
+\begin{cases}
+\text{uncertain (?)} & |\mathcal{A}_{k,h}| < 2\\[4pt]
+\text{up } (\uparrow)   & \Sigma_{k,h} > +\tau\\[2pt]
+\text{down } (\downarrow) & \Sigma_{k,h} < -\tau\\[2pt]
+\text{stable } (\rightarrow) & \text{otherwise}
+\end{cases}
 \end{equation}
 
-This formulation keeps the forecast grounded in historically
-observed ecosystem trajectories.
+with \emph{uncertain} checked first and kept distinct from
+\emph{stable}: stable is a positive finding that the twins agree
+little changes, while uncertain admits too few twins had data to
+support any claim, and Chapter~\ref{chap:ramsar} contains real cases
+where this distinction carries the entire meaning of a result. An
+indicative magnitude $\hat{v}_k(t_0+h) = v_k(t_0) + \Sigma_{k,h}$
+accompanies each direction, reported as an expected value rather
+than a calibrated point prediction. Every forecast returns with a
+complete audit report --- anchor values, weight scheme,
+classification rule, and each twin's identity, matched window, and
+weighted contribution --- so any published direction can be
+recomputed by hand from the reported numbers.
 
-\section{Why the Analog Architecture is Explainable}
+Unlike a parametric time-series model, whose prediction runs through
+learned parameters difficult to connect to a particular ecosystem,
+EcoTwin provides an explicit, inspectable chain: Target
+$\rightarrow$ Retrieved Twin $\rightarrow$ Similarity $\rightarrow$
+Historical Trajectory $\rightarrow$ Projected Trajectory. There is
+no learned parameter anywhere in the method above; every quantity is
+either a measured reflectance-derived index or a fixed, disclosed
+constant ($\omega_{1..5}$ and $\tau$), and an interval-based
+uncertainty measure (the spread across twin predictions) was
+considered and rejected in favour of the simpler twin count
+$|\mathcal{A}_{k,h}|$, since a naive dispersion measure over a
+small, unevenly-weighted set --- as when Vembanad's 2027 red-edge
+score was dominated by one twin with an extreme delta
+(Chapter~\ref{chap:ramsar}) --- is not a stable confidence signal,
+while the count drops to zero exactly when a forecast should not be
+trusted and degrades gracefully otherwise.
 
-A parametric time-series model produces a prediction through learned
-parameters that can be difficult to connect to a particular
-ecosystem.
+\subsection{Worked Example: Chilika, NDVI-B7, $h=1$}
 
-EcoTwin instead provides an explicit chain:
+Chapter~\ref{chap:ramsar} reported Chilika's 2026 NDVI-B7 forecast as
+$\uparrow$ with score $+0.0244$ from five twins. Reconstructing it:
+all five twins have a usable year at $h=1$, so no renormalization is
+needed beyond the base weights $(0.28,0.24,0.20,0.16,0.12)$, which
+already sum to 1. Each twin's delta is its measured NDVI-B7 one year
+after its own matched-window end, minus its value at that end year
+--- five independent measurements from five different lakes and
+calendar years, combined only through their rank weight. The result,
+$+0.0244$, exceeds $\tau=0.005$, giving $\uparrow$, and every
+intermediate quantity is recoverable from the audit report returned
+alongside the forecast.
+
+\subsection{Hindcasting Protocol}
+\label{sec:hindcast_protocol}
+
+A rigorous accuracy evaluation requires hindcasting: hide each
+lake's final $h_{max}$ years, run the identical retrieval and
+forecast pipeline using only years before the cutoff, and score the
+forecast against the held-out observations. For cutoff year $t_c \in
+\{2019,\dots,2022\}$, both the query trajectory and every
+candidate's embedding history are restricted to years $\le t_c$;
+the method then runs exactly as deployed, producing
+$\hat{v}_k(t_c+h)$ for $h=1,2,3$, compared against the actual
+recorded $v_k(t_c+h)$ already present in \code{lake\_features}. The
+protocol reports, per index and per horizon (never pooled, since
+scales differ by an order of magnitude or more), both a magnitude
+metric and a \emph{directional hit rate}:
 
 \begin{equation}
-\text{Target}
-\rightarrow
-\text{Retrieved Twin}
-\rightarrow
-\text{Similarity}
-\rightarrow
-\text{Historical Trajectory}
-\rightarrow
-\text{Projected Trajectory}
+MAE_{k,h} = \frac{1}{n}\sum_{i=1}^{n}\left|v_{k,i}(t_c+h) - \hat{v}_{k,i}(t_c+h)\right|
+\end{equation}
+\begin{equation}
+HitRate_{k,h} = \frac{1}{n}\sum_{i=1}^n \mathbb{1}\!\left[\mathrm{sign}(\Sigma) = \mathrm{sign}(\Delta_{actual})\right]
 \end{equation}
 
-This makes it possible to inspect the analogs responsible for a
-forecast and compare their historical behaviour with the target.
+Running this at $t_c=2022$ requires three held-out years
+(2023--2025) plus five years of prior history --- exactly the ten
+years this project has, so a single cutoff gives only one evaluation
+point per lake: too coarse a sample for a defensible aggregate
+accuracy figure. Multiple cutoff years are not yet available because
+the dataset spans only one decade, so this protocol is documented
+here as the immediate next step (Section~\ref{sec:future}) rather
+than executed prematurely on insufficient data.
 
 % ============================================================
 % CHAPTER 4
@@ -1048,11 +1463,25 @@ EcoTwin is implemented as a multi-component system. The offline
 pipeline performs the computationally expensive work, while the
 online application retrieves precomputed data.
 
-\placeholderfigure[0.95\textwidth]{10cm}{
-Recommended figure: EcoTwin end-to-end architecture showing
-HydroLAKES, Google Earth Engine, local raster processing, Prithvi,
-PostgreSQL/PostGIS/pgvector, FastAPI, and React/Leaflet.
-}
+Figure~\ref{fig:pipeline_toolbar} shows the pipeline control strip
+from the deployed application. Each button triggers one of the seven
+offline stages of Figure~\ref{fig:data_fetch_workflow}
+(Section~\ref{sec:data_fetch_workflow}), in the same execution order.
+Exposing each stage as an individually triggerable operation, rather
+than one opaque ``run everything'' action, is what makes the
+pipeline resumable (Step 8, Chapter~\ref{chap:methodology}): a
+failure in one stage does not require re-running the stages before
+it.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.95\textwidth]{images/data_collection_flow.png}
+\caption{The deployed pipeline control strip. Each stage
+(lake sync, imagery fetch, tile merge, embedding generation,
+embedding merge, feature generation, B8 fetch) is independently
+triggerable and independently resumable.}
+\label{fig:pipeline_toolbar}
+\end{figure}
 
 \section{Technology Stack}
 
@@ -1064,218 +1493,265 @@ PostgreSQL/PostGIS/pgvector, FastAPI, and React/Leaflet.
 \toprule
 Layer & Technology & Responsibility \\
 \midrule
-Frontend & React, Vite, TypeScript & Interactive application \\
+Frontend & React 18, Vite, TypeScript & Interactive application \\
 Mapping & Leaflet / React-Leaflet & Spatial visualization \\
-Backend & FastAPI, Python & REST services and orchestration \\
-Database & PostgreSQL & Relational persistence \\
-Spatial database & PostGIS & Polygon and spatial queries \\
+Charts & Recharts & Index trajectory plots \\
+Client state & Zustand, TanStack Query & Local state and server cache \\
+Backend & FastAPI, Python 3.12 & REST services and orchestration \\
+ORM / migrations & SQLAlchemy 2 (async), Alembic & Schema and access \\
+Database & PostgreSQL 16 & Relational persistence \\
+Spatial database & PostGIS 3.4 & Polygon and spatial queries \\
 Vector search & pgvector & Embedding storage and similarity search \\
 Remote sensing & Google Earth Engine & Satellite filtering/compositing \\
-Raster processing & Rasterio / Python & Local GeoTIFF processing \\
-ML inference & Prithvi & Geospatial embeddings \\
-Task queue & Celery / Redis & Asynchronous processing \\
-Monitoring & Flower & Celery task monitoring \\
+Raster processing & Rasterio, NumPy, Shapely & Local GeoTIFF processing \\
+ML inference & Prithvi-EO-1.0-100M, PyTorch & Geospatial embeddings \\
+Background work & FastAPI \code{BackgroundTasks} & Long-running pipelines \\
+Logging & structlog & Structured pipeline logs \\
+Reporting & Jinja2 + WeasyPrint & PDF report generation \\
 Administration & pgAdmin & Database administration \\
 Containerization & Docker Compose & Reproducible local deployment \\
 \bottomrule
 \end{tabularx}
 \end{table}
 
-\section{Offline and Online Separation}
+\section{Component Communication Workflow}
+\label{sec:component_workflow}
 
-The system is divided into two logical paths.
+Figure~\ref{fig:component_workflow} traces how the five principal
+components --- the React/Leaflet frontend, the FastAPI backend, the
+PostgreSQL/PostGIS/pgvector database, Google Earth Engine, and the
+Prithvi inference process --- actually exchange data, distinguishing
+the calls that only ever happen offline (dashed, orange) from the
+calls a live user request makes (solid, blue).
 
-\subsection{Offline Path}
+\begin{figure}[H]
+\centering
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[
+    node distance=2.6cm and 3.0cm,
+    box/.style={
+        rectangle, rounded corners, draw, thick,
+        minimum width=3.4cm, minimum height=1.2cm,
+        align=center, font=\small
+    },
+    ext/.style={box, fill=gray!12},
+    core/.style={box, fill=blue!8},
+    data/.style={box, fill=green!10},
+    online/.style={-Stealth, thick, blue!70!black},
+    offline/.style={-Stealth, thick, dashed, orange!85!black},
+    lbl/.style={font=\scriptsize, align=center, fill=white, inner sep=1pt}
+]
 
-The offline path performs:
+% -- Nodes -------------------------------------------------------
+\node[core] (frontend) {React / Leaflet\\Frontend};
+\node[core, right=of frontend] (api) {FastAPI\\Backend};
+\node[data, right=of api] (db) {PostgreSQL\\PostGIS + pgvector};
+\node[ext, below=of api, yshift=-0.6cm] (gee) {Google Earth\\Engine};
+\node[ext, right=of gee] (prithvi) {Prithvi\\Inference};
 
-\begin{enumerate}
-    \item lake preparation;
-    \item imagery acquisition;
-    \item raster merging;
-    \item spatial-cell extraction;
-    \item embedding generation;
-    \item temporal-feature preparation; and
-    \item vector indexing.
-\end{enumerate}
+% -- Online request path (curved so request/response don't overlap) --
+\draw[online] ([yshift=2mm]frontend.east) -- node[lbl,above]{1. HTTP\\request} ([yshift=2mm]api.west);
+\draw[online] ([yshift=-2mm]api.west) -- node[lbl,below]{4. JSON\\response} ([yshift=-2mm]frontend.east);
+\draw[online] ([yshift=2mm]api.east) -- node[lbl,above]{2. SQL\\query} ([yshift=2mm]db.west);
+\draw[online] ([yshift=-2mm]db.west) -- node[lbl,below]{3. rows /\\vectors} ([yshift=-2mm]api.east);
 
-\subsection{Online Path}
+% -- Offline pipeline path -----------------------------------------
+\draw[offline] (api.south) -- node[lbl,right]{a. imagery\\request} (gee.north);
+\draw[offline] (gee.east) -- node[lbl,above]{b. GeoTIFF\\(local disk)} (prithvi.west);
+\draw[offline] (prithvi.north) -- node[lbl,right]{c. 768-d\\embedding} (db.south);
 
-The online path performs:
+\end{tikzpicture}%
+}
+\caption{Component communication: solid blue is the online request
+path (frontend $\rightarrow$ backend $\rightarrow$ database, serving
+every request from precomputed rows); dashed orange is the offline
+pipeline path (backend $\rightarrow$ Earth Engine $\rightarrow$
+Prithvi $\rightarrow$ database), triggered by
+Figure~\ref{fig:pipeline_toolbar} as \code{BackgroundTasks}.}
+\label{fig:component_workflow}
+\end{figure}
 
-\begin{enumerate}
-    \item lake lookup;
-    \item map rendering;
-    \item similarity query;
-    \item analog profile retrieval;
-    \item temporal-series retrieval; and
-    \item report generation.
-\end{enumerate}
+Neither path bypasses the backend: the frontend has no direct
+connection to the database, Earth Engine, or Prithvi, and the
+offline pipeline has no direct connection to the frontend. Every
+cross-component call passes through FastAPI, enforcing the
+offline/online separation in one place rather than by convention
+across every caller: the offline path (lake preparation, imagery
+acquisition, raster merging, spatial-cell extraction, embedding
+generation, temporal-feature preparation, vector indexing --- the
+seven stages of Figure~\ref{fig:data_fetch_workflow}) is kept apart
+from the online path (lake lookup, map rendering, similarity query,
+analog profile retrieval, temporal-series retrieval, report
+generation), so Earth Engine and the foundation model never run
+during a user request.
+\label{sec:offline_online}
 
-This architecture avoids running Earth Engine or the foundation
-model during every user request.
+\section{PostgreSQL, PostGIS, and pgvector}
 
-\section{PostgreSQL and PostGIS}
-
-PostgreSQL is the central persistent store. PostGIS stores the
-original lake geometry, analysis-cell geometry, and spatial metadata.
-
-Spatial information remains in the database rather than being
-converted into plain latitude/longitude tables. This allows
-intersection, containment, area, and map-query operations to be
-performed directly in the database.
-
-\section{pgvector}
-
-The pgvector extension stores the 768-dimensional Prithvi vectors.
-
-The vector table maintains the association between:
-
-\begin{equation}
-Embedding
-\leftrightarrow
-Subregion
-\leftrightarrow
-Lake
-\leftrightarrow
-Year
-\end{equation}
-
-Cosine-distance/similarity operations can therefore be executed
-directly against the indexed database rather than exporting vectors
-to CSV or recomputing features.
+PostgreSQL is the central persistent store. PostGIS keeps the
+original lake geometry, analysis-cell geometry, and spatial metadata
+in the database itself rather than converted into plain
+latitude/longitude tables, so intersection, containment, area, and
+map-query operations run directly as SQL. The pgvector extension
+stores the 768-dimensional Prithvi vectors alongside this spatial
+data, maintaining the association Embedding
+$\leftrightarrow$ Subregion $\leftrightarrow$ Lake $\leftrightarrow$
+Year so that cosine-distance/similarity operations execute directly
+against the indexed database rather than exporting vectors to CSV or
+recomputing features.
 
 \section{Core Database Entities}
 
-The implementation evolved around entities including:
+The deployed schema, reached after nineteen Alembic migrations,
+consists of the tables in Table~\ref{tab:tables}.
 
-\begin{itemize}
-    \item \code{lakes};
-    \item \code{lake\_tiles};
-    \item \code{lake\_images};
-    \item \code{sub\_regions};
-    \item \code{sub\_region\_features}; and
-    \item embedding/vector records.
-\end{itemize}
+\begin{table}[H]
+\centering
+\caption{Deployed database tables and current row counts.}
+\label{tab:tables}
+\begin{tabularx}{\textwidth}{l r X}
+\toprule
+Table & Rows & Role \\
+\midrule
+\code{lakes} & 11{,}130 &
+HydroLAKES inventory with PostGIS geometry; \code{is\_active}
+marks the 829-lake processing cohort \\
+\code{lake\_tiles} & 19{,}046 &
+Earth Engine export tiles per lake-year \\
+\code{lake\_images} & 8{,}227 &
+Merged lake-year mosaics with path and status \\
+\code{sub\_regions} & 233{,}002 &
+1 km analysis cells with geometry and coverage \\
+\code{regions} & 8{,}227 &
+Pooled lake-year \code{vector(768)} embeddings \\
+\code{lake\_features} & 8{,}227 &
+Band statistics, indices, and texture per lake-year \\
+\code{india\_states} & 36 &
+State boundaries for spatial attribution \\
+\code{reports} & --- &
+Generated PDF report records \\
+\bottomrule
+\end{tabularx}
+\end{table}
 
-\subsection{Lakes}
+Despite its historical name (a legacy of the original design,
+preserved since renaming would invalidate existing embeddings for no
+functional gain), \code{regions} stores exactly one pooled
+768-dimensional embedding per lake-year, enforced by a unique
+constraint on \code{(lake\_id, year)} --- the \code{vector(768)}
+column similarity search operates on. \code{lake\_features}, the
+widest table in the schema, is the source of truth for measured
+reflectance: per-band statistics for \code{B2--B7} and \code{B8},
+pixel and coverage counts, cloud percentage, and GLCM texture, from
+which the forecasting layer reads only the band means and derives
+indices on demand. Keeping embeddings and measured reflectance in
+separate tables is what makes the decoder-free forecast possible:
+the embedding space answers \emph{which lakes are analogs}, and the
+feature table independently answers \emph{what measurably happened
+to them}, so the forecast never depends on inverting the foundation
+model.
 
-Stores the master ecosystem identity, metadata, and PostGIS
-geometry.
+\section{Backend and Frontend}
 
-\subsection{Lake Images}
+The FastAPI backend provides services for lake metadata lookup,
+nearest lake/grid-cell lookup, analog similarity search, temporal
+feature retrieval, forecast retrieval, report generation, and
+health/system status, separating cheap data retrieval from heavy
+batch processing so long operations are handled asynchronously.
 
-Stores the merged or processed imagery associated with a lake-year,
-including local path and processing status.
+The frontend is implemented using React, Vite, and TypeScript, with
+the map on Leaflet/React-Leaflet. A user selects or searches for a
+lake, views its geographic boundary and metadata, requests analogous
+ecosystems, visualizes their locations and similarity scores, and
+inspects their historical profiles alongside the forecast. Displayed
+lake boundaries and analog markers are drawn from the same PostGIS
+geometry used for the analysis itself, rather than a separately
+derived copy, which avoids the common failure mode where the
+analytical result and the displayed map disagree due to different
+coordinate transformations or numbering systems.
 
-\subsection{Lake Tiles}
+\section{Asynchronous Processing and Progress Tracking}
 
-Stores the intermediate imagery tiles generated for a lake-year,
-including tile index, geometry, bounding box, status, and image path.
+Imagery download, raster merging, feature extraction, and model
+inference all take far longer than an acceptable HTTP request, so
+each is launched through FastAPI's \code{BackgroundTasks} and
+returns immediately. A distributed task queue was considered and not
+adopted: the pipelines are operator-run batch jobs on a single
+machine, and the durable state a queue would provide already exists
+in the database, where every tile, image, cell, and feature row
+carries its own status. Progress is instead exposed through
+module-level state guarded by a \code{threading.Lock} (processed,
+skipped, and failed counts, elapsed time, throughput, projected
+completion), with each pipeline's block independent so concurrent
+runs report separately; the frontend polls the corresponding
+\code{/status} endpoint. Long jobs are also cancellable: a flag
+checked between work units means a cancelled run stops after the
+current lake-year rather than mid-write, and completed work stays
+committed.
 
-\subsection{Sub-Regions}
+\section{Server-Side B8 Acquisition}
+\label{sec:b8}
 
-Stores the smaller analysis cells generated from the merged lake
-image, including geometry and coverage information.
+Unlike \code{B2--B7}, which must be downloaded as pixels for Prithvi
+inference, B8 is needed only as summary statistics, so moving pixels
+at all would be wasted work. The B8 pipeline instead performs the
+reduction entirely on Earth Engine's servers using
+\code{Image.reduceRegions()}: lake polygons are batched fifteen at a
+time into a \code{FeatureCollection} and reduced against a single
+annual composite (reused across every lake in that year) with a
+combined mean/stdDev/median/minMax reducer, so only the resulting
+numbers are transferred and no imagery is ever downloaded. Transient
+failures are retried three times with exponential backoff, and a
+separate \code{b8\_status} column tracks this pipeline independently
+so a B8 failure never marks the underlying feature row as failed ---
+completed for all \textbf{8{,}227} lake-years in the cohort.
 
-\subsection{Sub-Region Features}
+\begin{figure}[H]
+\centering
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[
+    node distance=1.0cm and 1.5cm,
+    stg/.style={rectangle, rounded corners, draw, thick, minimum height=1.15cm, align=center, font=\small},
+    flow/.style={-Stealth, thick, blue!60!black}
+]
 
-Stores model-derived features and embeddings associated with
-individual spatial cells.
+\node[stg, fill=gray!12, minimum width=2.9cm] (poly) {15 lake polygons\\(same year)\\batched};
+\node[stg, fill=cyan!10, minimum width=3.1cm, right=of poly] (fc) {\code{FeatureCollection}\\vs.\ one annual\\B8 composite};
+\node[stg, fill=violet!14, minimum width=3.3cm, right=of fc] (reduce) {\code{reduceRegions()}\\\emph{runs on Earth Engine} ---\\no raster downloaded};
+\node[stg, fill=orange!12, minimum width=2.9cm, right=of reduce] (cols) {\code{lake\_features}\\.b8\_mean/std/\\median columns};
 
-\section{Backend Services}
+\draw[flow] (poly) -- (fc);
+\draw[flow] (fc) -- (reduce);
+\draw[flow] (reduce) -- node[above,font=\scriptsize]{numbers only} node[below,font=\scriptsize]{(getInfo)} (cols);
 
-The FastAPI backend provides services for:
+\end{tikzpicture}%
+}
+\caption{Stage 7 (Fetch B8): the only stage that never produces a
+local GeoTIFF --- the zonal reduction runs on Earth Engine's servers
+against 15 batched polygons, and only reduced values cross the
+network into \code{lake\_features}.}
+\label{fig:stage7_b8}
+\end{figure}
 
-\begin{itemize}
-    \item lake metadata lookup;
-    \item nearest lake/grid-cell lookup;
-    \item analog similarity search;
-    \item temporal feature retrieval;
-    \item forecast retrieval;
-    \item report generation; and
-    \item health/system status.
-\end{itemize}
+\section{Automated PDF Report Generation}
 
-The API separates data retrieval from heavy batch processing. Long
-operations are handled asynchronously where appropriate.
-
-\section{Frontend}
-
-The frontend is implemented using React, Vite, and TypeScript.
-The map uses Leaflet/React-Leaflet.
-
-The main user interaction is:
-
-\begin{enumerate}
-    \item select or search for a lake;
-    \item display its geographic boundary;
-    \item inspect lake metadata;
-    \item request analogous ecosystems;
-    \item visualize the analog locations;
-    \item inspect similarity scores;
-    \item inspect analog profiles; and
-    \item compare temporal indicators and forecast information.
-\end{enumerate}
-
-\section{Map Rendering and Geometry Provenance}
-
-An important implementation requirement is that displayed lake
-boundaries must come from the same PostGIS geometry used for the
-analysis. Analog markers are derived from their stored geographic
-coordinates and lake identities.
-
-This prevents a common failure mode in which the analytical result
-and the displayed map use different coordinate transformations or
-different numbering systems.
-
-\section{Asynchronous Processing}
-
-Celery and Redis are used for background processing. This is
-important because imagery downloads, raster merging, and model
-inference can take substantially longer than a normal HTTP request.
-
-Flower is used to inspect worker activity and task progress during
-development.
-
-\section{Dockerized Development Environment}
-
-The local development environment was organized as a multi-service
-Docker Compose deployment containing services such as:
-
-\begin{itemize}
-    \item PostgreSQL;
-    \item Redis;
-    \item FastAPI backend;
-    \item Celery worker;
-    \item pipeline worker;
-    \item Flower; and
-    \item pgAdmin.
-\end{itemize}
-
-The containerized design makes service dependencies explicit and
-allows the same architecture to be reproduced on another machine.
+The application generates a per-lake PDF report through a Jinja2
+template rendered to PDF by WeasyPrint. The report assembles lake
+metadata, a static map rendering of the lake and its analogs,
+historical index trajectories, the ranked analog table with
+similarity scores and matched windows, and the directional forecast
+table with its audit trail. This provides an offline deliverable for
+users who need a citable artifact rather than an interactive
+session.
 
 \section{Configuration Management}
 
-The processing pipeline uses environment/configuration values for
-items such as:
-
-\begin{itemize}
-    \item Earth Engine project/authentication;
-    \item date ranges;
-    \item cloud thresholds;
-    \item imagery buffer distance;
-    \item imagery tile size;
-    \item analysis-cell size;
-    \item coverage threshold;
-    \item local storage paths;
-    \item database credentials; and
-    \item worker/batch settings.
-\end{itemize}
-
-This prevents experiment-specific values from being hard-coded
-throughout the processing code.
+The processing pipeline reads experiment-specific values --- Earth
+Engine project/authentication, date ranges, cloud thresholds,
+imagery buffer distance and tile size, analysis-cell size, coverage
+threshold, local storage paths, database credentials, and
+worker/batch settings --- from environment configuration rather than
+hard-coding them throughout the processing code.
 
 % ============================================================
 % CHAPTER 5
@@ -1284,231 +1760,778 @@ throughout the processing code.
 \chapter{Experimental Results and Engineering Evaluation}
 \label{chap:results}
 
-\section{Current Processing Cohort}
+\section{Deployed Processing Cohort}
 
-During development, a processing cohort of approximately 829 lakes
-was targeted for multi-year processing. The wider HydroLAKES-derived
-Indian inventory is substantially larger, so the 829-lake cohort
-represents the computationally processed subset rather than the
-entire source inventory.
+The HydroLAKES-derived inventory holds \textbf{11{,}130} Indian
+lakes. Of these, \textbf{829} are flagged \code{is\_active} and
+constitute the fully processed cohort; the remainder are retained as
+inventory and map context but were not put through the expensive
+imagery and embedding stages. Selection favoured lakes large enough
+to yield meaningful multi-cell coverage at 10 m resolution, with a
+minimum area of \SI{2}{\kilo\meter\squared}.
 
 \begin{table}[H]
 \centering
-\caption{Current EcoTwin processing configuration.}
+\caption{Deployed EcoTwin processing configuration.}
 \label{tab:current_config}
 \begin{tabular}{ll}
 \toprule
-Parameter & Current configuration \\
+Parameter & Deployed value \\
 \midrule
 Lake source & HydroLAKES \\
-Target processing cohort & $\sim$829 lakes \\
-Imagery window & 2016--2025 attempted \\
+Total inventory & 11{,}130 lakes \\
+Active processing cohort & 829 lakes, 26 states \\
+Cohort area range & 2.00 -- 843.22 \si{\kilo\meter\squared} (mean 19.06) \\
+Cohort elevation range & $-6$ -- 4{,}985 m \\
+Imagery window & 2016--2025 (10 years) \\
 Primary Sentinel collection & S2 SR Harmonized \\
 Fallback collection & S2 Level-1C \\
-Imagery buffer & 1200 m \\
-Imagery tile size & approximately 8500 m \\
-Analysis cell & approximately 1 km $\times$ 1 km \\
-Coverage threshold & approximately 15\% \\
-Embedding model & Prithvi \\
+Scene cloud-cover limit & 20\% \\
+Composite method & Annual median \\
+Imagery buffer & 1{,}200 m \\
+Imagery tile size & 8{,}500 m \\
+Analysis cell & 1{,}000 m $\times$ 1{,}000 m \\
+Coverage threshold & 15\% \\
+Spatial resolution & 10 m \\
+Embedding model & Prithvi-EO-1.0-100M \\
 Embedding dimension & 768 \\
-Input bands & B2--B7 \\
-Similarity metric & Cosine similarity \\
+Input bands & B2--B7 (6 bands) \\
+Auxiliary band & B8 (statistics only) \\
+Pooling & Coverage-weighted mean, L2-normalised \\
+Similarity metric & Cosine over 5-year trajectories \\
+Forecast horizon & 3 years \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-\section{Temporal Availability Observations}
+\section{Pipeline Completion Statistics}
 
-The Earth Engine collection checks demonstrated that early years
-have substantially less usable surface-reflectance coverage than
-recent years. In particular, the 2016--2017 period required special
-handling, while later years provided much denser observation sets.
-
-This is an important distinction between the \emph{requested}
-temporal window and the \emph{available valid observations}. EcoTwin
-therefore stores year-level processing status rather than assuming
-that every lake has a complete ten-year sequence.
-
-\section{Embedding Pipeline Performance}
-
-The embedding stage was implemented as batch inference. During
-development, inference logs showed CPU execution with a batch size
-of eight.
-
-The pipeline is designed so that:
-
-\begin{equation}
-N_{embeddings}
-=
-N_{valid\ cells}
-\end{equation}
-
-rather than
-
-\begin{equation}
-N_{embeddings}
-=
-N_{lakes}.
-\end{equation}
-
-This distinction is fundamental to EcoTwin: a large lake can
-generate several spatial embeddings, and the vector index therefore
-contains spatially localized ecosystem representations.
-
-\section{Similarity Search Demonstration}
-
-A representative similarity-analysis run used a large candidate
-collection and returned a ranked set of analogs. In a previously
-observed application run, approximately 12,458 candidate lake/region
-records were compared, the interface returned the top 10 analogs,
-and the best displayed similarity was approximately 0.942.
-
-These values should be treated as \emph{current demonstration
-results} rather than final benchmark claims until the final
-production database is frozen and the experiment is repeated under
-a documented configuration.
+Table~\ref{tab:final_stats} reports the state of the production
+database. Every stage ran to completion with no residual failures.
 
 \begin{table}[H]
 \centering
-\caption{Representative similarity-search demonstration.}
-\label{tab:similarity_demo}
-\begin{tabular}{ll}
+\caption{Final production statistics, queried directly from the
+deployed database.}
+\label{tab:final_stats}
+\begin{tabular}{lrl}
 \toprule
-Metric & Observed value \\
+Metric & Value & Status \\
 \midrule
-Candidate records & $\sim$12,458 \\
-Returned analogs & 10 \\
-Best displayed similarity & $\sim$0.942 \\
-Similarity metric & Cosine similarity \\
+Source lakes (HydroLAKES) & 11{,}130 & --- \\
+Active processing cohort & 829 & --- \\
+States covered & 26 & --- \\
+Lake-years attempted & 8{,}290 & --- \\
+Lake-years completed & 8{,}227 & 99.2\% \\
+Imagery tiles generated & 19{,}046 & 100\% completed \\
+Merged lake images & 8{,}227 & 100\% completed \\
+Analysis cells generated & 233{,}002 & 100\% completed \\
+Mean cells per lake-year & 28.3 & --- \\
+Embeddings indexed & 8{,}227 & 100\% non-null \\
+Embedding failures & 0 & --- \\
+Feature records & 8{,}227 & 100\% completed \\
+B8 statistics & 8{,}227 & 100\% completed \\
+Mean lake coverage per image & 35.6\% & --- \\
+Mean valid pixels per lake-year & 205{,}463 & --- \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-\section{Interpretation of Similarity Scores}
+The \textbf{mean lake coverage of 35.6\%} follows directly from the
+1200\,m buffer and the design decision that an ecosystem
+representation should include shoreline and surrounding landscape,
+not water alone --- a merged lake image is expected to be roughly
+one-third water. The \textbf{zero embedding failures} across 233,002
+cell inferences reflects the pre-insertion validation gate
+(Section~\ref{sec:pooling}) combined with removal of an earlier
+stub-embedding fallback that had silently substituted a random
+vector on inference failure; that fallback was deleted, so inference
+failure now raises and no invalid vector reaches the database.
 
-A similarity score indicates closeness in the learned representation
-space. It does not directly imply identical ecological processes.
+Early years have substantially less usable surface-reflectance
+coverage than recent ones (2016--2017 required special handling),
+which is why EcoTwin stores year-level processing status rather than
+assuming every lake has a complete ten-year sequence. The embedding
+pipeline (CPU batch size 8) is designed so the number of embeddings
+equals the number of valid analysis cells rather than the number of
+lakes, so a large lake generates several spatial embeddings and the
+vector index contains spatially localized representations rather
+than one vector per lake.
 
-A high score can therefore be interpreted as:
+\section{Similarity Search Performance}
 
-\begin{quote}
-The target and analog contain similar spatial-spectral information
-under the selected satellite bands, preprocessing procedure, and
-Prithvi representation.
-\end{quote}
+Table~\ref{tab:similarity_perf} reports measured search performance
+over the five Ramsar queries of Chapter~\ref{chap:ramsar}, each
+executed against the full deployed index.
 
-Ecological interpretation requires additional evidence from lake
-metadata, spatial maps, and temporal environmental indicators.
+\begin{table}[H]
+\centering
+\caption{Measured trajectory-similarity search performance.}
+\label{tab:similarity_perf}
+\begin{tabular}{lrrr}
+\toprule
+Query lake & Candidates & Latency (ms) & Best raw cosine \\
+\midrule
+Chilika    & 828 & 146 & 0.99691 \\
+Wular      & 828 & 141 & 0.99722 \\
+Loktak     & 828 & 148 & 0.99868 \\
+Tso Morari & 828 & 160 & 0.99720 \\
+Vembanad   & 828 & 172 & 0.99830 \\
+\midrule
+Mean       & 828 & 153 & 0.99766 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Each query evaluates roughly 4{,}900 candidate windows --- 828
+lakes with up to six windows each --- at 768 dimensions, and
+completes in about \SI{153}{\milli\second}. This is comfortably
+interactive, and the index is fully scanned rather than
+approximated, so the returned ranking is exact.
+
+\section{The Score Compression Problem}
+
+Measured raw cosine scores across all five queries fall between
+\textbf{0.9969} and \textbf{0.9987}, with the tenth-ranked analog
+typically within \textbf{0.005} of the first --- expected given that
+every vector shares one encoder and describes the same general
+scene type (Section~\ref{sec:trajectory}), so \emph{the absolute
+score is close to uninformative; only the ordering carries signal}.
+A similarity score therefore indicates closeness in the learned
+representation space, not identical ecological processes; ecological
+interpretation requires additional evidence from lake metadata,
+spatial maps, and temporal environmental indicators (Chapter~\ref{chap:ramsar}).
+A meaningful absolute scale would require calibration against
+labelled ecosystem pairs (Section~\ref{sec:future}).
 
 \section{Temporal Profile Results}
 
-The temporal layer provides a second axis of validation. Two lakes
-can be spatially similar but exhibit different historical
-trajectories, while two lakes with different geographic locations
-may show similar seasonal behaviour.
-
-EcoTwin therefore presents:
-
-\begin{itemize}
-    \item NDVI trajectories;
-    \item NDWI trajectories;
-    \item NBR trajectories;
-    \item observation availability;
-    \item yearly summaries; and
-    \item comparison against retrieved analogs.
-\end{itemize}
+The temporal layer provides a second, independent axis of
+validation alongside spatial similarity: EcoTwin presents, for the
+query lake and its analogs, the full ten-year series of all five
+implemented indices (Table~\ref{tab:indices}), observation
+availability, and the directional forecast with its contributing
+twins. Its value is demonstrated concretely by Wular Lake in
+Chapter~\ref{chap:ramsar}, whose geographically unrelated top
+analogs nonetheless share its independently measured eutrophication
+trend.
 
 \section{Processing Reliability}
 
-The system was intentionally designed to tolerate partial failure.
-
-A lake-year can be in states such as:
-
-\begin{itemize}
-    \item pending;
-    \item processing;
-    \item completed;
-    \item failed; or
-    \item skipped because output already exists.
-\end{itemize}
-
-This makes large multi-year extraction jobs restartable instead of
-requiring a complete restart after a single failed Earth Engine
-request.
+The system was intentionally designed to tolerate partial failure. A
+lake-year can be pending, processing, completed, failed, or skipped
+because its output already exists, which makes large multi-year
+extraction jobs restartable instead of requiring a complete restart
+after a single failed Earth Engine request.
 
 \section{Engineering Problems Encountered}
 
-\subsection{Earth Engine Memory Limits}
-
-Large requests sometimes produced Earth Engine memory-limit errors.
-The solution was to reduce the size of each export region and to
-move part of the processing to local raster operations.
-
-\subsection{Earth Engine Concurrency Limits}
-
-Parallel workers caused HTTP 429 errors when too many requests were
-issued simultaneously. Connection-pool saturation was also observed.
-
-The pipeline was consequently changed toward smaller controlled
-worker counts, resumable jobs, and local reuse of already-generated
-imagery.
-
-\subsection{Historical Band Differences}
-
-The early Sentinel-2 Level-1C fallback exposed a different set of
-quality bands from assumptions made for other collections. For
-example, requests that selected \code{MSK\_CLASSI\_CIRRUS},
+Several recurring problems shaped the implementation. Large Earth
+Engine requests sometimes produced memory-limit errors, solved by
+reducing the size of each export region and moving part of the
+processing to local raster operations; parallel workers separately
+caused HTTP 429 and connection-pool saturation errors when too many
+requests were issued simultaneously, which pushed the pipeline
+toward smaller controlled worker counts, resumable jobs, and local
+reuse of already-generated imagery. The early Sentinel-2 Level-1C
+fallback exposed a different set of quality bands than other
+collections --- requests that selected \code{MSK\_CLASSI\_CIRRUS},
 \code{MSK\_CLASSI\_OPAQUE}, or \code{QA60} could fail depending on
-the actual image schema.
-
-This led to collection-aware preprocessing rather than a single
-hard-coded cloud-mask implementation.
-
-\subsection{Large Raster Storage}
-
-Merged rasters can become much larger than individual source tiles.
-Compression, floating-point type control, tiled GeoTIFF writing,
-and local reuse were therefore important.
-
-\subsection{Disk Constraints}
-
-During development, the local root filesystem reached 100\%
-utilization, causing raster and Docker operations to fail with
-``No space left on device''. This demonstrated that the data
-pipeline must account for intermediate storage, not only final
-dataset size.
-
-\subsection{Network and Authentication Constraints}
-
-Earth Engine authentication and access depend on external network
-services. Authentication failures and inability to reach
-OAuth endpoints temporarily prevented pipeline execution.
-
-The implementation therefore separates authentication from
-per-lake processing and records failures instead of silently
-producing incomplete datasets.
-
-\section{Data Migration Between Team Members}
+the actual image schema --- which led to collection-aware
+preprocessing rather than a single hard-coded cloud-mask
+implementation. Merged rasters can also become much larger than
+individual source tiles, making compression, floating-point type
+control, tiled GeoTIFF writing, and local reuse important; at one
+point during development the local root filesystem reached 100\%
+utilization, causing raster operations to fail with ``No space left
+on device'' and demonstrating that the pipeline must account for
+intermediate storage, not only final dataset size. Finally, Earth
+Engine authentication and access depend on external network
+services, and authentication failures or unreachable OAuth endpoints
+temporarily prevented pipeline execution --- so the implementation
+separates authentication from per-lake processing and records
+failures instead of silently producing incomplete datasets.
 
 Because the project was developed by multiple team members, a
-database consolidation procedure was designed.
+database consolidation procedure was also designed: each developer
+creates a PostgreSQL custom-format dump, which is restored into a
+temporary database, validated through a Python ETL process, and then
+merged into the production database. The procedure preserves PostGIS
+geometries, pgvector embeddings, indexes, constraints, and
+PostgreSQL data types, which is safer than CSV-based migration
+because CSV does not naturally preserve PostGIS geometry and vector
+types.
 
-Each developer can create a PostgreSQL custom-format dump. The dump
-is restored into a temporary database, validated through a Python
-ETL process, and then merged into the production database.
+% ============================================================
+% CHAPTER: RAMSAR CASE STUDIES
+% ============================================================
 
-The procedure preserves:
+\chapter{Applied Analysis: Five Ramsar Wetlands}
+\label{chap:ramsar}
 
-\begin{itemize}
-    \item PostGIS geometries;
-    \item pgvector embeddings;
-    \item indexes;
-    \item constraints; and
-    \item PostgreSQL data types.
-\end{itemize}
+\section{Purpose and Site Selection}
 
-This approach is safer than CSV-based migration because CSV does not
-naturally preserve PostGIS geometry and vector types.
+This chapter runs the system end to end on five wetlands and reports
+what came back, including inconclusive results. Ramsar sites are
+ecologically significant and comparatively well-documented, so an
+independent account of site condition exists against which EcoTwin's
+purely satellite-derived output can be sanity-checked. Five sites
+with complete ten-year records were selected, spanning a deliberately
+wide range of climate, altitude, and wetland type.
+
+\begin{table}[H]
+\centering
+\caption{The five Ramsar sites analysed. All five have complete
+2016--2025 embedding and feature coverage.}
+\label{tab:ramsar_sites}
+\begin{tabularx}{\textwidth}{l r l r r X}
+\toprule
+Site & Lake ID & State & Area & Elev. & Type \\
+\midrule
+Chilika    & 1506  & Odisha        & 843.22 & 1    & Brackish coastal lagoon \\
+Tso Morari & 1413  & Ladakh        & 141.25 & 4522 & High-altitude cold desert \\
+Loktak     & 15510 & Manipur       & 58.30  & 768  & Freshwater, floating \emph{phumdi} \\
+Wular      & 14989 & J\&K          & 41.36  & 1574 & Himalayan floodplain \\
+Vembanad   & 15829 & Kerala        & 10.14  & 0    & Tropical backwater estuary \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+The spread --- sea level to \SI{4522}{\meter}, tropical estuary to
+Trans-Himalayan cold desert, two orders of magnitude in area --- is
+deliberate: a system that only worked on lakes resembling one another
+would be exposed by it.
+
+Every site was analysed under an identical protocol: a five-year
+query trajectory (2021--2025), a sliding-window search over all 828
+other lakes, selection of the top five usable twins, delta
+extraction, fixed rank weights with per-year renormalization, and
+classification at $\tau=0.005$ (Chapter~\ref{chap:methodology}), with
+anchor year 2025 and forecasts covering 2026--2028.
+
+\section{Chilika Lagoon, Odisha}
+
+Chilika is Asia's largest brackish-water lagoon and the largest lake
+in the cohort (\SI{843}{\kilo\meter\squared}), separated from the
+Bay of Bengal by a barrier spit.
+
+\subsection{Retrieved Analogs}
+
+\begin{table}[H]
+\centering
+\caption{Chilika --- top five analogs (828 candidates, 146 ms).}
+\label{tab:chilika_analogs}
+\begin{tabularx}{\textwidth}{r X l r r l}
+\toprule
+\# & Lake & State & Area & Raw cos. & Window \\
+\midrule
+1 & 15704 & Andhra Pradesh & 12.28  & 0.99691 & 2017--2021 \\
+2 & Govind Ballabh Pant & Uttar Pradesh & 398.80 & 0.99646 & 2021--2025 \\
+3 & 177805 & Gujarat & 6.90 & 0.99554 & 2019--2023 \\
+4 & 15714 & Telangana & 27.56 & 0.99550 & 2018--2022 \\
+5 & 1509 & Telangana & 335.78 & 0.99536 & 2020--2024 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Three of the five matched windows are \emph{time-shifted}: the top
+analog matched on 2017--2021, so its 2022--2024 behaviour is
+already-observed evidence about a trajectory Chilika is only now
+traversing (Section~\ref{sec:trajectory}).
+
+\subsection{Measured History}
+
+\begin{table}[H]
+\centering
+\caption{Chilika --- measured index history, 2016--2025.}
+\label{tab:chilika_hist}
+\begin{tabular}{lrrrrrr}
+\toprule
+Index & 2016 & 2018 & 2020 & 2022 & 2024 & 2025 \\
+\midrule
+NDCI            & 0.0360 & 0.0323 & 0.0463 & 0.0518 & 0.0527 & 0.0415 \\
+NDVI-B7         & $-$0.0450 & $-$0.1469 & $-$0.0865 & $-$0.0686 & $-$0.0491 & $-$0.0806 \\
+NDWI            & 0.0911 & 0.2772 & 0.2169 & 0.1715 & 0.1578 & 0.1985 \\
+Turbidity       & $-$0.0463 & $-$0.1359 & $-$0.1328 & $-$0.1041 & $-$0.1095 & $-$0.1198 \\
+Red-edge slope  & $-$2.3037 & $-$2.9020 & $-$2.5017 & $-$2.7318 & $-$2.2062 & $-$2.3865 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The persistently negative NDVI-B7 and positive NDWI are the expected
+signature of a large, genuinely open water body.
+
+\subsection{Forecast}
+
+\begin{table}[H]
+\centering
+\caption{Chilika --- directional forecast 2026--2028. Parenthesised
+values are weighted scores; $n$ is contributing twins.}
+\label{tab:chilika_fc}
+\begin{tabular}{lrlll}
+\toprule
+Index & 2025 & 2026 & 2027 & 2028 \\
+\midrule
+NDCI & 0.0415 & $\rightarrow$ ($+$0.0029, $n$=5) & $\rightarrow$ ($+$0.0008, $n$=4) & $\uparrow$ ($+$0.0391, $n$=3) \\
+NDVI-B7 & $-$0.0806 & $\uparrow$ ($+$0.0244, $n$=5) & $\uparrow$ ($+$0.0406, $n$=4) & $\uparrow$ ($+$0.0669, $n$=3) \\
+NDWI & 0.1985 & $\downarrow$ ($-$0.0205, $n$=5) & $\downarrow$ ($-$0.0576, $n$=4) & $\downarrow$ ($-$0.0950, $n$=3) \\
+Turbidity & $-$0.1198 & $\rightarrow$ ($-$0.0032, $n$=5) & $\uparrow$ ($+$0.0219, $n$=4) & $\uparrow$ ($+$0.0333, $n$=3) \\
+Red-edge & $-$2.3865 & $\uparrow$ ($+$0.2800, $n$=5) & $\uparrow$ ($+$0.3180, $n$=4) & $\uparrow$ ($+$0.2312, $n$=3) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Interpretation}
+
+The forecast is internally coherent: NDVI-B7 rises while NDWI falls
+by a comparable magnitude every year --- expected, since both share
+B7, so vegetation encroaching on open water must raise one and lower
+the other. Rising red-edge slope and turbidity from 2027 reinforce
+the same reading: \textbf{gradual vegetative encroachment and
+reduction of open water}, with the declining twin count (5, 4, 3)
+signalling that 2028 should be read more cautiously than 2026.
+
+\section{Wular Lake, Jammu \& Kashmir}
+
+Wular is one of Asia's largest freshwater lakes, fed by the Jhelum
+in the Kashmir Valley, and among the most-documented degrading
+wetlands in India (siltation, shrinkage, weed proliferation).
+
+\subsection{Retrieved Analogs}
+
+\begin{table}[H]
+\centering
+\caption{Wular --- top five analogs (828 candidates, 141 ms).}
+\label{tab:wular_analogs}
+\begin{tabularx}{\textwidth}{r X l r r l}
+\toprule
+\# & Lake & State & Area & Raw cos. & Window \\
+\midrule
+1 & 177198 & Assam & 2.95 & 0.99722 & 2021--2025 \\
+2 & 177700 & West Bengal & 2.64 & 0.99676 & 2021--2025 \\
+3 & 174785 & Jammu \& Kashmir & 2.05 & 0.99653 & 2021--2025 \\
+4 & 176918 & Assam & 2.26 & 0.99595 & 2021--2025 \\
+5 & 177648 & West Bengal & 4.75 & 0.99582 & 2021--2025 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+The analogs are small floodplain water bodies in Assam and West
+Bengal --- utterly unlike Wular in size, altitude, and climate, but
+sharing a \emph{spectral trajectory} of shallow, vegetation-choked
+water. The system matches ecological condition, not geography, as
+designed.
+
+\subsection{Measured History --- The Clearest Signal in the Study}
+
+\begin{table}[H]
+\centering
+\caption{Wular --- measured index history, 2016--2025.}
+\label{tab:wular_hist}
+\begin{tabular}{lrrrrrr}
+\toprule
+Index & 2016 & 2018 & 2020 & 2022 & 2024 & 2025 \\
+\midrule
+NDCI            & 0.0372 & 0.1469 & 0.1866 & 0.2099 & 0.1769 & 0.2101 \\
+NDVI-B7         & 0.0621 & 0.1871 & 0.3419 & 0.3077 & 0.2662 & 0.2963 \\
+NDWI            & $-$0.0198 & $-$0.0927 & $-$0.2224 & $-$0.1943 & $-$0.1766 & $-$0.1878 \\
+Turbidity       & $-$0.0424 & $-$0.0961 & $-$0.1294 & $-$0.1206 & $-$0.0940 & $-$0.1149 \\
+Red-edge slope  & 0.8124 & 1.0597 & 4.1133 & 2.7214 & 2.6702 & 2.6200 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+This is the most pronounced trend recovered anywhere in the study.
+Over ten years NDCI rises \textbf{5.6-fold} (0.037 $\to$ 0.210) and
+NDVI-B7 rises \textbf{4.8-fold} (0.062 $\to$ 0.296), while NDWI falls
+to $-0.188$ and the red-edge slope more than triples --- consistent
+across all ten annual composites, and unambiguous:
+\textbf{sustained conversion of open water to vegetated surface,
+with rising chlorophyll}. This is the closest thing to external
+validation the project obtained: EcoTwin, given no information
+beyond Sentinel-2 reflectance, independently recovered the
+degradation trajectory the lake is documented to be undergoing.
+
+\subsection{Forecast}
+
+\begin{table}[H]
+\centering
+\caption{Wular --- directional forecast 2026--2028.}
+\label{tab:wular_fc}
+\begin{tabular}{lrlll}
+\toprule
+Index & 2025 & 2026 & 2027 & 2028 \\
+\midrule
+NDCI & 0.2101 & $\uparrow$ ($+$0.0182, $n$=5) & $\uparrow$ ($+$0.0147, $n$=4) & $\uparrow$ ($+$0.0087, $n$=3) \\
+NDVI-B7 & 0.2963 & $\uparrow$ ($+$0.0337, $n$=5) & $\uparrow$ ($+$0.0168, $n$=4) & $\downarrow$ ($-$0.0105, $n$=3) \\
+NDWI & $-$0.1878 & $\downarrow$ ($-$0.0298, $n$=5) & $\downarrow$ ($-$0.0119, $n$=4) & $\downarrow$ ($-$0.0142, $n$=3) \\
+Turbidity & $-$0.1149 & $\downarrow$ ($-$0.0063, $n$=5) & $\downarrow$ ($-$0.0064, $n$=4) & $\uparrow$ ($+$0.0261, $n$=3) \\
+Red-edge & 2.6200 & $\uparrow$ ($+$0.6184, $n$=5) & $\downarrow$ ($-$0.0429, $n$=4) & $\downarrow$ ($-$0.0244, $n$=3) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Interpretation}
+
+The forecast projects \textbf{continued eutrophication}: NDCI rises
+and NDWI falls in all three years, with NDCI increments shrinking
+year on year ($+$0.018, $+$0.015, $+$0.009) as an already-degraded
+system approaches saturation. The NDVI-B7 reversal in 2028 is worth
+flagging: it rests on three twins, its magnitude is barely twice the
+classification threshold, and it contradicts both the ten-year trend
+and 2028's NDCI direction --- the twin count is what lets a reader
+see this cell is weak.
+
+\section{Loktak Lake, Manipur}
+
+Loktak is the largest freshwater lake in northeast India, unique for
+its \emph{phumdi} --- floating mats of vegetation and organic matter
+supporting the world's only floating national park --- making its
+surface a natural stress test for an index set built on
+water/vegetation contrast.
+
+\subsection{Retrieved Analogs}
+
+\begin{table}[H]
+\centering
+\caption{Loktak --- top five analogs (828 candidates, 148 ms).}
+\label{tab:loktak_analogs}
+\begin{tabularx}{\textwidth}{r X l r r l}
+\toprule
+\# & Lake & State & Area & Raw cos. & Window \\
+\midrule
+1 & 177772 & Madhya Pradesh & 6.36 & 0.99868 & 2020--2024 \\
+2 & 178276 & Maharashtra & 9.00 & 0.99843 & 2020--2024 \\
+3 & 15539 & Tripura & 34.41 & 0.99840 & 2020--2024 \\
+4 & 15741 & Karnataka & 16.83 & 0.99822 & 2021--2025 \\
+5 & 178489 & Andhra Pradesh & 8.02 & 0.99804 & 2021--2025 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Loktak produced the \textbf{highest raw similarity in the study}
+(0.99868); its third-ranked analog, in Tripura, is the only case
+where a top analog is both geographically near and climatically
+similar to the query.
+
+\subsection{Measured History}
+
+\begin{table}[H]
+\centering
+\caption{Loktak --- measured index history, 2016--2025.}
+\label{tab:loktak_hist}
+\begin{tabular}{lrrrrrr}
+\toprule
+Index & 2016 & 2018 & 2020 & 2022 & 2024 & 2025 \\
+\midrule
+NDCI            & 0.1092 & 0.1040 & 0.1625 & 0.2171 & 0.1887 & 0.1590 \\
+NDVI-B7         & 0.1913 & 0.1819 & 0.3216 & 0.4075 & 0.3829 & 0.3242 \\
+NDWI            & $-$0.0550 & $-$0.0296 & $-$0.1965 & $-$0.2696 & $-$0.2634 & $-$0.1860 \\
+Turbidity       & $-$0.1377 & $-$0.1532 & $-$0.1335 & $-$0.1550 & $-$0.1329 & $-$0.1470 \\
+Red-edge slope  & 0.8915 & 0.9331 & 2.3458 & 3.3448 & 3.3716 & 2.6009 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Loktak has the highest NDVI-B7 of any site studied, peaking at
+0.4075 in 2022 (the \emph{phumdi} mats), then partially receding
+through 2025 --- a non-monotone pattern distinct from Wular's
+sustained decline.
+
+\subsection{Forecast --- and an Instructive Failure}
+
+\begin{table}[H]
+\centering
+\caption{Loktak --- directional forecast 2026--2028.}
+\label{tab:loktak_fc}
+\begin{tabular}{lrlll}
+\toprule
+Index & 2025 & 2026 & 2027 & 2028 \\
+\midrule
+NDCI & 0.1590 & $\downarrow$ ($-$0.0086, $n$=5) & $\uparrow$ ($+$0.0705, $n$=2) & \textbf{?} ($n$=0) \\
+NDVI-B7 & 0.3242 & $\rightarrow$ ($+$0.0043, $n$=5) & $\uparrow$ ($+$0.1694, $n$=2) & \textbf{?} ($n$=0) \\
+NDWI & $-$0.1860 & $\uparrow$ ($+$0.0120, $n$=5) & $\downarrow$ ($-$0.1893, $n$=2) & \textbf{?} ($n$=0) \\
+Turbidity & $-$0.1470 & $\downarrow$ ($-$0.0161, $n$=5) & $\uparrow$ ($+$0.0165, $n$=2) & \textbf{?} ($n$=0) \\
+Red-edge & 2.6009 & $\uparrow$ ($+$0.1294, $n$=5) & $\uparrow$ ($+$0.1755, $n$=2) & \textbf{?} ($n$=0) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Interpretation}
+
+The 2028 column is entirely \emph{uncertain} --- correctly refusing
+to guess rather than a failed forecast. The cause is structural:
+three of Loktak's five twins matched on windows ending in 2024, and
+the dataset ends in 2025, leaving $|\mathcal{A}_{k,3}| = 0$ for every
+index. Had \emph{uncertain} been collapsed into \emph{stable} ---
+the earlier implementation's behaviour --- this column would have
+reported five confident ``no change'' predictions backed by no
+evidence at all (Section~\ref{sec:forecast_method}). The 2027 column
+carries a softer version of the same warning: two twins produce a
+large NDVI-B7 score ($+$0.1694), but the reported $n=2$ signals that
+consensus is thin.
+
+\section{Tso Morari, Ladakh}
+
+Tso Morari is a high-altitude brackish lake at \SI{4522}{\meter} in
+the Trans-Himalayan cold desert --- the cohort's environmental
+extreme, with minimal vegetation and glacial meltwater input.
+
+\subsection{Retrieved Analogs --- The Strongest Validation}
+
+\begin{table}[H]
+\centering
+\caption{Tso Morari --- top five analogs (828 candidates, 160 ms).}
+\label{tab:tsomorari_analogs}
+\begin{tabularx}{\textwidth}{r X l r r l}
+\toprule
+\# & Lake & State & Area & Raw cos. & Window \\
+\midrule
+1 & \textbf{Pangong Tso} & \textbf{Ladakh} & 285.46 & \textbf{0.99720} & 2021--2025 \\
+2 & 178351 & Maharashtra & 8.52 & 0.98816 & 2021--2025 \\
+3 & 15661 & Maharashtra & 10.12 & 0.98781 & 2021--2025 \\
+4 & 178391 & Maharashtra & 3.06 & 0.98769 & 2021--2025 \\
+5 & 15828 & Kerala & 26.07 & 0.98599 & 2021--2025 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+This is the single most convincing retrieval result in the study.
+Out of 828 candidates spanning 26 states, the top-ranked analog for
+Tso Morari is \textbf{Pangong Tso} --- the other great high-altitude
+brackish lake of Ladakh, roughly \SI{120}{\kilo\meter} away ---
+recovered from reflectance alone, with no coordinates or lake-type
+metadata supplied. The score gap makes it stronger still: 0.99720
+against rank 2's 0.98816, a gap \textbf{five times} the spread
+between ranks 2 and 5 and sharply larger than the compression
+discussed in Chapter~\ref{chap:results} --- the embedding space is
+genuinely isolating high-altitude cold-desert lakes as a distinct
+class.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.7\textwidth]{images/morari_analogs.png}
+\caption{Live ranked-analog panel for Tso Morari, captured
+independently from the running application: Pangong returned as
+rank 1 at 98.9\% displayed similarity, confirming
+Table~\ref{tab:tsomorari_analogs}.}
+\label{fig:morari_analogs_ui}
+\end{figure}
+
+\subsection{Measured History}
+
+\begin{table}[H]
+\centering
+\caption{Tso Morari --- measured index history, 2016--2025.}
+\label{tab:tsomorari_hist}
+\begin{tabular}{lrrrrrr}
+\toprule
+Index & 2016 & 2018 & 2020 & 2022 & 2024 & 2025 \\
+\midrule
+NDCI            & $-$0.0396 & $-$0.0212 & $-$0.0417 & $-$0.0450 & $-$0.0337 & $-$0.0376 \\
+NDVI-B7         & $-$0.0907 & $-$0.0649 & $-$0.0805 & $-$0.0653 & $-$0.0339 & $-$0.0509 \\
+NDWI            & 0.4804 & 0.2449 & 0.3921 & 0.3699 & 0.2700 & 0.3371 \\
+Turbidity       & $-$0.4074 & $-$0.1828 & $-$0.3217 & $-$0.3121 & $-$0.2382 & $-$0.2912 \\
+Red-edge slope  & $-$0.0893 & $-$0.2676 & $-$0.1009 & $-$0.0617 & $-$0.0007 & $-$0.0446 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Tso Morari records the \textbf{highest NDWI} (0.48) and \textbf{most
+negative turbidity} ($-$0.41) in the study --- the signature of
+exceptionally clear, vegetation-free, glacier-fed water, and the
+opposite extreme from Loktak.
+
+\subsection{Forecast}
+
+\begin{table}[H]
+\centering
+\caption{Tso Morari --- directional forecast 2026--2028.}
+\label{tab:tsomorari_fc}
+\begin{tabular}{lrlll}
+\toprule
+Index & 2025 & 2026 & 2027 & 2028 \\
+\midrule
+NDCI & $-$0.0376 & $\uparrow$ ($+$0.0204, $n$=5) & $\rightarrow$ ($+$0.0046, $n$=5) & $\downarrow$ ($-$0.0057, $n$=5) \\
+NDVI-B7 & $-$0.0509 & $\uparrow$ ($+$0.0360, $n$=5) & $\uparrow$ ($+$0.0228, $n$=5) & $\downarrow$ ($-$0.0177, $n$=5) \\
+NDWI & 0.3371 & $\downarrow$ ($-$0.0537, $n$=5) & $\downarrow$ ($-$0.0216, $n$=5) & $\rightarrow$ ($-$0.0035, $n$=5) \\
+Turbidity & $-$0.2912 & $\uparrow$ ($+$0.0204, $n$=5) & $\downarrow$ ($-$0.0058, $n$=5) & $\uparrow$ ($+$0.0172, $n$=5) \\
+Red-edge & $-$0.0446 & $\uparrow$ ($+$0.0499, $n$=5) & $\uparrow$ ($+$0.2908, $n$=5) & $\downarrow$ ($-$0.0522, $n$=5) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{wrapfigure}{r}{0.32\textwidth}
+\centering
+\includegraphics[width=0.3\textwidth]{images/Forecast_part4.png}
+\caption{Live forecast summary for Tso Morari, 2026--2028, directly
+comparable to Table~\ref{tab:tsomorari_fc}.}
+\label{fig:morari_fc_summary}
+\end{wrapfigure}
+
+The live application's Forecast panel (Figure~\ref{fig:morari_fc_summary})
+agrees with Table~\ref{tab:tsomorari_fc} on \textbf{direction for all
+fifteen cells}, despite drawing on 15 contributing twins rather than
+the 5 used offline --- agreement despite a threefold difference in
+twin-pool size is evidence the classification is not an artifact of
+which handful of twins happens to be selected.
+
+\subsection{Interpretation}
+
+Tso Morari is the \textbf{only site where all five twins contribute
+to all three forecast years} ($n=5$ throughout), the best-supported
+forecast in the study since its twins matched on early windows,
+leaving three full years of observed future. The projection is
+mild --- modest NDVI-B7/NDCI increases, NDWI declining slightly then
+partially reversing --- appropriately undramatic for an ecosystem
+with no significant vegetation dynamic, and corroborated by the live
+application run using an independently drawn, larger twin pool.
+
+\section{Vembanad, Kerala}
+
+Vembanad is the longest lake in India, the core of the Kerala
+backwater system --- a tropical estuarine wetland at sea level,
+subject to tidal exchange and intense agricultural/urban pressure.
+
+\subsection{Retrieved Analogs}
+
+\begin{table}[H]
+\centering
+\caption{Vembanad --- top five analogs (828 candidates, 172 ms).}
+\label{tab:vembanad_analogs}
+\begin{tabularx}{\textwidth}{r X l r r l}
+\toprule
+\# & Lake & State & Area & Raw cos. & Window \\
+\midrule
+1 & 176886 & Assam & 3.21 & 0.99830 & 2021--2025 \\
+2 & 15611 & Maharashtra & 11.75 & 0.99814 & 2020--2024 \\
+3 & 178503 & Telangana & 2.94 & 0.99791 & 2021--2025 \\
+4 & 15394 & Uttarakhand & 10.66 & 0.99779 & 2017--2021 \\
+5 & 178493 & Telangana & 2.64 & 0.99757 & 2020--2024 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{Measured History}
+
+\begin{table}[H]
+\centering
+\caption{Vembanad --- measured index history, 2016--2025.}
+\label{tab:vembanad_hist}
+\begin{tabular}{lrrrrrr}
+\toprule
+Index & 2016 & 2018 & 2020 & 2022 & 2024 & 2025 \\
+\midrule
+NDCI            & 0.0599 & 0.0454 & 0.0476 & 0.0546 & 0.0578 & 0.0500 \\
+NDVI-B7         & 0.0065 & 0.0302 & 0.0455 & 0.0417 & 0.0545 & 0.0365 \\
+NDWI            & 0.0900 & 0.0755 & 0.0696 & 0.0672 & 0.0559 & 0.0755 \\
+Turbidity       & $-$0.0964 & $-$0.1055 & $-$0.1148 & $-$0.1086 & $-$0.1101 & $-$0.1117 \\
+Red-edge slope  & $-$0.7617 & $-$0.2258 & $-$0.0305 & $-$0.1827 & $-$0.0481 & $-$0.1832 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Vembanad is the most \emph{stable} site in the study: every index
+varies within a narrow band across the decade (NDCI within
+$\pm$0.008, NDWI within $\pm$0.02), consistent with a tidally
+flushed system buffered by continuous marine exchange.
+
+\subsection{Forecast --- Degrading Confidence}
+
+\begin{table}[H]
+\centering
+\caption{Vembanad --- directional forecast 2026--2028.}
+\label{tab:vembanad_fc}
+\begin{tabular}{lrlll}
+\toprule
+Index & 2025 & 2026 & 2027 & 2028 \\
+\midrule
+NDCI & 0.0500 & $\downarrow$ ($-$0.0121, $n$=5) & $\downarrow$ ($-$0.0488, $n$=3) & \textbf{?} ($n$=1) \\
+NDVI-B7 & 0.0365 & $\downarrow$ ($-$0.0132, $n$=5) & $\downarrow$ ($-$0.0994, $n$=3) & \textbf{?} ($n$=1) \\
+NDWI & 0.0755 & $\rightarrow$ ($-$0.0024, $n$=5) & $\uparrow$ ($+$0.1119, $n$=3) & \textbf{?} ($n$=1) \\
+Turbidity & $-$0.1117 & $\uparrow$ ($+$0.0175, $n$=5) & $\downarrow$ ($-$0.0085, $n$=3) & \textbf{?} ($n$=1) \\
+Red-edge & $-$0.1832 & $\downarrow$ ($-$0.0947, $n$=5) & $\downarrow$ ($-$1.2968, $n$=3) & \textbf{?} ($n$=1) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Interpretation}
+
+Vembanad shows the confidence-degradation pattern in its clearest
+form: $n=5,3,1$ across the three years. The 2028 column, with
+exactly one contributing twin, is correctly withheld as
+\emph{uncertain} --- a single lake's behaviour is not a consensus.
+The 2027 red-edge score ($-$1.2968) is dominated by one twin with an
+extreme delta: its direction is defensible but the magnitude should
+not be read as calibrated. The 2026 column, resting on all five
+twins, is the reliable row: mild declines in NDCI and NDVI-B7 with
+NDWI flat, consistent with the decade of measured stability.
+
+\section{Cross-Site Synthesis}
+
+\begin{table}[H]
+\centering
+\caption{Cross-site summary. Confidence is the number of
+contributing twins across the three horizon years.}
+\label{tab:ramsar_summary}
+\begin{tabularx}{\textwidth}{l r r X l}
+\toprule
+Site & Best raw & Latency & Dominant measured signal & Conf. \\
+\midrule
+Chilika & 0.99691 & 146 ms & Mild vegetative encroachment & 5,4,3 \\
+Wular & 0.99722 & 141 ms & Strong eutrophication (5.6$\times$ NDCI) & 5,4,3 \\
+Loktak & 0.99868 & 148 ms & \emph{Phumdi} peak then partial recession & 5,2,0 \\
+Tso Morari & 0.99720 & 160 ms & Stable clear cold-desert water & 5,5,5 \\
+Vembanad & 0.99830 & 172 ms & Decadal stability (tidally buffered) & 5,3,1 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Five findings emerge from analysing the sites together.
+\textbf{The embedding space encodes real ecological structure}: the
+Tso Morari--Pangong pairing, recovered from reflectance alone with a
+score gap five times the typical inter-rank spread, is not
+explicable as coincidence. \textbf{Condition dominates geography in
+analog retrieval}: Wular's analogs are small Assamese and Bengali
+floodplain lakes, matching ecological state as intended, though it
+means the map view alone can mislead without the index history.
+\textbf{The index set discriminates across the full range}, from Tso
+Morari's NDWI of 0.48 with essentially no vegetation to Loktak's
+NDVI-B7 of 0.41 under floating mats --- the band-honest substitution
+of B7 for B8 did not cost discriminative power. \textbf{Forecast
+confidence is bounded by data recency, not model quality}: every
+degraded forecast --- Loktak's empty 2028, Vembanad's single-twin
+2028 --- traces to twins whose matched windows end near 2025, a
+dataset-extent limitation that self-corrects as further years are
+ingested. Finally, \textbf{the system declines to answer when it
+should}: across 75 forecast cells (5 sites $\times$ 5 indices
+$\times$ 3 years), the outcomes divide as shown in
+Table~\ref{tab:direction_dist}.
+
+\begin{table}[H]
+\centering
+\caption{Distribution of the 75 forecast cells across the five
+Ramsar sites.}
+\label{tab:direction_dist}
+\begin{tabular}{lrr}
+\toprule
+Classification & Cells & Share \\
+\midrule
+Up ($\uparrow$)          & 31 & 41.3\% \\
+Down ($\downarrow$)      & 27 & 36.0\% \\
+Stable ($\rightarrow$)   &  7 &  9.3\% \\
+Uncertain (\textbf{?})   & 10 & 13.3\% \\
+\midrule
+\textbf{Total}           & \textbf{75} & \textbf{100\%} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Thirteen percent of cells returned \emph{uncertain} rather than a
+direction: a method that always answers cannot be distinguished from
+one that guesses, so these ten abstentions are evidence the
+confidence machinery is load-bearing. The near-balance of up and
+down classifications is also reassuring against directional bias.
 
 % ============================================================
 % CHAPTER 6
@@ -1517,299 +2540,38 @@ naturally preserve PostGIS geometry and vector types.
 \chapter{Discussion}
 \label{chap:discussion}
 
-\section{Why Foundation-Model Embeddings}
-
-Traditional similarity systems require manually specifying which
-variables should define similarity. EcoTwin instead uses a learned
-geospatial representation derived from multispectral imagery.
-
-This changes the problem from:
-
-\[
-Similarity =
-f(\text{manually selected attributes})
-\]
-
-to:
-
-\[
-Similarity =
-f(\text{learned spatial-spectral representation})
-\]
-
-The advantage is that spatial context can be represented jointly
-rather than through a small set of manually selected scalar
-attributes.
-
-\section{Why Spatial Cells Instead of One Lake Image}
-
-A lake is not spatially homogeneous. Shoreline vegetation,
-surrounding land cover, built-up regions, agricultural land,
-mountain slopes, and water surfaces can coexist in the same
-analysis area.
-
-Using smaller cells preserves this heterogeneity.
-
-The cell-level representation also improves explainability because
-a retrieved similarity can be associated with a geographic region
-rather than only with an entire lake.
-
-\section{Why Local Raster Processing}
-
-Downloading the complete India-scale satellite archive would be
-impractical for the project. EcoTwin therefore uses an
-``extract once, reuse many times'' strategy:
-
-\[
-Earth\ Engine
-\rightarrow
-Local\ GeoTIFF
-\rightarrow
-Multiple\ Downstream\ Features
-\]
-
-This substantially reduces repeated remote requests.
-
-\section{Why Vector Database Search}
-
-Without vector persistence, every query would require model
-inference on the candidate ecosystem collection.
-
-With pgvector:
-
-\[
-Query\ Image
-\rightarrow
-One\ Embedding
-\rightarrow
-Vector\ Search
-\rightarrow
-Top\text{-}K
-\]
-
-The expensive foundation-model inference is therefore moved into
-the offline indexing stage.
-
-\section{Spatial Similarity versus Temporal Similarity}
-
-EcoTwin deliberately keeps spatial and temporal similarity
-conceptually separate.
-
-Spatial similarity answers:
-
-\begin{quote}
-Which ecosystems look similar to the target in the learned
-representation?
-\end{quote}
-
-Temporal similarity answers:
-
-\begin{quote}
-Do those ecosystems exhibit similar historical behaviour?
-\end{quote}
-
-A robust analog should ideally provide useful evidence on both axes.
-
-\section{Strengths}
-
-The implemented system provides:
-
-\begin{itemize}
-    \item scalable offline preprocessing;
-    \item resumable Earth Engine extraction;
-    \item explicit spatial provenance;
-    \item foundation-model representations;
-    \item persistent vector search;
-    \item temporal contextualization;
-    \item interactive geospatial visualization; and
-    \item a path toward explainable analog-based forecasting.
-\end{itemize}
-
-\section{Limitations}
-
-\subsection{Observation Availability}
-
-The ten-year target window does not guarantee ten complete years
-for every lake. Historical collection availability and cloud
-filtering can create gaps.
-
-\subsection{Optical Cloud Dependence}
-
-Sentinel-2 is an optical sensor. Cloud cover and atmospheric
-conditions can reduce valid observations.
-
-\subsection{Embedding Semantics}
-
-A high embedding similarity does not guarantee ecological
-equivalence. The embedding is a representation of the selected
-satellite inputs and model.
-
-\subsection{Spatial Grid Dependence}
-
-Changing the analysis-cell size or coverage threshold changes the
-resulting embeddings. The spatial discretization is therefore a
-model parameter.
-
-\subsection{Model Input Dependence}
-
-Changing bands, preprocessing, normalization, temporal compositing,
-or image extent can change the embedding space.
-
-\subsection{Forecasting Dependence on Analogs}
-
-Analog forecasting is only as strong as the retrieved historical
-twins. Poor analogs lead to poor forecasts, even if the mathematical
-forecasting procedure itself is correct.
-
-\section{Validation Strategy}
-
-The system should be validated at four levels:
-
-\begin{enumerate}
-    \item \textbf{Data validation:} check image completeness,
-    geometry validity, and temporal availability.
-    \item \textbf{Representation validation:} verify embedding
-    dimensionality and numerical validity.
-    \item \textbf{Retrieval validation:} inspect similarity rankings
-    and compare retrieved maps and metadata.
-    \item \textbf{Temporal validation:} determine whether high-ranked
-    analogs also provide useful historical trajectories.
-\end{enumerate}
-
-Independent ecological or field observations would provide the
-strongest external validation but were not available as a complete
-ground-truth source during the present development cycle.
-
-% ============================================================
-% CHAPTER 7
-% ============================================================
-
-\chapter{Analog-Based Forecasting}
-\label{chap:forecast}
-
-\section{Forecasting Philosophy}
-
-The EcoTwin forecasting layer follows the same analog architecture
-as the retrieval system. Instead of treating forecasting as an
-independent machine-learning problem, it reuses the evidence already
-identified by similarity search.
-
-The logic is:
-
-\begin{equation}
-\text{Current Target}
-\rightarrow
-\text{Historical Twin}
-\rightarrow
-\text{Observed Future Trajectory}
-\rightarrow
-\text{Target Forecast}
-\end{equation}
-
-\section{Historical Twin Alignment}
-
-Suppose the target ecosystem has an indicator sequence
-$Y_t$ and an analog has sequence $A_t$. A historical overlap period
-is used to estimate how the target differs from the analog.
-
-A simple offset estimate is:
-
-\begin{equation}
-\widehat{\Delta}
-=
-\frac{1}{T}
-\sum_{t=1}^{T}
-(Y_t-A_t)
-\end{equation}
-
-The future analog trajectory is then adjusted using this offset.
-
-\section{Multiple Analog Forecast}
-
-For $K$ analogs, each analog receives a weight $w_i$ derived from
-its similarity. A generic normalization is:
-
-\begin{equation}
-w_i =
-\frac{s_i}
-{\sum_{j=1}^{K}s_j}
-\end{equation}
-
-for non-negative similarity scores $s_i$.
-
-The predicted trajectory becomes:
-
-\begin{equation}
-\widehat{Y}_{t+h}
-=
-\sum_{i=1}^{K}
-w_i
-\left(
-A_{i,t+h}+\widehat{\Delta}_i
-\right).
-\end{equation}
-
-The application can therefore explain a prediction through the
-analog lakes that contributed to it.
-
-\section{Forecasted Variables}
-
-The principal targets are:
-
-\begin{itemize}
-    \item NDVI;
-    \item NDWI;
-    \item NBR; and
-    \item a combined ecosystem indicator derived from these series,
-    where implemented.
-\end{itemize}
-
-\section{Forecast Uncertainty}
-
-The spread among analog predictions can provide an empirical
-uncertainty signal.
-
-For example, if the analog trajectories are widely separated,
-forecast confidence should be lower than when the trajectories
-closely agree.
-
-This is not equivalent to a formally calibrated probabilistic
-forecast and should be described as an analog-dispersion measure
-unless a formal uncertainty model is added.
-
-\section{Forecast Evaluation}
-
-Once a sufficiently long historical sequence is available, a
-hindcasting experiment can be performed:
-
-\begin{enumerate}
-    \item hide the latest observed period;
-    \item retrieve analogs using only information available before
-    the cutoff;
-    \item generate a forecast;
-    \item compare the forecast against the held-out observations.
-\end{enumerate}
-
-Recommended metrics include:
-
-\begin{equation}
-MAE =
-\frac{1}{n}\sum_{i=1}^{n}|y_i-\hat{y}_i|
-\end{equation}
-
-and
-
-\begin{equation}
-RMSE =
-\sqrt{
-\frac{1}{n}
-\sum_{i=1}^{n}
-(y_i-\hat{y}_i)^2
-}.
-\end{equation}
-
-The evaluation should be performed separately for NDVI, NDWI, and
-NBR rather than reporting only a single aggregate number.
+\section{Strengths and Limitations}
+
+The system's central strengths, established in earlier chapters, are
+scalable offline preprocessing executed to completion with zero
+residual failures (Chapter~\ref{chap:results}); trajectory-based
+retrieval that matches ecological \emph{condition} rather than
+single-year appearance, demonstrated by the Tso Morari--Pangong
+pairing (Chapter~\ref{chap:ramsar}); and a decoder-free, fully
+auditable forecasting layer that reports \emph{uncertain} rather
+than guessing when evidence is thin (a 13.3\% abstention rate across
+75 forecast cells).
+
+Its limitations are correspondingly structural. The ten-year window
+is not uniformly complete (Table~\ref{tab:year_coverage}), and
+Sentinel-2's optical sensing means cloud cover reduces valid
+observations (mean 64.4\% before masking). A high embedding
+similarity does not guarantee ecological equivalence --- only the
+\emph{ranking} is meaningful, not the compressed absolute score
+(Chapter~\ref{chap:results}) --- and every result is conditional on
+the fixed configuration of Table~\ref{tab:current_config}, not a
+configuration-independent measurement. The clearest limitation is
+that a twin whose matched window ends near 2025 has little observed
+future to transfer, which emptied Loktak's $h=3$ forecast and
+thinned Vembanad's (Chapter~\ref{chap:ramsar}) --- not a flaw in the
+classification rule, which correctly reported \emph{uncertain}, but
+a consequence of dataset extent that self-corrects as further years
+are ingested. Finally, the Ramsar case studies were checked against
+publicly documented site condition rather than a quantitative field
+survey, which is corroborating evidence, not calibrated validation;
+formal hindcasting (Section~\ref{sec:hindcast_protocol}) is the next
+validation step precisely because it does not require such external
+data.
 
 % ============================================================
 % CHAPTER 8
@@ -1820,60 +2582,60 @@ NBR rather than reporting only a single aggregate number.
 
 \section{Conclusion}
 
-EcoTwin evolved from a conceptual ecosystem-comparison idea into
-an end-to-end geospatial retrieval system.
+EcoTwin evolved from a conceptual ecosystem-comparison idea into a
+complete, fully executed geospatial retrieval and forecasting
+system: HydroLAKES and Sentinel-2 feed a buffered, tiled acquisition
+pipeline into Prithvi embeddings, coverage-pooled to lake level and
+indexed in pgvector, from which a five-year sliding-window
+trajectory search ranks analogs and a decoder-free forecasting layer
+transfers their measured index changes onto the target with a full
+audit trail --- executed to completion over 829 lakes, ten years,
+and zero outstanding failures (Chapter~\ref{chap:results}).
 
-The final architecture separates the problem into several stages:
-a lake inventory defines the ecosystem boundary; Google Earth Engine
-provides multi-year Sentinel-2 observations; a buffered and tiled
-raster pipeline makes large exports manageable; local mosaicking
-creates reusable lake-year images; one-kilometre analysis cells
-provide spatially consistent units; Prithvi converts these cells into
-768-dimensional representations; pgvector makes those
-representations searchable; and the web application exposes the
-retrieved analogs together with spatial and temporal context.
-
-The most significant engineering contribution of the project is
-therefore not a single model component but the integration of
-geospatial data engineering, foundation-model inference, vector
-retrieval, temporal analysis, and interactive visualization into one
-reproducible workflow.
-
-The development experience also demonstrated that large-scale
-Earth-observation systems require careful handling of external
-service limits, historical data differences, raster storage,
-concurrency, resumability, and database provenance.
+Chapter~\ref{chap:ramsar} demonstrated the complete pipeline on five
+Ramsar wetlands, returning a striking unsupervised validation (Tso
+Morari's top analog is Pangong Tso, the only other high-altitude
+Ladakhi lake in the cohort), an independently corroborated
+degradation signal at Wular, and, equally important, a forecasting
+method that correctly declined to predict in 10 of 75 cells where
+evidence was insufficient rather than manufacturing a confident
+answer. The project's most significant contribution is therefore
+the integration of geospatial data engineering, foundation-model
+inference, vector retrieval, temporal analysis, and visualization
+into one reproducible workflow carried through to applied results,
+demonstrating along the way --- through the abandoned
+embedding-decoder design (Section~\ref{sec:pooling}) --- that
+transferring measured evidence is often more defensible than
+reconstructing it from an uncalibrated inversion.
 
 \section{Future Work}
+\label{sec:future}
 
-Future work should focus on:
-
-\begin{enumerate}
-    \item completing and systematically evaluating the analog-based
-    forecasting layer;
-    \item performing temporal hindcasting experiments;
-    \item calibrating forecast uncertainty using analog dispersion
-    and historical error;
-    \item adding independent ecological validation;
-    \item improving the lake-level aggregation strategy;
-    \item experimenting with alternative cell sizes and coverage
-    thresholds;
-    \item incorporating additional environmental variables;
-    \item improving temporal compositing;
-    \item supporting larger ecosystem inventories;
-    \item optimizing vector indexing for larger collections;
-    \item improving asynchronous pipeline orchestration; and
-    \item deploying a shared production database and hosted
-    processing infrastructure.
-\end{enumerate}
+Priority items are executing the hindcasting protocol
+(Section~\ref{sec:hindcast_protocol}) once further years extend the
+dataset past its current single-cutoff limitation; extending
+ingestion beyond 2025 so recently-matched twins accumulate the
+future years needed to resolve \emph{uncertain} cells; adding
+independent field-ecological validation for the Ramsar sites; and
+migrating trajectory search to pgvector's native ANN operators,
+since the current brute-force scan will not remain interactive as
+the cohort grows. Further directions include calibrating the
+cosine-similarity display scale against labelled ecosystem pairs,
+attention- or learned-weighted pooling in place of coverage-weighted
+mean, growing the active cohort beyond 829 lakes, reducing
+monsoon-driven cloud gaps in temporal compositing, and deploying
+shared production infrastructure for multi-user access.
 
 \section{Final Remarks}
 
-EcoTwin provides a practical bridge between modern geospatial
-foundation models and ecosystem-scale comparative analysis. Its
-central idea is to use historically observed ecosystems as
+EcoTwin's central idea is to use historically observed ecosystems as
 computationally retrievable analogs rather than treating every
-ecosystem as an isolated forecasting problem.
+ecosystem as an isolated forecasting problem. The Ramsar case
+studies show that this idea, carried through a fully processed
+829-lake, ten-year cohort, produces results that are specific,
+checkable against independent knowledge of the sites, and ---
+where the evidence ran out --- honest about the limits of what it
+can currently claim.
 
 % ============================================================
 % REFERENCES
@@ -1917,320 +2679,6 @@ performance of the MODIS vegetation indices,'' \textit{Remote
 Sensing of Environment}, vol. 83, no. 1--2, pp. 195--213, 2002.
 
 \end{thebibliography}
-
-% ============================================================
-% APPENDIX A
-% ============================================================
-
-\appendix
-
-\chapter{Database Schema}
-
-\section{Lake Table}
-
-\begin{table}[H]
-\centering
-\caption{Principal lake table fields.}
-\label{tab:lake_schema}
-\begin{tabularx}{\textwidth}{l l X}
-\toprule
-Column & Type & Description \\
-\midrule
-lake\_id & Integer & Unique lake identifier \\
-lake\_name & Text & Lake name \\
-country & Text & Country \\
-lake\_area & Numeric & Lake area \\
-elevation & Numeric & Elevation \\
-pour\_lat & Numeric & Pour-point latitude \\
-pour\_long & Numeric & Pour-point longitude \\
-geometry & PostGIS Geometry & Lake boundary \\
-lake\_type & Text & Lake classification \\
-depth\_avg & Numeric & Average depth \\
-vol\_total & Numeric & Total volume \\
-wshd\_area & Numeric & Watershed area \\
-\bottomrule
-\end{tabularx}
-\end{table}
-
-\section{Lake Images}
-
-\begin{table}[H]
-\centering
-\caption{Lake imagery metadata.}
-\begin{tabularx}{\textwidth}{l l X}
-\toprule
-Field & Type & Description \\
-\midrule
-lake\_id & Integer & Source lake \\
-year & Integer & Observation/composite year \\
-image\_path & Text & Local GeoTIFF path \\
-status & Text & Processing status \\
-collection\_used & Text & Sentinel collection used \\
-\bottomrule
-\end{tabularx}
-\end{table}
-
-\section{Lake Tiles}
-
-\begin{table}[H]
-\centering
-\caption{Intermediate imagery-tile metadata.}
-\begin{tabularx}{\textwidth}{l l X}
-\toprule
-Field & Type & Description \\
-\midrule
-tile\_id & Integer & Tile identifier \\
-lake\_id & Integer & Source lake \\
-year & Integer & Composite year \\
-tile\_index & Text & Grid position/index \\
-tile\_geometry & Geometry & Tile polygon \\
-bbox & Geometry/Text & Export bounding box \\
-status & Text & Tile state \\
-image\_path & Text & Local tile path \\
-created\_at & Timestamp & Creation time \\
-\bottomrule
-\end{tabularx}
-\end{table}
-
-\section{Sub-Regions}
-
-\begin{table}[H]
-\centering
-\caption{Analysis-cell representation.}
-\begin{tabularx}{\textwidth}{l l X}
-\toprule
-Field & Type & Description \\
-\midrule
-sub\_region\_id & Integer & Unique cell identifier \\
-lake\_id & Integer & Parent lake \\
-year & Integer & Associated imagery year \\
-geometry & Geometry & Analysis-cell polygon \\
-coverage\_ratio & Numeric & Lake coverage within cell \\
-\bottomrule
-\end{tabularx}
-\end{table}
-
-\section{Embeddings}
-
-Each valid analysis cell has an associated Prithvi embedding with
-768 numerical dimensions. The vector is stored with sufficient
-metadata to recover its lake, year, and spatial region.
-
-% ============================================================
-% APPENDIX B
-% ============================================================
-
-\chapter{Data Processing State Machine}
-
-The processing state of an individual lake-year-tile follows the
-general pattern:
-
-\[
-Pending
-\rightarrow
-Processing
-\rightarrow
-Completed
-\]
-
-or:
-
-\[
-Processing
-\rightarrow
-Failed
-\]
-
-A previously completed item can be recognized and skipped:
-
-\[
-Completed + Existing\ Output
-\rightarrow
-Skipped
-\]
-
-This stateful design is important for large Earth Engine jobs because
-a failure in one lake-year should not invalidate successfully
-completed work.
-
-% ============================================================
-% APPENDIX C
-% ============================================================
-
-\chapter{Representative API Structure}
-
-\begin{table}[H]
-\centering
-\caption{Representative EcoTwin API groups.}
-\label{tab:api}
-\begin{tabularx}{\textwidth}{l l X}
-\toprule
-Method & Endpoint family & Purpose \\
-\midrule
-GET & Lake lookup & Retrieve lake metadata and geometry \\
-GET & Similarity query & Retrieve analogous ecosystems \\
-GET & Temporal profile & Retrieve NDVI/NDWI/NBR history \\
-GET & Forecast & Retrieve analog-based forecast information \\
-GET & Report & Retrieve report-generation information \\
-GET & Health/status & Check service availability \\
-\bottomrule
-\end{tabularx}
-\end{table}
-
-% ============================================================
-% APPENDIX D
-% ============================================================
-
-\chapter{Database Migration Procedure}
-
-The project requires safe consolidation of data generated by
-different team members.
-
-\section{Backup}
-
-Each developer creates a PostgreSQL custom-format dump:
-
-\begin{lstlisting}
-pg_dump \
-  -h localhost \
-  -U postgres \
-  -d ecotwin \
-  -Fc \
-  -f member.dump
-\end{lstlisting}
-
-The custom dump preserves PostgreSQL-native structures including
-PostGIS geometries and pgvector embeddings.
-
-\section{Temporary Restore}
-
-A temporary database is created:
-
-\begin{lstlisting}
-createdb -h localhost -U postgres ecotwin_member
-\end{lstlisting}
-
-The dump is restored:
-
-\begin{lstlisting}
-pg_restore \
-  -h localhost \
-  -U postgres \
-  -d ecotwin_member \
-  member.dump
-\end{lstlisting}
-
-\section{ETL Validation}
-
-The ETL process reads from the temporary database and validates:
-
-\begin{itemize}
-    \item missing embeddings;
-    \item invalid geometries;
-    \item duplicate records;
-    \item vector dimensions;
-    \item lake/year uniqueness;
-    \item image-path existence; and
-    \item expected row counts.
-\end{itemize}
-
-Validated records are then inserted into the production database.
-
-\section{Production Merge}
-
-Typical tables involved in consolidation include:
-
-\begin{itemize}
-    \item \code{lake\_embeddings};
-    \item \code{lake\_tiles}; and
-    \item \code{lake\_images}.
-\end{itemize}
-
-Conflict handling can use database uniqueness constraints and
-\code{INSERT ... ON CONFLICT} logic where appropriate.
-
-\section{Cleanup}
-
-After validation, the temporary database can be removed:
-
-\begin{lstlisting}
-dropdb -h localhost -U postgres ecotwin_member
-\end{lstlisting}
-
-% ============================================================
-% APPENDIX E
-% ============================================================
-
-\chapter{Recommended Final Report Figures}
-
-The following figures should be inserted before final submission:
-
-\begin{enumerate}
-    \item EcoTwin system architecture.
-    \item HydroLAKES study-area map.
-    \item Lake polygon and 1200 m buffer.
-    \item Approximately 8.5 km imagery tile grid.
-    \item Example Sentinel-2 annual composite.
-    \item Merged lake-year GeoTIFF.
-    \item 1 km analysis-cell grid and 15\% coverage filtering.
-    \item Prithvi embedding pipeline.
-    \item PostgreSQL/PostGIS/pgvector schema.
-    \item Similarity-search workflow.
-    \item Query lake and Top-$K$ analog map.
-    \item Analog lake profile cards.
-    \item NDVI temporal comparison.
-    \item NDWI temporal comparison.
-    \item NBR temporal comparison.
-    \item Analog-based forecast plot.
-    \item Frontend screenshots.
-    \item PDF/report-generation screenshot.
-\end{enumerate}
-
-\chapter{Final Experimental Tables}
-
-Before submission, populate the following values directly from the
-final production database and pipeline logs:
-
-\begin{table}[H]
-\centering
-\caption{Final production statistics to be reported.}
-\begin{tabular}{lr}
-\toprule
-Metric & Final value \\
-\midrule
-Source lakes & TBD \\
-Processed lakes & TBD \\
-Lake-years attempted & TBD \\
-Lake-years completed & TBD \\
-Imagery tiles generated & TBD \\
-Merged lake images & TBD \\
-Analysis cells generated & TBD \\
-Valid analysis cells & TBD \\
-Embeddings generated & TBD \\
-Embedding failures & TBD \\
-Indexed vectors & TBD \\
-Temporal records & TBD \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-\begin{table}[H]
-\centering
-\caption{Final performance metrics to be reported.}
-\begin{tabular}{lr}
-\toprule
-Operation & Final measurement \\
-\midrule
-Average imagery extraction time & TBD \\
-Average raster merge time & TBD \\
-Average embedding time/cell & TBD \\
-Similarity query latency & TBD \\
-Temporal retrieval latency & TBD \\
-Report generation time & TBD \\
-Total preprocessing time & TBD \\
-\bottomrule
-\end{tabular}
-\end{table}
 
 % ============================================================
 % END DOCUMENT
