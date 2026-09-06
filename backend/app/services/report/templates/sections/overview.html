@@ -46,3 +46,24 @@
     {% endif %}
   </div>
 </div>
+
+{% if lake.ecological_indices %}
+<div class="planned-box" style="margin-top:14px;">
+  <p class="lead" style="margin-bottom:8px;">Ecological Indices (Current)</p>
+  <div style="display:flex; flex-wrap:wrap; gap:16px;">
+    {% for item in lake.ecological_indices %}
+      <div style="min-width:100px;">
+        <p style="font-size:8pt; font-weight:700; text-transform:uppercase; letter-spacing:0.03em; color:{{ item.color }}; margin-bottom:2px;">
+          {{ item.label }}
+        </p>
+        <p style="font-size:13pt; font-weight:700; color:#1e293b; font-family:monospace;">
+          {{ "%.4f"|format(item.current_value) }}
+        </p>
+      </div>
+    {% endfor %}
+  </div>
+  <p style="font-size:8pt; color:#64748b; margin-top:8px;">
+    Snapshot at {{ context.eco_forecast_current_year or lake.latest_year }} — see Section 05 for the 3-year forecast trend behind these values.
+  </p>
+</div>
+{% endif %}

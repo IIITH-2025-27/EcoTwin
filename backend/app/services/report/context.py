@@ -86,7 +86,7 @@ def format_score(score: Optional[float]) -> str:
 # chart matches what the Forecast panel renders in the UI.
 _ECO_CHART_INDICES: list[tuple[str, str, str]] = [
     ("ndci", "NDCI", "#06b6d4"),
-    ("ndvi_b7", "NDVI-B7", "#22c55e"),
+    ("ndvi", "NDVI", "#22c55e"),
     ("ndwi", "NDWI", "#3b82f6"),
     ("turbidity_ratio", "Turbidity", "#f59e0b"),
     ("red_edge_slope", "RE Slope", "#a855f7"),
@@ -248,6 +248,11 @@ class LakeInfo:
     cover_image: Optional[str] = None
     boundary_image: Optional[str] = None
     map_image: Optional[str] = None
+    # Current-value snapshot of the same 5 ecological indices shown in the
+    # Forecast section (Section 5) — same EcoIndexForecastItem objects,
+    # reused here rather than requeried, just for their .label/.color/
+    # .current_value; Overview shows the snapshot, Forecast shows the trend.
+    ecological_indices: list = field(default_factory=list)
 
 
 @dataclass
@@ -635,6 +640,7 @@ async def build_report_context(
         cover_image=cover_image,
         boundary_image=boundary_image,
         map_image=map_image,
+        ecological_indices=eco_forecast,
     )
 
     now = datetime.now(timezone.utc).astimezone(ZoneInfo("Asia/Kolkata"))

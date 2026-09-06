@@ -100,7 +100,7 @@ class YearlyDirection(BaseModel):
 class IndexForecast(BaseModel):
     """One row of the 3-year forecast table — one index across all years."""
 
-    index_name: str                    # "ndci", "ndvi_b7", etc.
+    index_name: str                    # "ndci", "ndvi", etc.
     current_value: float               # target lake's latest actual value
     yearly_directions: List[YearlyDirection]
 

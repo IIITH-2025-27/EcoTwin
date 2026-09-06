@@ -75,11 +75,11 @@ _MIN_TWINS_FOR_DIRECTION: int = 2
 # Forecast horizon (years into the future)
 _FORECAST_HORIZON: int = 3
 
-_INDEX_KEYS: List[str] = ["ndci", "ndvi_b7", "ndwi", "turbidity_ratio", "red_edge_slope"]
+_INDEX_KEYS: List[str] = ["ndci", "ndvi", "ndwi", "turbidity_ratio", "red_edge_slope"]
 
 _INDEX_LABELS: Dict[str, str] = {
     "ndci": "NDCI (Chlorophyll-a)",
-    "ndvi_b7": "NDVI-B7 (Vegetation Vigor)",
+    "ndvi": "NDVI (Vegetation Vigor)",
     "ndwi": "NDWI (Water Mask)",
     "turbidity_ratio": "Turbidity",
     "red_edge_slope": "Red Edge Slope (Pigment Trend)",
@@ -97,7 +97,12 @@ _DIRECTION_ARROWS: Dict[str, str] = {
 
 
 def _compute_indices_from_row(row: dict) -> Dict[str, Optional[float]]:
-    """Compute indices on-the-fly from band means in a lake_features row."""
+    """Compute indices on-the-fly from band means in a lake_features row.
+
+    b8_mean may be absent (B8 fetch coverage lags the main pipeline) — NDVI
+    and NDWI are None for this row until it's available; the other three
+    indices don't need it.
+    """
     return compute_ecological_indices(
         b2_mean=row.get("b2_mean"),
         b3_mean=row.get("b3_mean"),
@@ -105,6 +110,7 @@ def _compute_indices_from_row(row: dict) -> Dict[str, Optional[float]]:
         b5_mean=row.get("b5_mean"),
         b6_mean=row.get("b6_mean"),
         b7_mean=row.get("b7_mean"),
+        b8_mean=row.get("b8_mean"),
     )
 
 
@@ -128,7 +134,7 @@ async def _fetch_band_rows(
     result = await session.execute(
         text("""
             SELECT year,
-                   b2_mean, b3_mean, b4_mean, b5_mean, b6_mean, b7_mean
+                   b2_mean, b3_mean, b4_mean, b5_mean, b6_mean, b7_mean, b8_mean
             FROM lake_features
             WHERE lake_id = :lake_id
               AND year >= :start_year
@@ -148,6 +154,7 @@ async def _fetch_band_rows(
             "b5_mean": float(r["b5_mean"]) if r["b5_mean"] is not None else None,
             "b6_mean": float(r["b6_mean"]) if r["b6_mean"] is not None else None,
             "b7_mean": float(r["b7_mean"]) if r["b7_mean"] is not None else None,
+            "b8_mean": float(r["b8_mean"]) if r["b8_mean"] is not None else None,
         })
     return rows
 
@@ -160,7 +167,7 @@ async def _fetch_latest_band_row(
     result = await session.execute(
         text("""
             SELECT year,
-                   b2_mean, b3_mean, b4_mean, b5_mean, b6_mean, b7_mean
+                   b2_mean, b3_mean, b4_mean, b5_mean, b6_mean, b7_mean, b8_mean
             FROM lake_features
             WHERE lake_id = :lake_id
               AND status = 'completed'
@@ -181,6 +188,7 @@ async def _fetch_latest_band_row(
         "b5_mean": float(row["b5_mean"]) if row["b5_mean"] is not None else None,
         "b6_mean": float(row["b6_mean"]) if row["b6_mean"] is not None else None,
         "b7_mean": float(row["b7_mean"]) if row["b7_mean"] is not None else None,
+        "b8_mean": float(row["b8_mean"]) if row["b8_mean"] is not None else None,
     }
 
 

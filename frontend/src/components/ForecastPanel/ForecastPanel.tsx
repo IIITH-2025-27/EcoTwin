@@ -27,7 +27,7 @@ type IndicatorKey = 'ndvi' | 'ndwi' | 'nbr';
 
 const ECO_CHART_INDICES = [
   { key: 'ndci', label: 'NDCI', color: '#06b6d4' },
-  { key: 'ndvi_b7', label: 'NDVI-B7', color: '#22c55e' },
+  { key: 'ndvi', label: 'NDVI', color: '#22c55e' },
   { key: 'ndwi', label: 'NDWI', color: '#3b82f6' },
   { key: 'turbidity_ratio', label: 'Turbidity', color: '#f59e0b' },
   { key: 'red_edge_slope', label: 'RE Slope', color: '#a855f7' },
@@ -374,7 +374,7 @@ export default function ForecastPanel() {
 
 const ECO_INDICES = [
   { key: 'ndci', label: 'NDCI', desc: 'Chlorophyll-a', color: '#06b6d4' },
-  { key: 'ndvi_b7', label: 'NDVI-B7', desc: 'Vegetation Vigor', color: '#22c55e' },
+  { key: 'ndvi', label: 'NDVI', desc: 'Vegetation Vigor', color: '#22c55e' },
   { key: 'ndwi', label: 'NDWI', desc: 'Water mask / wetness', color: '#3b82f6' },
   { key: 'turbidity_ratio', label: 'Turbidity', desc: 'NDWI-conditioned turbidity metric', color: '#f59e0b' },
   { key: 'red_edge_slope', label: 'RE Slope', desc: 'Pigment Trend', color: '#a855f7' },
