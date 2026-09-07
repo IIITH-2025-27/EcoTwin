@@ -295,7 +295,8 @@ space only to \emph{rank} analogs, then transfers their measured
 year-on-year changes onto the target as a rank-weighted directional
 forecast, traceable to the specific lakes, years, and deltas that
 produced it. The system is demonstrated on five Ramsar-designated
-wetlands --- Chilika, Wular, Loktak, Tso Morari, and Vembanad ---
+wetlands and reservoirs --- Chilika, Maharana Pratap Sagar
+(Beas/Pong Dam), Tawa Reservoir, Tso Morari, and Sasthamcotta ---
 reported in full in Chapter~\ref{chap:ramsar}.
 
 \textbf{Keywords:}
@@ -403,8 +404,8 @@ coverage-weighted pooling from cell to lake level, persisted as
 analog search; the decoder-free forecasting method above; a
 band-honest ecological index set computed only from channels the
 imagery actually contains; and a FastAPI/React-Leaflet application
-with automated PDF reporting, evaluated on five Ramsar wetlands of
-international importance.
+with automated PDF reporting, evaluated on five Ramsar-designated
+wetlands and reservoirs.
 
 % ============================================================
 % CHAPTER 2
@@ -536,28 +537,34 @@ inference.
 
 \section{Environmental Indices: A Band-Honest Index Set}
 
-The merged lake imagery contains only \code{B2--B7} --- not B8
-(broad NIR), B11, or B12 (SWIR) --- so the textbook forms of NDVI,
-NDWI, and NBR, which all require B8 or SWIR, cannot be computed.
-Computing them from substituted bands while still calling them
-NDVI, NDWI, or NBR would misreport what was measured, so EcoTwin
-instead uses five indices chosen to be fully supported by the bands
-actually present and named for what they really are, computed from
-the per-band \emph{mean} reflectance of each lake-year over pixels
-inside the lake polygon: NDCI ($\frac{B5-B4}{B5+B4}$), the primary
-eutrophication/algal-bloom indicator, since B5 (705\,nm, red edge)
-is where chlorophyll-a reflectance rises sharply while B4 (665\,nm)
-remains absorbed; NDVI-B7 ($\frac{B7-B4}{B7+B4}$), substituting the
-absent B8 with the narrow-NIR red-edge channel B7 (783\,nm) for a
-vegetation-vigor measure that tracks floating and emergent
-vegetation --- macrophytes, water hyacinth, and the \emph{phumdi}
-mats of some Indian wetlands --- with the substitution recorded in
-the name rather than concealed; NDWI ($\frac{B3-B7}{B3+B7}$), the
-same substitution applied to the water index, which falls as
-vegetation raises B7 and so acts as NDVI-B7's natural mirror signal;
-Turbidity ($\frac{B4-B3}{B4+B3}$), which rises with suspended
-sediment; and Red-Edge Slope ($\frac{B7-B5}{78\text{nm}}$), the
-gradient across the red-edge region, sensitive to pigment
+The merged lake imagery used for Prithvi inference contains only
+\code{B2--B7} --- not B8 (broad NIR), B11, or B12 (SWIR) --- so the
+textbook forms of NDVI and NDWI, which both require B8, could not be
+computed from that raster alone. During initial development, before
+B8 statistics existed for the cohort, EcoTwin substituted the
+narrow-NIR red-edge channel B7 (783\,nm) for the missing B8 and
+recorded the substitution in the index names (NDVI-B7,
+B7-based NDWI) rather than concealing it. That gap has since closed:
+the server-side B8 pipeline of Section~\ref{sec:b8} now populates
+\code{lake\_features.b8\_mean} for every lake-year in the cohort
+(\textbf{8{,}227/8{,}227}, Table~\ref{tab:final_stats}) without ever
+downloading a raster, so NDVI and NDWI are computed with the
+standard formulas against true NIR. Only NDCI, Turbidity, and
+Red-Edge Slope --- which never needed NIR --- are unaffected by this
+change. All five indices are computed from the per-band \emph{mean}
+reflectance of each lake-year over pixels inside the lake polygon:
+NDCI ($\frac{B5-B4}{B5+B4}$), the primary eutrophication/algal-bloom
+indicator, since B5 (705\,nm, red edge) is where chlorophyll-a
+reflectance rises sharply while B4 (665\,nm) remains absorbed; NDVI
+($\frac{B8-B4}{B8+B4}$), the standard vegetation-vigor formula,
+tracking floating and emergent vegetation --- macrophytes, water
+hyacinth, and the \emph{phumdi} mats of some Indian wetlands ---
+now against true NIR rather than the earlier red-edge proxy; NDWI
+($\frac{B3-B8}{B3+B8}$), the standard McFeeters water index, which
+falls as vegetation raises B8 and so acts as NDVI's natural mirror
+signal; Turbidity ($\frac{B4-B3}{B4+B3}$), which rises with
+suspended sediment; and Red-Edge Slope ($\frac{B7-B5}{78\text{nm}}$),
+the gradient across the red-edge region, sensitive to pigment
 concentration and canopy density independently of the
 normalized-difference family.
 
@@ -571,10 +578,12 @@ Index & Formula & Ecological interpretation \\
 \midrule
 NDCI & $(B5-B4)/(B5+B4)$ &
 Chlorophyll-a; eutrophication and algal bloom intensity \\
-NDVI-B7 & $(B7-B4)/(B7+B4)$ &
-Vegetation vigor; macrophyte and floating-weed encroachment \\
-NDWI & $(B3-B7)/(B3+B7)$ &
-Open-water extent; falls as vegetation colonises the surface \\
+NDVI & $(B8-B4)/(B8+B4)$ &
+Vegetation vigor (standard formula); macrophyte and floating-weed
+encroachment \\
+NDWI & $(B3-B8)/(B3+B8)$ &
+Open-water extent (standard McFeeters formula); falls as vegetation
+colonises the surface \\
 Turbidity & $(B4-B3)/(B4+B3)$ &
 Suspended sediment load and water clarity \\
 Red-edge slope & $(B7-B5)/\SI{78}{\nano\meter}$ &
@@ -1398,23 +1407,23 @@ constant ($\omega_{1..5}$ and $\tau$), and an interval-based
 uncertainty measure (the spread across twin predictions) was
 considered and rejected in favour of the simpler twin count
 $|\mathcal{A}_{k,h}|$, since a naive dispersion measure over a
-small, unevenly-weighted set --- as when Vembanad's 2027 red-edge
-score was dominated by one twin with an extreme delta
+small, unevenly-weighted set --- as when Beas's 2027 and 2028
+red-edge scores each rest on a single twin's trajectory
 (Chapter~\ref{chap:ramsar}) --- is not a stable confidence signal,
 while the count drops to zero exactly when a forecast should not be
 trusted and degrades gracefully otherwise.
 
-\subsection{Worked Example: Chilika, NDVI-B7, $h=1$}
+\subsection{Worked Example: Chilika, NDVI, $h=1$}
 
-Chapter~\ref{chap:ramsar} reported Chilika's 2026 NDVI-B7 forecast as
-$\uparrow$ with score $+0.0244$ from five twins. Reconstructing it:
+Chapter~\ref{chap:ramsar} reported Chilika's 2026 NDVI forecast as
+$\uparrow$ with score $+0.0253$ from five twins. Reconstructing it:
 all five twins have a usable year at $h=1$, so no renormalization is
 needed beyond the base weights $(0.28,0.24,0.20,0.16,0.12)$, which
-already sum to 1. Each twin's delta is its measured NDVI-B7 one year
+already sum to 1. Each twin's delta is its measured NDVI one year
 after its own matched-window end, minus its value at that end year
 --- five independent measurements from five different lakes and
 calendar years, combined only through their rank weight. The result,
-$+0.0244$, exceeds $\tau=0.005$, giving $\uparrow$, and every
+$+0.0253$, exceeds $\tau=0.005$, giving $\uparrow$, and every
 intermediate quantity is recoverable from the audit report returned
 alongside the forecast.
 
@@ -1868,26 +1877,25 @@ executed against the full deployed index.
 \centering
 \caption{Measured trajectory-similarity search performance.}
 \label{tab:similarity_perf}
-\begin{tabular}{lrrr}
+\begin{tabular}{lrr}
 \toprule
-Query lake & Candidates & Latency (ms) & Best raw cosine \\
+Query lake & Candidates & Best raw cosine \\
 \midrule
-Chilika    & 828 & 146 & 0.99691 \\
-Wular      & 828 & 141 & 0.99722 \\
-Loktak     & 828 & 148 & 0.99868 \\
-Tso Morari & 828 & 160 & 0.99720 \\
-Vembanad   & 828 & 172 & 0.99830 \\
+Chilika        & 828 & 0.99691 \\
+Maharana Pratap Sagar (Beas) & 828 & 0.99884 \\
+Tawa Reservoir & 828 & 0.99936 \\
+Tso Morari     & 828 & 0.99720 \\
+Sasthamcotta   & 828 & 0.99784 \\
 \midrule
-Mean       & 828 & 153 & 0.99766 \\
+Mean           & 828 & 0.99803 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
 Each query evaluates roughly 4{,}900 candidate windows --- 828
-lakes with up to six windows each --- at 768 dimensions, and
-completes in about \SI{153}{\milli\second}. This is comfortably
-interactive, and the index is fully scanned rather than
-approximated, so the returned ranking is exact.
+lakes with up to six windows each --- at 768 dimensions, comfortably
+interactive in the deployed application, and the index is fully
+scanned rather than approximated, so the returned ranking is exact.
 
 \section{The Score Compression Problem}
 
@@ -1911,9 +1919,9 @@ validation alongside spatial similarity: EcoTwin presents, for the
 query lake and its analogs, the full ten-year series of all five
 implemented indices (Table~\ref{tab:indices}), observation
 availability, and the directional forecast with its contributing
-twins. Its value is demonstrated concretely by Wular Lake in
-Chapter~\ref{chap:ramsar}, whose geographically unrelated top
-analogs nonetheless share its independently measured eutrophication
+twins. Its value is demonstrated concretely in Chapter~\ref{chap:ramsar},
+where several sites' top analogs are geographically unrelated to the
+query lake yet still share its independently measured historical
 trend.
 
 \section{Processing Reliability}
@@ -1966,33 +1974,48 @@ types.
 % CHAPTER: RAMSAR CASE STUDIES
 % ============================================================
 
-\chapter{Applied Analysis: Five Ramsar Wetlands}
+\chapter{Applied Analysis: Five Ramsar Wetlands and Reservoirs}
 \label{chap:ramsar}
 
 \section{Purpose and Site Selection}
 
-This chapter runs the system end to end on five wetlands and reports
-what came back, including inconclusive results. Ramsar sites are
-ecologically significant and comparatively well-documented, so an
-independent account of site condition exists against which EcoTwin's
-purely satellite-derived output can be sanity-checked. Five sites
-with complete ten-year records were selected, spanning a deliberately
-wide range of climate, altitude, and wetland type.
+This chapter runs the system end to end on five Ramsar-designated
+sites and reports what came back, including inconclusive results:
+Chilika, Tso Morari, Maharana Pratap Sagar (on the Beas, at Pong
+Dam), Tawa Reservoir, and Sasthamcotta. Ramsar designation marks a
+site as ecologically significant, but it does not by itself supply a
+specific, checkable public condition report, so each site section
+below closes with a \emph{Documented Condition} subsection that
+searches for one and reports honestly on the match --- ranging from
+Chilika's renewed-weed-growth reports lining up with the measured
+encroachment signal, through Beas and Tawa (well-documented as
+biodiverse reservoirs, but with no published directional trend to
+check against), to Sasthamcotta, whose extensively documented decline
+only \emph{partially} agrees with the measured signal (its NDWI
+moves the opposite way a simple reading of the documented shrinkage
+would predict). Tso Morari additionally offers the chapter's
+strongest independent corroboration via its Pangong Tso analog
+pairing (Section~\ref{chap:discussion}), a form of validation
+internal to the retrieval method rather than an external condition
+report. Five sites with complete ten-year records were selected,
+spanning a deliberately wide range of climate, altitude, and
+water-body type --- natural wetlands and a coastal lagoon alongside
+two dam-regulated reservoirs (Beas/Pong Dam and Tawa).
 
 \begin{table}[H]
 \centering
-\caption{The five Ramsar sites analysed. All five have complete
-2016--2025 embedding and feature coverage.}
+\caption{The five Ramsar-designated sites analysed. All five have
+complete 2016--2025 embedding and feature coverage.}
 \label{tab:ramsar_sites}
 \begin{tabularx}{\textwidth}{l r l r r X}
 \toprule
 Site & Lake ID & State & Area & Elev. & Type \\
 \midrule
-Chilika    & 1506  & Odisha        & 843.22 & 1    & Brackish coastal lagoon \\
-Tso Morari & 1413  & Ladakh        & 141.25 & 4522 & High-altitude cold desert \\
-Loktak     & 15510 & Manipur       & 58.30  & 768  & Freshwater, floating \emph{phumdi} \\
-Wular      & 14989 & J\&K          & 41.36  & 1574 & Himalayan floodplain \\
-Vembanad   & 15829 & Kerala        & 10.14  & 0    & Tropical backwater estuary \\
+Chilika       & 1506   & Odisha           & 843.22 & 1    & Brackish coastal lagoon \\
+Tso Morari    & 1413   & Ladakh           & 141.25 & 4522 & High-altitude cold desert \\
+Tawa Reservoir & 1498  & Madhya Pradesh   & 101.61 & 348  & Irrigation reservoir (Ramsar site, 2024) \\
+Maharana Pratap Sagar (Beas) & 1423 & Himachal Pradesh & 189.40 & 407 & Himalayan-foothill reservoir (Pong Dam) \\
+Sasthamcotta  & 179921 & Kerala           & 3.19   & 4    & Freshwater lake, drinking-water reservoir \\
 \bottomrule
 \end{tabularx}
 \end{table}
@@ -2050,15 +2073,15 @@ traversing (Section~\ref{sec:trajectory}).
 Index & 2016 & 2018 & 2020 & 2022 & 2024 & 2025 \\
 \midrule
 NDCI            & 0.0360 & 0.0323 & 0.0463 & 0.0518 & 0.0527 & 0.0415 \\
-NDVI-B7         & $-$0.0450 & $-$0.1469 & $-$0.0865 & $-$0.0686 & $-$0.0491 & $-$0.0806 \\
-NDWI            & 0.0911 & 0.2772 & 0.2169 & 0.1715 & 0.1578 & 0.1985 \\
+NDVI            & $-$0.0773 & $-$0.1893 & $-$0.1410 & $-$0.1246 & $-$0.1092 & $-$0.1280 \\
+NDWI            & 0.1231 & 0.3170 & 0.2688 & 0.2258 & 0.2161 & 0.2441 \\
 Turbidity       & $-$0.0463 & $-$0.1359 & $-$0.1328 & $-$0.1041 & $-$0.1095 & $-$0.1198 \\
 Red-edge slope  & $-$2.3037 & $-$2.9020 & $-$2.5017 & $-$2.7318 & $-$2.2062 & $-$2.3865 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-The persistently negative NDVI-B7 and positive NDWI are the expected
+The persistently negative NDVI and positive NDWI are the expected
 signature of a large, genuinely open water body.
 
 \subsection{Forecast}
@@ -2073,8 +2096,8 @@ values are weighted scores; $n$ is contributing twins.}
 Index & 2025 & 2026 & 2027 & 2028 \\
 \midrule
 NDCI & 0.0415 & $\rightarrow$ ($+$0.0029, $n$=5) & $\rightarrow$ ($+$0.0008, $n$=4) & $\uparrow$ ($+$0.0391, $n$=3) \\
-NDVI-B7 & $-$0.0806 & $\uparrow$ ($+$0.0244, $n$=5) & $\uparrow$ ($+$0.0406, $n$=4) & $\uparrow$ ($+$0.0669, $n$=3) \\
-NDWI & 0.1985 & $\downarrow$ ($-$0.0205, $n$=5) & $\downarrow$ ($-$0.0576, $n$=4) & $\downarrow$ ($-$0.0950, $n$=3) \\
+NDVI & $-$0.1280 & $\uparrow$ ($+$0.0253, $n$=5) & $\uparrow$ ($+$0.0420, $n$=4) & $\uparrow$ ($+$0.0730, $n$=3) \\
+NDWI & 0.2441 & $\downarrow$ ($-$0.0219, $n$=5) & $\downarrow$ ($-$0.0578, $n$=4) & $\downarrow$ ($-$0.0986, $n$=3) \\
 Turbidity & $-$0.1198 & $\rightarrow$ ($-$0.0032, $n$=5) & $\uparrow$ ($+$0.0219, $n$=4) & $\uparrow$ ($+$0.0333, $n$=3) \\
 Red-edge & $-$2.3865 & $\uparrow$ ($+$0.2800, $n$=5) & $\uparrow$ ($+$0.3180, $n$=4) & $\uparrow$ ($+$0.2312, $n$=3) \\
 \bottomrule
@@ -2083,193 +2106,279 @@ Red-edge & $-$2.3865 & $\uparrow$ ($+$0.2800, $n$=5) & $\uparrow$ ($+$0.3180, $n
 
 \subsection{Interpretation}
 
-The forecast is internally coherent: NDVI-B7 rises while NDWI falls
+The forecast is internally coherent: NDVI rises while NDWI falls
 by a comparable magnitude every year --- expected, since both share
-B7, so vegetation encroaching on open water must raise one and lower
+B8, so vegetation encroaching on open water must raise one and lower
 the other. Rising red-edge slope and turbidity from 2027 reinforce
 the same reading: \textbf{gradual vegetative encroachment and
 reduction of open water}, with the declining twin count (5, 4, 3)
 signalling that 2028 should be read more cautiously than 2026.
 
-\section{Wular Lake, Jammu \& Kashmir}
+\subsection{Documented Condition}
 
-Wular is one of Asia's largest freshwater lakes, fed by the Jhelum
-in the Kashmir Valley, and among the most-documented degrading
-wetlands in India (siltation, shrinkage, weed proliferation).
+Chilika's weed history is well recorded and non-monotone: freshwater
+weed cover exploded from roughly 20\,km\textsuperscript{2} in 1972 to
+around 685\,km\textsuperscript{2} by 2000 as siltation reduced
+salinity, driving a major restoration --- reopening the lagoon's sea
+mouth in 2000 to restore tidal flushing, after which invasive
+freshwater weed cover fell sharply.\footnote{Chilika Development
+Authority site history; Down To Earth, ``Chilika: a lake in limbo'',
+\url{https://www.downtoearth.org.in/environment/chilika-a-lake-in-limbo-30053};
+ICSF, ``Odisha: Chilika shrinking due to massive siltation'',
+\url{https://icsf.net/newss/odisha-chilika-shrinking-due-to-massive-siltation/}.}
+More recent reporting describes renewed weed growth (Nala grass,
+Rajadala, and bamboo grass) interfering with fishing, alongside
+continued sediment inflow from the catchment. The gradual
+vegetative-encroachment signal measured here across 2016--2025 is
+consistent with this renewed-growth phase --- a real but far milder
+trend than the pre-2000 crisis --- rather than with either extreme
+of the lagoon's documented history.
 
-\subsection{Retrieved Analogs}
+\section{Maharana Pratap Sagar (Beas), Himachal Pradesh}
 
-\begin{table}[H]
-\centering
-\caption{Wular --- top five analogs (828 candidates, 141 ms).}
-\label{tab:wular_analogs}
-\begin{tabularx}{\textwidth}{r X l r r l}
-\toprule
-\# & Lake & State & Area & Raw cos. & Window \\
-\midrule
-1 & 177198 & Assam & 2.95 & 0.99722 & 2021--2025 \\
-2 & 177700 & West Bengal & 2.64 & 0.99676 & 2021--2025 \\
-3 & 174785 & Jammu \& Kashmir & 2.05 & 0.99653 & 2021--2025 \\
-4 & 176918 & Assam & 2.26 & 0.99595 & 2021--2025 \\
-5 & 177648 & West Bengal & 4.75 & 0.99582 & 2021--2025 \\
-\bottomrule
-\end{tabularx}
-\end{table}
-
-The analogs are small floodplain water bodies in Assam and West
-Bengal --- utterly unlike Wular in size, altitude, and climate, but
-sharing a \emph{spectral trajectory} of shallow, vegetation-choked
-water. The system matches ecological condition, not geography, as
-designed.
-
-\subsection{Measured History --- The Clearest Signal in the Study}
-
-\begin{table}[H]
-\centering
-\caption{Wular --- measured index history, 2016--2025.}
-\label{tab:wular_hist}
-\begin{tabular}{lrrrrrr}
-\toprule
-Index & 2016 & 2018 & 2020 & 2022 & 2024 & 2025 \\
-\midrule
-NDCI            & 0.0372 & 0.1469 & 0.1866 & 0.2099 & 0.1769 & 0.2101 \\
-NDVI-B7         & 0.0621 & 0.1871 & 0.3419 & 0.3077 & 0.2662 & 0.2963 \\
-NDWI            & $-$0.0198 & $-$0.0927 & $-$0.2224 & $-$0.1943 & $-$0.1766 & $-$0.1878 \\
-Turbidity       & $-$0.0424 & $-$0.0961 & $-$0.1294 & $-$0.1206 & $-$0.0940 & $-$0.1149 \\
-Red-edge slope  & 0.8124 & 1.0597 & 4.1133 & 2.7214 & 2.6702 & 2.6200 \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-This is the most pronounced trend recovered anywhere in the study.
-Over ten years NDCI rises \textbf{5.6-fold} (0.037 $\to$ 0.210) and
-NDVI-B7 rises \textbf{4.8-fold} (0.062 $\to$ 0.296), while NDWI falls
-to $-0.188$ and the red-edge slope more than triples --- consistent
-across all ten annual composites, and unambiguous:
-\textbf{sustained conversion of open water to vegetated surface,
-with rising chlorophyll}. This is the closest thing to external
-validation the project obtained: EcoTwin, given no information
-beyond Sentinel-2 reflectance, independently recovered the
-degradation trajectory the lake is documented to be undergoing.
-
-\subsection{Forecast}
-
-\begin{table}[H]
-\centering
-\caption{Wular --- directional forecast 2026--2028.}
-\label{tab:wular_fc}
-\begin{tabular}{lrlll}
-\toprule
-Index & 2025 & 2026 & 2027 & 2028 \\
-\midrule
-NDCI & 0.2101 & $\uparrow$ ($+$0.0182, $n$=5) & $\uparrow$ ($+$0.0147, $n$=4) & $\uparrow$ ($+$0.0087, $n$=3) \\
-NDVI-B7 & 0.2963 & $\uparrow$ ($+$0.0337, $n$=5) & $\uparrow$ ($+$0.0168, $n$=4) & $\downarrow$ ($-$0.0105, $n$=3) \\
-NDWI & $-$0.1878 & $\downarrow$ ($-$0.0298, $n$=5) & $\downarrow$ ($-$0.0119, $n$=4) & $\downarrow$ ($-$0.0142, $n$=3) \\
-Turbidity & $-$0.1149 & $\downarrow$ ($-$0.0063, $n$=5) & $\downarrow$ ($-$0.0064, $n$=4) & $\uparrow$ ($+$0.0261, $n$=3) \\
-Red-edge & 2.6200 & $\uparrow$ ($+$0.6184, $n$=5) & $\downarrow$ ($-$0.0429, $n$=4) & $\downarrow$ ($-$0.0244, $n$=3) \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-\subsection{Interpretation}
-
-The forecast projects \textbf{continued eutrophication}: NDCI rises
-and NDWI falls in all three years, with NDCI increments shrinking
-year on year ($+$0.018, $+$0.015, $+$0.009) as an already-degraded
-system approaches saturation. The NDVI-B7 reversal in 2028 is worth
-flagging: it rests on three twins, its magnitude is barely twice the
-classification threshold, and it contradicts both the ten-year trend
-and 2028's NDCI direction --- the twin count is what lets a reader
-see this cell is weak.
-
-\section{Loktak Lake, Manipur}
-
-Loktak is the largest freshwater lake in northeast India, unique for
-its \emph{phumdi} --- floating mats of vegetation and organic matter
-supporting the world's only floating national park --- making its
-surface a natural stress test for an index set built on
-water/vegetation contrast.
+Maharana Pratap Sagar --- the reservoir impounded by the Pong Dam on
+the Beas River, a Ramsar site since 2002 and a major wintering ground
+for migratory waterfowl in the western Himalayan foothills --- is
+identified in the dataset by its source river, \textbf{Beas}
+(lake\_id 1423). Unlike the natural wetlands elsewhere in this
+chapter, it is a dam-regulated reservoir, so its surface extent and
+shoreline vegetation respond to reservoir operations (drawdown and
+refill) as much as to natural hydrology or ecological succession.
 
 \subsection{Retrieved Analogs}
 
 \begin{table}[H]
 \centering
-\caption{Loktak --- top five analogs (828 candidates, 148 ms).}
-\label{tab:loktak_analogs}
+\caption{Beas --- top five analogs (828 candidates).}
+\label{tab:beas_analogs}
 \begin{tabularx}{\textwidth}{r X l r r l}
 \toprule
 \# & Lake & State & Area & Raw cos. & Window \\
 \midrule
-1 & 177772 & Madhya Pradesh & 6.36 & 0.99868 & 2020--2024 \\
-2 & 178276 & Maharashtra & 9.00 & 0.99843 & 2020--2024 \\
-3 & 15539 & Tripura & 34.41 & 0.99840 & 2020--2024 \\
-4 & 15741 & Karnataka & 16.83 & 0.99822 & 2021--2025 \\
-5 & 178489 & Andhra Pradesh & 8.02 & 0.99804 & 2021--2025 \\
+1 & Gandhisagar Reservoir & Madhya Pradesh & 523.51 & 0.99884 & 2021--2025 \\
+2 & 15581 & Chhattīsgarh & 28.46 & 0.99824 & 2021--2025 \\
+3 & 15672 & Telangana & 49.45 & 0.99816 & 2020--2024 \\
+4 & 178210 & Chhattīsgarh & 8.75 & 0.99812 & 2020--2024 \\
+5 & 15727 & Andhra Pradesh & 19.52 & 0.99810 & 2016--2020 \\
 \bottomrule
 \end{tabularx}
 \end{table}
 
-Loktak produced the \textbf{highest raw similarity in the study}
-(0.99868); its third-ranked analog, in Tripura, is the only case
-where a top analog is both geographically near and climatically
-similar to the query.
+The top analog is itself another large dam reservoir (Gandhisagar,
+on the Chambal) --- a rare case in this study where the top-ranked
+analog shares Beas's man-made, regulated character, not just its
+spectral trajectory. As with Chilika, the two top-ranked analogs'
+matched windows both end at 2025 (the anchor year), so neither has
+any observed future to contribute; the forecast twins actually used
+(Section~\ref{sec:beas_forecast_note} below) are drawn from further
+down the ranked pool.
 
 \subsection{Measured History}
 
 \begin{table}[H]
 \centering
-\caption{Loktak --- measured index history, 2016--2025.}
-\label{tab:loktak_hist}
+\caption{Beas --- measured index history, 2016--2025.}
+\label{tab:beas_hist}
 \begin{tabular}{lrrrrrr}
 \toprule
 Index & 2016 & 2018 & 2020 & 2022 & 2024 & 2025 \\
 \midrule
-NDCI            & 0.1092 & 0.1040 & 0.1625 & 0.2171 & 0.1887 & 0.1590 \\
-NDVI-B7         & 0.1913 & 0.1819 & 0.3216 & 0.4075 & 0.3829 & 0.3242 \\
-NDWI            & $-$0.0550 & $-$0.0296 & $-$0.1965 & $-$0.2696 & $-$0.2634 & $-$0.1860 \\
-Turbidity       & $-$0.1377 & $-$0.1532 & $-$0.1335 & $-$0.1550 & $-$0.1329 & $-$0.1470 \\
-Red-edge slope  & 0.8915 & 0.9331 & 2.3458 & 3.3448 & 3.3716 & 2.6009 \\
+NDCI            & $-$0.0039 & $-$0.0061 & $-$0.0231 & 0.0589 & $-$0.0021 & 0.0208 \\
+NDVI            & $-$0.0996 & $-$0.0818 & $-$0.1595 & 0.0749 & $-$0.1185 & $-$0.2293 \\
+NDWI            & 0.2673 & 0.2647 & 0.3680 & 0.1325 & 0.2746 & 0.3733 \\
+Turbidity       & $-$0.1723 & $-$0.1870 & $-$0.2215 & $-$0.2054 & $-$0.1614 & $-$0.1574 \\
+Red-edge slope  & $-$0.8025 & $-$0.7993 & $-$0.5696 & 0.2272 & $-$0.9782 & $-$2.8268 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-Loktak has the highest NDVI-B7 of any site studied, peaking at
-0.4075 in 2022 (the \emph{phumdi} mats), then partially receding
-through 2025 --- a non-monotone pattern distinct from Wular's
-sustained decline.
+Beas shows no sustained directional trend of the kind seen at Wular
+in the earlier version of this chapter: NDVI oscillates between
+roughly $-0.23$ and $+0.07$ and NDWI between $0.13$ and $0.41$ with
+no monotone drift, consistent with a reservoir whose surface extent
+is driven by dam operations (seasonal drawdown and refill for
+irrigation and hydropower) rather than by a one-way ecological
+process. The red-edge slope is the most volatile series measured
+anywhere in this study, swinging from $+0.23$ in 2022 to $-2.83$ in
+2025 --- a signal to read cautiously rather than as a pigment trend,
+since it is exactly the kind of index a fluctuating reservoir
+shoreline can perturb independently of vegetation health.
 
-\subsection{Forecast --- and an Instructive Failure}
+\subsection{Forecast}
+\label{sec:beas_forecast_note}
 
 \begin{table}[H]
 \centering
-\caption{Loktak --- directional forecast 2026--2028.}
-\label{tab:loktak_fc}
+\caption{Beas --- directional forecast 2026--2028.}
+\label{tab:beas_fc}
 \begin{tabular}{lrlll}
 \toprule
 Index & 2025 & 2026 & 2027 & 2028 \\
 \midrule
-NDCI & 0.1590 & $\downarrow$ ($-$0.0086, $n$=5) & $\uparrow$ ($+$0.0705, $n$=2) & \textbf{?} ($n$=0) \\
-NDVI-B7 & 0.3242 & $\rightarrow$ ($+$0.0043, $n$=5) & $\uparrow$ ($+$0.1694, $n$=2) & \textbf{?} ($n$=0) \\
-NDWI & $-$0.1860 & $\uparrow$ ($+$0.0120, $n$=5) & $\downarrow$ ($-$0.1893, $n$=2) & \textbf{?} ($n$=0) \\
-Turbidity & $-$0.1470 & $\downarrow$ ($-$0.0161, $n$=5) & $\uparrow$ ($+$0.0165, $n$=2) & \textbf{?} ($n$=0) \\
-Red-edge & 2.6009 & $\uparrow$ ($+$0.1294, $n$=5) & $\uparrow$ ($+$0.1755, $n$=2) & \textbf{?} ($n$=0) \\
+NDCI & 0.0208 & $\downarrow$ ($-$0.0276, $n$=5) & \textbf{?} ($n$=1) & \textbf{?} ($n$=1) \\
+NDVI & $-$0.2293 & $\uparrow$ ($+$0.0123, $n$=5) & \textbf{?} ($n$=1) & \textbf{?} ($n$=1) \\
+NDWI & 0.3733 & $\rightarrow$ ($-$0.0006, $n$=5) & \textbf{?} ($n$=1) & \textbf{?} ($n$=1) \\
+Turbidity & $-$0.1574 & $\downarrow$ ($-$0.0118, $n$=5) & \textbf{?} ($n$=1) & \textbf{?} ($n$=1) \\
+Red-edge & $-$2.8268 & $\uparrow$ ($+$0.5993, $n$=5) & \textbf{?} ($n$=1) & \textbf{?} ($n$=1) \\
 \bottomrule
 \end{tabular}
 \end{table}
 
 \subsection{Interpretation}
 
-The 2028 column is entirely \emph{uncertain} --- correctly refusing
-to guess rather than a failed forecast. The cause is structural:
-three of Loktak's five twins matched on windows ending in 2024, and
-the dataset ends in 2025, leaving $|\mathcal{A}_{k,3}| = 0$ for every
-index. Had \emph{uncertain} been collapsed into \emph{stable} ---
-the earlier implementation's behaviour --- this column would have
-reported five confident ``no change'' predictions backed by no
-evidence at all (Section~\ref{sec:forecast_method}). The 2027 column
-carries a softer version of the same warning: two twins produce a
-large NDVI-B7 score ($+$0.1694), but the reported $n=2$ signals that
-consensus is thin.
+Beas is the most extreme case of confidence degradation in the
+study: four of its five twins matched on windows ending in 2024,
+leaving only a single observed future year (2025, offset $h=1$) for
+each; only the fifth twin, matched on 2016--2020, has any data at
+$h=2$ or $h=3$. The result is a confidence profile of $n=5,1,1$ ---
+worse than Vembanad's $5,3,1$ (Section~\ref{chap:ramsar}) --- and
+every 2027/2028 cell is correctly reported as \emph{uncertain} rather
+than resting a classification on one lake's idiosyncratic trajectory.
+Only the 2026 column, with all five twins contributing, is a reliable
+read: NDCI down, NDVI and red-edge up, NDWI essentially flat --- a
+mild signal, and the honest one available given how recently most of
+Beas's twins matched.
+
+\subsection{Documented Condition}
+
+Public documentation of Maharana Pratap Sagar (Pong Dam Lake)
+centres on its status as a Ramsar-designated bird sanctuary --- one
+of the most important in north India, hosting large numbers of
+wintering waterfowl --- and a productive multi-use reservoir
+combining inland fishery and hydroelectric generation.\footnote{
+Ramsar site designation, 2002 (criteria 5 and 8); Himachal Pradesh
+Kangra district tourism office,
+\url{https://hpkangra.nic.in/tourist-place/pong-dam/}; overview at
+\url{https://en.wikipedia.org/wiki/Maharana_Pratap_Sagar}.} No
+published account of a directional trend in siltation, vegetation
+encroachment, or water-hyacinth spread specific to this reservoir
+was found. That absence is at best weak, negative-only support for
+the oscillating, no-sustained-trend signal measured here: it is
+consistent with there being no documented one-way degradation to
+contradict, not confirmation that the measured oscillation is
+correct.
+
+\section{Tawa Reservoir, Madhya Pradesh}
+
+Tawa Reservoir is a large irrigation and flood-control reservoir on
+the Tawa River, a tributary of the Narmada, in Madhya Pradesh's
+Narmadapuram district, within the Satpura Tiger Reserve --- notified
+as a Ramsar site of international importance in 2024. It is included
+here as a second dam-regulated freshwater comparison point alongside
+Beas (Section~\ref{sec:beas_forecast_note}), replacing Loktak, which
+turned out not to be identifiable with confidence in the active
+processing cohort (there is no lake named ``Loktak'' in the
+underlying HydroLAKES-derived table; the earlier version of this
+chapter's identification of lake\_id 15510 with Loktak was an
+unverified inference from area and state alone).
+
+\subsection{Retrieved Analogs}
+
+\begin{table}[H]
+\centering
+\caption{Tawa Reservoir --- top five analogs (828 candidates).}
+\label{tab:tawa_analogs}
+\begin{tabularx}{\textwidth}{r X l r r l}
+\toprule
+\# & Lake & State & Area & Raw cos. & Window \\
+\midrule
+1 & 15544 & Madhya Pradesh & 15.03 & 0.99936 & 2021--2025 \\
+2 & 15634 & Maharashtra & 15.54 & 0.99931 & 2019--2023 \\
+3 & 15616 & Maharashtra & 39.91 & 0.99926 & 2017--2021 \\
+4 & 178333 & Telangana & 5.12 & 0.99921 & 2019--2023 \\
+5 & 15577 & Madhya Pradesh & 36.00 & 0.99913 & 2021--2025 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+The top and fifth-ranked analogs both match on windows ending at
+2025 (the anchor year) and so carry no observed future --- the same
+pattern seen at Beas and Chilika --- meaning the forecast twins used
+below are drawn from ranks 2--4 plus two further candidates from the
+enlarged pool.
+
+\subsection{Measured History}
+
+\begin{table}[H]
+\centering
+\caption{Tawa Reservoir --- measured index history, 2016--2025.}
+\label{tab:tawa_hist}
+\begin{tabular}{lrrrrrr}
+\toprule
+Index & 2016 & 2018 & 2020 & 2022 & 2024 & 2025 \\
+\midrule
+NDCI            & $-$0.0874 & 0.0479 & 0.0011 & 0.0009 & $-$0.0107 & $-$0.0423 \\
+NDVI            & $-$0.2939 & 0.0681 & $-$0.1323 & $-$0.0890 & $-$0.1606 & $-$0.1918 \\
+NDWI            & 0.4824 & 0.0059 & 0.2650 & 0.2450 & 0.3178 & 0.3701 \\
+Turbidity       & $-$0.2197 & $-$0.0739 & $-$0.1375 & $-$0.1595 & $-$0.1657 & $-$0.1920 \\
+Red-edge slope  & $-$1.3090 & 0.2360 & $-$1.1605 & $-$0.5719 & $-$0.9505 & $-$0.9585 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Like Beas, Tawa shows no sustained one-way trend --- every index
+oscillates across the decade rather than drifting monotonically,
+consistent with a managed reservoir where surface water extent
+tracks irrigation releases and monsoon refill rather than a
+directional ecological process. 2018 stands out as a local extremum
+across all five indices simultaneously (least negative NDCI/NDVI,
+lowest NDWI, least negative turbidity, only positive red-edge slope
+value in the series) --- most plausibly a single unusually dry or
+low-water year rather than a data artifact, though it was not
+independently cross-checked against reservoir operation records.
+
+\subsection{Forecast}
+
+\begin{table}[H]
+\centering
+\caption{Tawa Reservoir --- directional forecast 2026--2028.}
+\label{tab:tawa_fc}
+\begin{tabular}{lrlll}
+\toprule
+Index & 2025 & 2026 & 2027 & 2028 \\
+\midrule
+NDCI & $-$0.0423 & $\uparrow$ ($+$0.0129, $n$=5) & $\downarrow$ ($-$0.0158, $n$=5) & $\uparrow$ ($+$0.0200, $n$=2) \\
+NDVI & $-$0.1918 & $\uparrow$ ($+$0.0207, $n$=5) & $\downarrow$ ($-$0.0071, $n$=5) & $\uparrow$ ($+$0.0056, $n$=2) \\
+NDWI & 0.3701 & $\downarrow$ ($-$0.0420, $n$=5) & $\uparrow$ ($+$0.0132, $n$=5) & $\downarrow$ ($-$0.0348, $n$=2) \\
+Turbidity & $-$0.1920 & $\uparrow$ ($+$0.0249, $n$=5) & $\downarrow$ ($-$0.0075, $n$=5) & $\uparrow$ ($+$0.0316, $n$=2) \\
+Red-edge & $-$0.9585 & $\downarrow$ ($-$0.0282, $n$=5) & $\uparrow$ ($+$0.0673, $n$=5) & $\downarrow$ ($-$0.1696, $n$=2) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Interpretation}
+
+Every one of the five indices alternates direction year over year
+($\uparrow\downarrow\uparrow$ or $\downarrow\uparrow\downarrow$) ---
+an oscillatory rather than trending forecast, which is itself
+informative: it mirrors the oscillation already visible in the
+measured decade (above) rather than projecting a new one-way
+trajectory onto a reservoir whose behaviour has never shown one.
+Confidence holds at $n=5$ for 2026 and 2027 across every index ---
+the best-supported two-year stretch of either of the two managed
+reservoirs in this chapter --- before dropping to $n=2$ in 2028, the same
+data-recency effect documented throughout this chapter
+(Section~\ref{sec:forecast_method}). The 2028 red-edge score
+($-$0.1696) is the largest-magnitude cell in this table and rests on
+only two twins; it should be read as directionally suggestive, not
+calibrated.
+
+\subsection{Documented Condition}
+
+Tawa Reservoir was notified as a Ramsar site in August 2024 --- the
+fifth in Madhya Pradesh --- on the strength of its biodiversity: 57
+fish species, 21 mammals, and over 280 migratory bird species,
+alongside the state fish of Madhya Pradesh, the tor mahseer.\footnote{
+MoEFCC Ramsar notification, August 2024;
+\url{https://theprint.in/india/tawa-reservoir-in-mps-narmadapuram-district-declared-ramsar-site/2223571/};
+Ramsar Sites Information Service, \url{https://rsis.ramsar.org/ris/2547}.}
+The Central Water Commission completed a post-project environmental
+impact assessment in 2022 covering sedimentation rates and water
+quality, but the publicly available summaries do not report a
+specific directional trend. As with Beas, no documented one-way
+ecological trend was found to check the measured oscillation
+against --- the designation reflects the reservoir's current
+ecological richness rather than a published condition trajectory.
 
 \section{Tso Morari, Ladakh}
 
@@ -2329,18 +2438,19 @@ Table~\ref{tab:tsomorari_analogs}.}
 Index & 2016 & 2018 & 2020 & 2022 & 2024 & 2025 \\
 \midrule
 NDCI            & $-$0.0396 & $-$0.0212 & $-$0.0417 & $-$0.0450 & $-$0.0337 & $-$0.0376 \\
-NDVI-B7         & $-$0.0907 & $-$0.0649 & $-$0.0805 & $-$0.0653 & $-$0.0339 & $-$0.0509 \\
-NDWI            & 0.4804 & 0.2449 & 0.3921 & 0.3699 & 0.2700 & 0.3371 \\
+NDVI            & $-$0.1584 & $-$0.1030 & $-$0.1000 & $-$0.0926 & $-$0.0501 & $-$0.0510 \\
+NDWI            & 0.5315 & 0.2805 & 0.4086 & 0.3934 & 0.2849 & 0.3371 \\
 Turbidity       & $-$0.4074 & $-$0.1828 & $-$0.3217 & $-$0.3121 & $-$0.2382 & $-$0.2912 \\
 Red-edge slope  & $-$0.0893 & $-$0.2676 & $-$0.1009 & $-$0.0617 & $-$0.0007 & $-$0.0446 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-Tso Morari records the \textbf{highest NDWI} (0.48) and \textbf{most
+Tso Morari records the \textbf{highest NDWI} (0.53) and \textbf{most
 negative turbidity} ($-$0.41) in the study --- the signature of
 exceptionally clear, vegetation-free, glacier-fed water, and the
-opposite extreme from Loktak.
+opposite extreme from Sasthamcotta's vegetation-heavy 2016 reading
+(Section~\ref{chap:ramsar}).
 
 \subsection{Forecast}
 
@@ -2353,8 +2463,8 @@ opposite extreme from Loktak.
 Index & 2025 & 2026 & 2027 & 2028 \\
 \midrule
 NDCI & $-$0.0376 & $\uparrow$ ($+$0.0204, $n$=5) & $\rightarrow$ ($+$0.0046, $n$=5) & $\downarrow$ ($-$0.0057, $n$=5) \\
-NDVI-B7 & $-$0.0509 & $\uparrow$ ($+$0.0360, $n$=5) & $\uparrow$ ($+$0.0228, $n$=5) & $\downarrow$ ($-$0.0177, $n$=5) \\
-NDWI & 0.3371 & $\downarrow$ ($-$0.0537, $n$=5) & $\downarrow$ ($-$0.0216, $n$=5) & $\rightarrow$ ($-$0.0035, $n$=5) \\
+NDVI & $-$0.0510 & $\uparrow$ ($+$0.0310, $n$=5) & $\uparrow$ ($+$0.0262, $n$=5) & $\downarrow$ ($-$0.0145, $n$=5) \\
+NDWI & 0.3371 & $\downarrow$ ($-$0.0482, $n$=5) & $\downarrow$ ($-$0.0260, $n$=5) & $\downarrow$ ($-$0.0062, $n$=5) \\
 Turbidity & $-$0.2912 & $\uparrow$ ($+$0.0204, $n$=5) & $\downarrow$ ($-$0.0058, $n$=5) & $\uparrow$ ($+$0.0172, $n$=5) \\
 Red-edge & $-$0.0446 & $\uparrow$ ($+$0.0499, $n$=5) & $\uparrow$ ($+$0.2908, $n$=5) & $\downarrow$ ($-$0.0522, $n$=5) \\
 \bottomrule
@@ -2364,17 +2474,25 @@ Red-edge & $-$0.0446 & $\uparrow$ ($+$0.0499, $n$=5) & $\uparrow$ ($+$0.2908, $n
 \begin{wrapfigure}{r}{0.32\textwidth}
 \centering
 \includegraphics[width=0.3\textwidth]{images/Forecast_part4.png}
-\caption{Live forecast summary for Tso Morari, 2026--2028, directly
-comparable to Table~\ref{tab:tsomorari_fc}.}
+\caption{Live forecast summary for Tso Morari captured under the
+earlier B7-proxy implementation (note the ``NDVI-B7'' label) ---
+predates the switch to true-NIR B8 and should be recaptured against
+the current deployment for a like-for-like comparison with
+Table~\ref{tab:tsomorari_fc}.}
 \label{fig:morari_fc_summary}
 \end{wrapfigure}
 
-The live application's Forecast panel (Figure~\ref{fig:morari_fc_summary})
-agrees with Table~\ref{tab:tsomorari_fc} on \textbf{direction for all
-fifteen cells}, despite drawing on 15 contributing twins rather than
-the 5 used offline --- agreement despite a threefold difference in
-twin-pool size is evidence the classification is not an artifact of
-which handful of twins happens to be selected.
+At the time this screenshot was captured, the live application's
+Forecast panel (Figure~\ref{fig:morari_fc_summary}) agreed with the
+then-current (B7-proxy) forecast on \textbf{direction for all fifteen
+cells}, despite drawing on 15 contributing twins rather than the 5
+used offline --- agreement despite a threefold difference in
+twin-pool size was evidence the classification was not an artifact
+of which handful of twins happened to be selected. That agreement
+has not yet been re-verified against the B8-based numbers in
+Table~\ref{tab:tsomorari_fc}, since 2028's NDWI cell changed
+direction ($\rightarrow$ became $\downarrow$) between the two
+implementations; a fresh capture is listed as follow-up work.
 
 \subsection{Interpretation}
 
@@ -2382,90 +2500,169 @@ Tso Morari is the \textbf{only site where all five twins contribute
 to all three forecast years} ($n=5$ throughout), the best-supported
 forecast in the study since its twins matched on early windows,
 leaving three full years of observed future. The projection is
-mild --- modest NDVI-B7/NDCI increases, NDWI declining slightly then
-partially reversing --- appropriately undramatic for an ecosystem
-with no significant vegetation dynamic, and corroborated by the live
-application run using an independently drawn, larger twin pool.
+mild --- modest NDVI/NDCI increases, NDWI declining across all three
+years without reversal --- appropriately undramatic for an ecosystem
+with no significant vegetation dynamic. The earlier B7-proxy version
+of this forecast showed NDWI's 2028 decline stabilising rather than
+continuing; under standard-NIR NDWI it does not, a small but genuine
+change in the shape of the projection (see the note on
+Figure~\ref{fig:morari_fc_summary} above).
 
-\section{Vembanad, Kerala}
+\subsection{Documented Condition}
 
-Vembanad is the longest lake in India, the core of the Kerala
-backwater system --- a tropical estuarine wetland at sea level,
-subject to tidal exchange and intense agricultural/urban pressure.
+The scientific literature on Tso Moriri (the lake's more common
+spelling outside this dataset) attributes its water-level
+fluctuations primarily to within-year forcing --- snowmelt and
+glacial meltwater discharge through the summer months against
+winter/spring precipitation and evaporation --- rather than to a
+short, steady secular trend; longer-term studies do document
+multi-metre lake-level rises over millennial timescales tied to
+stronger snowmelt and precipitation regimes, and current regional
+literature flags accelerating glacier mass loss across the wider
+Trans-Himalayan/Tibetan Plateau region as a longer-horizon
+concern.\footnote{Extreme seasonal water-level changes and hydraulic
+modeling of high-altitude Himalayan lakes, \emph{Scientific
+Reports} (2023), \url{https://www.nature.com/articles/s41598-023-37667-z};
+lake pulses driven by glacier melting and climate variability,
+\emph{Scientific Reports} (2024),
+\url{https://www.nature.com/articles/s41598-024-78660-4}.} The
+near-decade stability measured here (Table~\ref{tab:tsomorari_hist})
+is consistent with a system dominated by within-year forcing rather
+than a visible decadal drift over 2016--2025, but it cannot speak to
+--- and does not rule out --- the slower, longer-horizon glacial
+retreat documented at the regional scale.
+
+\section{Sasthamcotta Lake, Kerala}
+
+Sasthamcotta is Kerala's largest freshwater lake and the principal
+drinking-water source for Kollam district, a Ramsar site since 2002,
+freshwater despite lying only a few kilometres from the coast and
+close to the tidally-influenced Vembanad backwater system it
+replaces in this chapter. It is identified in the dataset as
+Unnamed Lake \#179921 (Kerala), lake\_id 179921.
 
 \subsection{Retrieved Analogs}
 
 \begin{table}[H]
 \centering
-\caption{Vembanad --- top five analogs (828 candidates, 172 ms).}
-\label{tab:vembanad_analogs}
+\caption{Sasthamcotta --- top five analogs (828 candidates).}
+\label{tab:sasthamcotta_analogs}
 \begin{tabularx}{\textwidth}{r X l r r l}
 \toprule
 \# & Lake & State & Area & Raw cos. & Window \\
 \midrule
-1 & 176886 & Assam & 3.21 & 0.99830 & 2021--2025 \\
-2 & 15611 & Maharashtra & 11.75 & 0.99814 & 2020--2024 \\
-3 & 178503 & Telangana & 2.94 & 0.99791 & 2021--2025 \\
-4 & 15394 & Uttarakhand & 10.66 & 0.99779 & 2017--2021 \\
-5 & 178493 & Telangana & 2.64 & 0.99757 & 2020--2024 \\
+1 & 179945 & Kerala & 2.50 & 0.99784 & 2019--2023 \\
+2 & 179981 & Kerala & 2.59 & 0.99777 & 2016--2020 \\
+3 & 180015 & Tamil Nadu & 2.08 & 0.99754 & 2017--2021 \\
+4 & 179746 & Kerala & 4.16 & 0.99709 & 2019--2023 \\
+5 & 15611 & Maharashtra & 11.75 & 0.99698 & 2019--2023 \\
 \bottomrule
 \end{tabularx}
 \end{table}
+
+Unlike every other site in this chapter, all five top-ranked analogs
+here are directly usable as forecast twins --- none matches on a
+window ending at the 2025 anchor year, so no substitution from
+further down the ranked pool was needed. Three of the five are other
+small Kerala water bodies, the closest geographic clustering of
+analogs seen in this study.
 
 \subsection{Measured History}
 
 \begin{table}[H]
 \centering
-\caption{Vembanad --- measured index history, 2016--2025.}
-\label{tab:vembanad_hist}
+\caption{Sasthamcotta --- measured index history, 2016--2025.}
+\label{tab:sasthamcotta_hist}
 \begin{tabular}{lrrrrrr}
 \toprule
 Index & 2016 & 2018 & 2020 & 2022 & 2024 & 2025 \\
 \midrule
-NDCI            & 0.0599 & 0.0454 & 0.0476 & 0.0546 & 0.0578 & 0.0500 \\
-NDVI-B7         & 0.0065 & 0.0302 & 0.0455 & 0.0417 & 0.0545 & 0.0365 \\
-NDWI            & 0.0900 & 0.0755 & 0.0696 & 0.0672 & 0.0559 & 0.0755 \\
-Turbidity       & $-$0.0964 & $-$0.1055 & $-$0.1148 & $-$0.1086 & $-$0.1101 & $-$0.1117 \\
-Red-edge slope  & $-$0.7617 & $-$0.2258 & $-$0.0305 & $-$0.1827 & $-$0.0481 & $-$0.1832 \\
+NDCI            & 0.1957 & 0.0952 & 0.0823 & 0.0793 & 0.0928 & 0.0865 \\
+NDVI            & 0.4520 & 0.2606 & 0.1992 & 0.1006 & 0.1558 & 0.1816 \\
+NDWI            & $-$0.2769 & 0.0128 & 0.0172 & 0.1487 & 0.1324 & 0.0731 \\
+Turbidity       & $-$0.2002 & $-$0.2725 & $-$0.2157 & $-$0.2456 & $-$0.2824 & $-$0.2513 \\
+Red-edge slope  & 4.9975 & 2.6302 & 1.8539 & 0.7420 & 1.0838 & 1.5259 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-Vembanad is the most \emph{stable} site in the study: every index
-varies within a narrow band across the decade (NDCI within
-$\pm$0.008, NDWI within $\pm$0.02), consistent with a tidally
-flushed system buffered by continuous marine exchange.
+Sasthamcotta's measured decade shows a clear, largely monotone
+trend: NDVI falls by more than half (0.452 $\to$ 0.182), the
+red-edge slope falls roughly 3.3-fold (5.00 $\to$ 1.53), and NDWI
+moves from strongly negative to positive ($-$0.277 $\to$ 0.073) ---
+a decline in vegetation vigor and pigment signal alongside a
+widening open-water signature, most pronounced between 2016 and 2020
+and comparatively stable since.
 
-\subsection{Forecast --- Degrading Confidence}
+\subsection{Forecast}
 
 \begin{table}[H]
 \centering
-\caption{Vembanad --- directional forecast 2026--2028.}
-\label{tab:vembanad_fc}
+\caption{Sasthamcotta --- directional forecast 2026--2028.}
+\label{tab:sasthamcotta_fc}
 \begin{tabular}{lrlll}
 \toprule
 Index & 2025 & 2026 & 2027 & 2028 \\
 \midrule
-NDCI & 0.0500 & $\downarrow$ ($-$0.0121, $n$=5) & $\downarrow$ ($-$0.0488, $n$=3) & \textbf{?} ($n$=1) \\
-NDVI-B7 & 0.0365 & $\downarrow$ ($-$0.0132, $n$=5) & $\downarrow$ ($-$0.0994, $n$=3) & \textbf{?} ($n$=1) \\
-NDWI & 0.0755 & $\rightarrow$ ($-$0.0024, $n$=5) & $\uparrow$ ($+$0.1119, $n$=3) & \textbf{?} ($n$=1) \\
-Turbidity & $-$0.1117 & $\uparrow$ ($+$0.0175, $n$=5) & $\downarrow$ ($-$0.0085, $n$=3) & \textbf{?} ($n$=1) \\
-Red-edge & $-$0.1832 & $\downarrow$ ($-$0.0947, $n$=5) & $\downarrow$ ($-$1.2968, $n$=3) & \textbf{?} ($n$=1) \\
+NDCI & 0.0865 & $\rightarrow$ ($+$0.0009, $n$=5) & $\uparrow$ ($+$0.0088, $n$=5) & $\uparrow$ ($+$0.0131, $n$=2) \\
+NDVI & 0.1816 & $\downarrow$ ($-$0.0083, $n$=5) & $\rightarrow$ ($-$0.0032, $n$=5) & $\downarrow$ ($-$0.0502, $n$=2) \\
+NDWI & 0.0731 & $\rightarrow$ ($-$0.0046, $n$=5) & $\rightarrow$ ($+$0.0028, $n$=5) & $\uparrow$ ($+$0.0519, $n$=2) \\
+Turbidity & $-$0.2513 & $\uparrow$ ($+$0.0096, $n$=5) & $\rightarrow$ ($+$0.0027, $n$=5) & $\downarrow$ ($-$0.0059, $n$=2) \\
+Red-edge & 1.5259 & $\downarrow$ ($-$0.0658, $n$=5) & $\downarrow$ ($-$0.1167, $n$=5) & $\downarrow$ ($-$0.5053, $n$=2) \\
 \bottomrule
 \end{tabular}
 \end{table}
 
 \subsection{Interpretation}
 
-Vembanad shows the confidence-degradation pattern in its clearest
-form: $n=5,3,1$ across the three years. The 2028 column, with
-exactly one contributing twin, is correctly withheld as
-\emph{uncertain} --- a single lake's behaviour is not a consensus.
-The 2027 red-edge score ($-$1.2968) is dominated by one twin with an
-extreme delta: its direction is defensible but the magnitude should
-not be read as calibrated. The 2026 column, resting on all five
-twins, is the reliable row: mild declines in NDCI and NDVI-B7 with
-NDWI flat, consistent with the decade of measured stability.
+The forecast projects a \textbf{continuation of the measured
+decade-long trend} rather than a reversal: NDVI and red-edge slope
+keep declining in all three years while NDWI holds flat or rises ---
+directionally consistent with the 2016--2025 history above, which is
+itself a useful sanity check on the method (a twin-transferred
+forecast that simply extends an already-observed trend is a weaker
+but still meaningful form of validation). Confidence follows the
+now-familiar pattern of this chapter: $n=5,5,2$, with 2028 resting on
+only two twins and its red-edge score ($-$0.5053, the second-largest
+magnitude cell in this table) accordingly the least reliable single
+number here. The 2026 and 2027 columns, both fully supported, are
+the rows to trust.
+
+\subsection{Documented Condition}
+
+Sasthamcotta's decline is extensively and specifically documented.
+Peer-reviewed water-quality studies report elevated COD, BOD, and
+turbidity; shoreline encroachment by informal settlement and
+unauthorised construction has removed an estimated 15\% of the
+lake's original perimeter, obstructing natural inflow and adding
+solid-waste loading; illegal sand extraction from aquifers linking
+the lake to the adjoining river has been identified as a driver of
+falling water levels; and a Kerala Fisheries Department survey
+reported that more than 40\% of native fish species have disappeared
+over the past two decades.\footnote{An untimed death of the largest
+freshwater lake in Kerala: a case study on socio-environmental
+issues of Sasthamcotta Lake,
+\url{https://www.researchgate.net/publication/328927192};
+Water Quality Assessment of Sasthamcotta Lake, Kollam, Kerala,
+\url{https://www.researchgate.net/publication/323628043};
+Earth5R, ``Sasthamkotta Lake at Risk'',
+\url{https://earth5r.org/sasthamkotta-lake-community-restoration/}.}
+This is, by every published account, a genuinely degrading system ---
+but the measured signal here only \emph{partially} lines up with
+that story. NDVI and the red-edge slope both decline, consistent
+with reduced vegetation and pigment; NDWI, however, \emph{rises}
+over the decade, the opposite of what a shrinking, encroached lake
+would suggest at face value. A plausible reconciliation is that
+encroachment and sand mining chiefly erode the lake's perimeter and
+depth --- processes that a coverage-weighted mean over the lake's
+remaining $1\,\mathrm{km}^2$ analysis cells would under-represent ---
+while the measured fall in NDVI/NDCI more likely reflects declining
+phytoplankton or emergent vegetation than the water-hyacinth pressure
+documented on other Kerala wetlands (which would push NDVI up, not
+down). This is a case where the measured signal and the public
+record should be read together, each qualifying the other, rather
+than the measured signal being treated as confirmation of the
+documented decline.
 
 \section{Cross-Site Synthesis}
 
@@ -2474,15 +2671,15 @@ NDWI flat, consistent with the decade of measured stability.
 \caption{Cross-site summary. Confidence is the number of
 contributing twins across the three horizon years.}
 \label{tab:ramsar_summary}
-\begin{tabularx}{\textwidth}{l r r X l}
+\begin{tabularx}{\textwidth}{l r X l}
 \toprule
-Site & Best raw & Latency & Dominant measured signal & Conf. \\
+Site & Best raw & Dominant measured signal & Conf. \\
 \midrule
-Chilika & 0.99691 & 146 ms & Mild vegetative encroachment & 5,4,3 \\
-Wular & 0.99722 & 141 ms & Strong eutrophication (5.6$\times$ NDCI) & 5,4,3 \\
-Loktak & 0.99868 & 148 ms & \emph{Phumdi} peak then partial recession & 5,2,0 \\
-Tso Morari & 0.99720 & 160 ms & Stable clear cold-desert water & 5,5,5 \\
-Vembanad & 0.99830 & 172 ms & Decadal stability (tidally buffered) & 5,3,1 \\
+Chilika & 0.99691 & Mild vegetative encroachment & 5,4,3 \\
+Maharana Pratap Sagar (Beas) & 0.99884 & No sustained trend; reservoir-driven oscillation & 5,1,1 \\
+Tawa Reservoir & 0.99936 & Oscillatory, no net trend & 5,5,2 \\
+Tso Morari & 0.99720 & Stable clear cold-desert water & 5,5,5 \\
+Sasthamcotta & 0.99784 & Decade-long NDVI/pigment decline & 5,5,2 \\
 \bottomrule
 \end{tabularx}
 \end{table}
@@ -2492,20 +2689,26 @@ Five findings emerge from analysing the sites together.
 Tso Morari--Pangong pairing, recovered from reflectance alone with a
 score gap five times the typical inter-rank spread, is not
 explicable as coincidence. \textbf{Condition dominates geography in
-analog retrieval}: Wular's analogs are small Assamese and Bengali
-floodplain lakes, matching ecological state as intended, though it
+analog retrieval}: Beas's top analogs are reservoirs in Madhya
+Pradesh, Chhattisgarh, Telangana, and Andhra Pradesh --- geographic
+distances of hundreds of kilometres and entirely different climate
+zones from Himachal Pradesh --- matching ecological/hydrological
+state (regulated, fluctuating reservoirs) as intended, though it
 means the map view alone can mislead without the index history.
 \textbf{The index set discriminates across the full range}, from Tso
-Morari's NDWI of 0.48 with essentially no vegetation to Loktak's
-NDVI-B7 of 0.41 under floating mats --- the band-honest substitution
-of B7 for B8 did not cost discriminative power. \textbf{Forecast
+Morari's NDWI of 0.53 with essentially no vegetation to
+Sasthamcotta's NDVI of 0.45 in 2016 --- the switch from the earlier
+B7 proxy to true-NIR B8 (Section~\ref{sec:b8}) preserved this
+discriminative range even as individual values shifted.
+\textbf{Forecast
 confidence is bounded by data recency, not model quality}: every
-degraded forecast --- Loktak's empty 2028, Vembanad's single-twin
-2028 --- traces to twins whose matched windows end near 2025, a
-dataset-extent limitation that self-corrects as further years are
-ingested. Finally, \textbf{the system declines to answer when it
-should}: across 75 forecast cells (5 sites $\times$ 5 indices
-$\times$ 3 years), the outcomes divide as shown in
+degraded forecast --- Beas's near-empty 2027/2028 ($n=1$), Tawa
+Reservoir's and Sasthamcotta's thinned 2028 ($n=2$) --- traces to
+twins whose matched windows end near 2025, a dataset-extent
+limitation that self-corrects as further years are ingested.
+Finally, \textbf{the system declines to answer when it should}:
+across 75 forecast cells (5 sites $\times$ 5 indices $\times$ 3
+years), the outcomes divide as shown in
 Table~\ref{tab:direction_dist}.
 
 \begin{table}[H]
@@ -2517,9 +2720,9 @@ Ramsar sites.}
 \toprule
 Classification & Cells & Share \\
 \midrule
-Up ($\uparrow$)          & 31 & 41.3\% \\
-Down ($\downarrow$)      & 27 & 36.0\% \\
-Stable ($\rightarrow$)   &  7 &  9.3\% \\
+Up ($\uparrow$)          & 30 & 40.0\% \\
+Down ($\downarrow$)      & 25 & 33.3\% \\
+Stable ($\rightarrow$)   & 10 & 13.3\% \\
 Uncertain (\textbf{?})   & 10 & 13.3\% \\
 \midrule
 \textbf{Total}           & \textbf{75} & \textbf{100\%} \\
@@ -2562,13 +2765,22 @@ similarity does not guarantee ecological equivalence --- only the
 the fixed configuration of Table~\ref{tab:current_config}, not a
 configuration-independent measurement. The clearest limitation is
 that a twin whose matched window ends near 2025 has little observed
-future to transfer, which emptied Loktak's $h=3$ forecast and
-thinned Vembanad's (Chapter~\ref{chap:ramsar}) --- not a flaw in the
-classification rule, which correctly reported \emph{uncertain}, but
+future to transfer, which left Beas's $h{=}2$ and $h{=}3$ forecasts
+resting on a single twin each and thinned Tawa Reservoir's and
+Sasthamcotta's 2028 columns to two twins
+(Chapter~\ref{chap:ramsar}) --- not a flaw in the classification
+rule, which correctly reported \emph{uncertain} where warranted, but
 a consequence of dataset extent that self-corrects as further years
-are ingested. Finally, the Ramsar case studies were checked against
-publicly documented site condition rather than a quantitative field
-survey, which is corroborating evidence, not calibrated validation;
+are ingested. Finally, the documented-condition checks in
+Chapter~\ref{chap:ramsar} are corroborating evidence, not calibrated
+validation, and their strength varies by site: Chilika's measured
+signal lines up with independently reported renewed weed growth,
+Sasthamcotta's extensively documented decline only partially agrees
+with the measured signal (NDWI moves opposite to what the documented
+shrinkage would naively predict), Beas and Tawa have no published
+directional trend to check against at all, and Tso Morari's
+strongest corroboration --- the Pangong Tso pairing --- is internal
+to the retrieval method rather than an external condition report;
 formal hindcasting (Section~\ref{sec:hindcast_protocol}) is the next
 validation step precisely because it does not require such external
 data.
@@ -2593,13 +2805,17 @@ audit trail --- executed to completion over 829 lakes, ten years,
 and zero outstanding failures (Chapter~\ref{chap:results}).
 
 Chapter~\ref{chap:ramsar} demonstrated the complete pipeline on five
-Ramsar wetlands, returning a striking unsupervised validation (Tso
-Morari's top analog is Pangong Tso, the only other high-altitude
-Ladakhi lake in the cohort), an independently corroborated
-degradation signal at Wular, and, equally important, a forecasting
-method that correctly declined to predict in 10 of 75 cells where
-evidence was insufficient rather than manufacturing a confident
-answer. The project's most significant contribution is therefore
+Ramsar wetlands and reservoirs, returning a striking unsupervised
+validation (Tso Morari's top analog is Pangong Tso, the only other
+high-altitude Ladakhi lake in the cohort), a measured vegetative-
+encroachment signal at Chilika consistent with independently
+reported renewed weed growth, a measured decade-long decline at
+Sasthamcotta that only partially agrees with its own extensively
+documented degradation, and, equally important, a forecasting method
+that
+correctly declined to predict in 10 of 75 cells where evidence was
+insufficient rather than manufacturing a confident answer. The
+project's most significant contribution is therefore
 the integration of geospatial data engineering, foundation-model
 inference, vector retrieval, temporal analysis, and visualization
 into one reproducible workflow carried through to applied results,
@@ -2632,10 +2848,11 @@ EcoTwin's central idea is to use historically observed ecosystems as
 computationally retrievable analogs rather than treating every
 ecosystem as an isolated forecasting problem. The Ramsar case
 studies show that this idea, carried through a fully processed
-829-lake, ten-year cohort, produces results that are specific,
-checkable against independent knowledge of the sites, and ---
-where the evidence ran out --- honest about the limits of what it
-can currently claim.
+829-lake, ten-year
+cohort, produces results that are specific, checkable against
+independent knowledge of the sites where such knowledge exists, and
+--- where the evidence ran out --- honest about the limits of what
+it can currently claim.
 
 % ============================================================
 % REFERENCES
