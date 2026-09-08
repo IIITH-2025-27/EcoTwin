@@ -1423,6 +1423,66 @@ red-edge scores each rest on a single twin's trajectory
 while the count drops to zero exactly when a forecast should not be
 trusted and degrades gracefully otherwise.
 
+\subsection{Literature Survey: Why Not an LSTM-Based Forecast?}
+\label{sec:why_not_lstm}
+
+A recurrent-neural-network forecast of vegetation indices was
+considered and rejected, on the evidence of a directly relevant
+prior study: Reddy and Prasad (2018) train a Long Short-Term Memory
+(LSTM) network to predict MODIS NDVI one week ahead for two regions
+of Great Nicobar Island, using 861 weekly NDVI composites
+(2000--2016) split 70/20/10 into training, validation, and test
+sets, and report a test RMSE below 0.03 for both a seasonally-stable
+interior forest and a tsunami-disturbed coastal
+site.\footnote{D. Sushma Reddy and P. Rama Chandra Prasad,
+``Prediction of vegetation dynamics using NDVI time series data and
+LSTM,'' \emph{Modeling Earth Systems and Environment}, 2018,
+\url{https://doi.org/10.1007/s40808-018-0431-3}.} This is a strong
+result, and it comes from the same lab that supervised this project
+--- but three of its operating conditions are exactly the conditions
+EcoTwin does not have.
+
+First, \textbf{data volume}: the cited LSTM is trained on 861
+timesteps for a single site. EcoTwin has \textbf{ten} annual
+observations per lake (Table~\ref{tab:year_coverage}) --- roughly
+two orders of magnitude less sequence per site than the training
+regime that produced the paper's reported accuracy. An LSTM's gates
+each carry their own weight matrices; fitting them from ten points
+per lake would fit noise, not seasonality. Second,
+\textbf{per-site versus cross-cohort}: the paper trains one network
+per region, retrained for each new site studied. EcoTwin runs
+against \textbf{829} lakes and cannot retrain a separate deep
+network for each one on ten data points; the entire premise of the
+analog approach (Section~\ref{sec:trajectory}) is to substitute
+\emph{other lakes' history} for the sequence length a single lake
+does not have. Third, \textbf{forecast horizon}: the cited network
+predicts one step ahead (the next 7-day composite); its own
+conclusion explicitly separates this from a harder, unaddressed
+problem --- forecasting ``up to next 50 intervals'' --- and does not
+attempt it. EcoTwin's requirement is a \textbf{1--3 year ahead}
+forecast from annual data, which is that harder, multi-step regime,
+not the one-step regime the cited result was measured on; naively
+chaining a one-step LSTM forward three times would compound
+prediction error at exactly the horizon EcoTwin needs to be honest
+about (Section~\ref{sec:hindcast_protocol}).
+
+A fourth reason is architectural rather than data-driven, and
+applies regardless of sequence length: an LSTM's output is a
+function of learned weight matrices with no direct correspondence to
+a specific ecosystem, which is the same objection already raised
+against decoding a predicted embedding back into reflectance
+(Section~\ref{sec:pooling}) --- both approaches route the forecast
+through parameters that cannot be pointed back at a particular lake,
+year, or measurement. The rank-weighted analog transfer used instead
+has no learned parameter at any stage (Section~\ref{sec:forecast_method}
+above), so every forecast is traceable to specific twin lakes and
+measured deltas rather than to trained weights. None of this is a
+claim that LSTMs are unsuitable for vegetation time series in
+general --- Reddy and Prasad's results argue the opposite, for the
+regime they tested --- only that the regime this project operates in
+(many lakes, few years each, multi-year horizon, and forecasts that
+must be traceable to their evidence) is a poor match for it.
+
 \subsection{Worked Example: Chilika, NDVI, $h=1$}
 
 Chapter~\ref{chap:ramsar} reported Chilika's 2026 NDVI forecast as
@@ -2048,6 +2108,13 @@ Chilika is Asia's largest brackish-water lagoon and the largest lake
 in the cohort (\SI{843}{\kilo\meter\squared}), separated from the
 Bay of Bengal by a barrier spit.
 
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.85\textwidth]{images/chilika/chilika_overview.png}
+\caption{Live application view of Chilika's lake boundary (yellow outline), captured from the running EcoTwin frontend.}
+\label{fig:chilika_overview_ui}
+\end{figure}
+
 \subsection{Retrieved Analogs}
 
 \begin{table}[H]
@@ -2071,6 +2138,13 @@ Three of the five matched windows are \emph{time-shifted}: the top
 analog matched on 2017--2021, so its 2022--2024 behaviour is
 already-observed evidence about a trajectory Chilika is only now
 traversing (Section~\ref{sec:trajectory}).
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.7\textwidth]{images/chilika/chilika_analog.png}
+\caption{Live application map view of Chilika's retrieved analogs (green markers), captured independently from the running frontend and corresponding to Table~\ref{tab:chilika_analogs}.}
+\label{fig:chilika_analogs_ui}
+\end{figure}
 
 \subsection{Measured History}
 
@@ -2237,6 +2311,13 @@ chapter, it is a dam-regulated reservoir, so its surface extent and
 shoreline vegetation respond to reservoir operations (drawdown and
 refill) as much as to natural hydrology or ecological succession.
 
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.85\textwidth]{images/Beas/Beas_overview.png}
+\caption{Live application view of Maharana Pratap Sagar (Beas)'s lake boundary (yellow outline), captured from the running EcoTwin frontend.}
+\label{fig:beas_overview_ui}
+\end{figure}
+
 \subsection{Retrieved Analogs}
 
 \begin{table}[H]
@@ -2264,6 +2345,13 @@ matched windows both end at 2025 (the anchor year), so neither has
 any observed future to contribute; the forecast twins actually used
 (Section~\ref{sec:beas_forecast_note} below) are drawn from further
 down the ranked pool.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.7\textwidth]{images/Beas/Beas_analog.png}
+\caption{Live application map view of Beas (Maharana Pratap Sagar)'s retrieved analogs (green markers), captured independently from the running frontend and corresponding to Table~\ref{tab:beas_analogs}.}
+\label{fig:beas_analogs_ui}
+\end{figure}
 
 \subsection{Measured History}
 
@@ -2446,6 +2534,13 @@ underlying HydroLAKES-derived table; the earlier version of this
 chapter's identification of lake\_id 15510 with Loktak was an
 unverified inference from area and state alone).
 
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.85\textwidth]{images/Tawa/Tawa_reservoir.png}
+\caption{Live application view of Tawa Reservoir's lake boundary (yellow outline), captured from the running EcoTwin frontend.}
+\label{fig:tawa_overview_ui}
+\end{figure}
+
 \subsection{Retrieved Analogs}
 
 \begin{table}[H]
@@ -2470,6 +2565,13 @@ The top and fifth-ranked analogs both match on windows ending at
 pattern seen at Beas and Chilika --- meaning the forecast twins used
 below are drawn from ranks 2--4 plus two further candidates from the
 enlarged pool.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.7\textwidth]{images/Tawa/Tawa_analog.png}
+\caption{Live application map view of Tawa Reservoir's retrieved analogs (green markers), captured independently from the running frontend and corresponding to Table~\ref{tab:tawa_analogs}.}
+\label{fig:tawa_analogs_ui}
+\end{figure}
 
 \subsection{Measured History}
 
@@ -2641,6 +2743,13 @@ ecological richness rather than a published condition trajectory.
 Tso Morari is a high-altitude brackish lake at \SI{4522}{\meter} in
 the Trans-Himalayan cold desert --- the cohort's environmental
 extreme, with minimal vegetation and glacial meltwater input.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.85\textwidth]{images/Tso_morari/overview.png}
+\caption{Live application view of Tso Morari's lake boundary (yellow outline), captured from the running EcoTwin frontend.}
+\label{fig:tsomorari_overview_ui}
+\end{figure}
 
 \subsection{Retrieved Analogs --- The Strongest Validation}
 
@@ -2879,6 +2988,13 @@ close to the tidally-influenced Vembanad backwater system it
 replaces in this chapter. It is identified in the dataset as
 Unnamed Lake \#179921 (Kerala), lake\_id 179921.
 
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.85\textwidth]{images/Sasthamcotta/over_view.png}
+\caption{Live application view of Sasthamcotta's lake boundary (yellow outline), captured from the running EcoTwin frontend.}
+\label{fig:sasthamcotta_overview_ui}
+\end{figure}
+
 \subsection{Retrieved Analogs}
 
 \begin{table}[H]
@@ -2904,6 +3020,13 @@ window ending at the 2025 anchor year, so no substitution from
 further down the ranked pool was needed. Three of the five are other
 small Kerala water bodies, the closest geographic clustering of
 analogs seen in this study.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.7\textwidth]{images/Sasthamcotta/analog.png}
+\caption{Live application map view of Sasthamcotta's retrieved analogs (green markers), captured independently from the running frontend and corresponding to Table~\ref{tab:sasthamcotta_analogs}.}
+\label{fig:sasthamcotta_analogs_ui}
+\end{figure}
 
 \subsection{Measured History}
 
@@ -3314,6 +3437,15 @@ A. Huete, K. Didan, T. Miura, E. P. Rodriguez, X. Gao, and
 L. G. Ferreira, ``Overview of the radiometric and biophysical
 performance of the MODIS vegetation indices,'' \textit{Remote
 Sensing of Environment}, vol. 83, no. 1--2, pp. 195--213, 2002.
+
+\bibitem{reddy2018lstm}
+D. Sushma Reddy and P. Rama Chandra Prasad, ``Prediction of
+vegetation dynamics using NDVI time series data and LSTM,''
+\textit{Modeling Earth Systems and Environment}, 2018.
+\url{https://doi.org/10.1007/s40808-018-0431-3}. Reviewed in
+Section~\ref{sec:why_not_lstm} as the basis for rejecting an
+LSTM-based forecast in favour of the analog-transfer method used
+throughout this report.
 
 \end{thebibliography}
 
