@@ -417,6 +417,152 @@ imagery actually contains; and a FastAPI/React-Leaflet application
 with automated PDF reporting, evaluated on five Ramsar-designated
 wetlands and reservoirs.
 
+\section{Related Work}
+\label{sec:related_work}
+
+EcoTwin sits at the intersection of three research threads that are
+each well-established individually but, to the authors' knowledge,
+not previously combined into one lake-scale retrieval-and-forecast
+system: analog-based forecasting, geospatial foundation models used
+for embedding similarity, and remote-sensing indices with published
+in-situ validation. This section places EcoTwin against each in
+turn --- first work that pursues a similar \emph{method}, then work
+that offers independent grounds to trust EcoTwin's
+\emph{measurements}.
+
+\subsection{Analog-Based and Case-Based Forecasting}
+
+The idea of forecasting a system's future by finding its closest
+historical match and following what that match subsequently did is
+not new; it is the \emph{analog method}, and EcoTwin's twin-lake
+retrieval (Section~\ref{sec:trajectory}) is a direct descendant of
+it. The method's classical formulation is meteorological: Lorenz
+(1969) searched five years of Northern Hemisphere pressure fields
+for two states similar enough to serve as an analog pair, and found
+that even among a large historical record, truly close analogs were
+rare, with prediction error still growing at a rate comparable to
+the atmosphere's intrinsic unpredictability.\footnote{E. N. Lorenz,
+``Atmospheric Predictability as Revealed by Naturally Occurring
+Analogues,'' \textit{Journal of the Atmospheric Sciences}, vol. 26,
+no. 4, pp. 636--646, 1969.} Van den Dool (1989) extended this into
+operational weather forecasting through analogues, while separately
+estimating that a library on the order of $10^{30}$ years of
+observations would be needed to find true analogs matching to
+within observational error over a hemispheric domain ---
+a quantitative statement of exactly the problem EcoTwin's
+\emph{trajectory} matching (five years of embeddings, not one
+snapshot) and \emph{cross-lake} pooling (828 candidate histories,
+not one lake's own past) are structural attempts to work around: a
+single lake's own ten-year record could never contain a good analog
+of itself, so the search is deliberately widened to embedding-space
+neighbours drawn from an entire cohort.\footnote{H. M. van den Dool,
+``A New Look at Weather Forecasting through Analogues,''
+\textit{Monthly Weather Review}, vol. 117, no. 10, pp. 2230--2247,
+1989.} Outside meteorology, analogy-based forecasting has also been
+formalised as a general forecasting technique --- \emph{structured
+analogies}, in which multiple historical cases are identified,
+matched, and combined by rule rather than judgement --- which is
+methodologically close to EcoTwin's fixed-weight, rank-ordered twin
+combination (Section~\ref{sec:forecast_method}), applied here to
+ecosystem reflectance trajectories rather than to the general
+business and policy forecasts the technique was originally
+developed for.\footnote{K. C. Green and J. S. Armstrong,
+``Structured analogies for forecasting,'' \textit{International
+Journal of Forecasting}, vol. 23, no. 3, pp. 365--376, 2007.}
+
+\subsection{Geospatial Foundation Models and Embedding-Based Ecosystem Retrieval}
+
+EcoTwin's use of Prithvi (Section~\ref{sec:step12_prithvi}) sits
+within a rapidly growing body of work applying geospatial foundation
+models (GeoFMs) to Earth observation. Prithvi-EO-2.0 itself, released
+by a NASA/IBM-led consortium of 42 authors across 12 institutions,
+reports state-of-the-art downstream performance across benchmark
+tasks including flood mapping, burn-scar detection, and multi-temporal
+land-cover classification, outperforming six other GeoFMs it was
+benchmarked against.\footnote{D. Szwarcman \textit{et al.},
+``Prithvi-EO-2.0: A Versatile Multi-Temporal Foundation Model for
+Earth Observation Applications,'' arXiv:2412.02732, 2024.} A
+separate, independent evaluation of the original Prithvi model's
+domain adaptability found its embeddings competitive on high-level
+image-analysis benchmarks and proposed band-adaptation and
+multi-scale fine-tuning strategies to improve cross-domain transfer
+--- external evidence that Prithvi's learned representation is
+sound enough to build on, from a group with no stake in EcoTwin's
+own results.\footnote{C.-Y. Hsu, W. Li, and S. Wang, ``Geospatial
+foundation models for image analysis: evaluating and enhancing
+NASA-IBM Prithvi's domain adaptability,'' arXiv:2409.00489, 2024.}
+
+Closer to EcoTwin's specific use of a GeoFM --- similarity in
+\emph{embedding space} as the basis for ecosystem-level analysis,
+rather than pixel classification --- is a growing line of work built
+on Google DeepMind's AlphaEarth embeddings. Ryan \textit{et al.}
+(2026) compare an AlphaEarth-embedding-based wetland vegetation
+classifier against a conventional multi-sensor pipeline at Narran
+Lake, Australia, and report comparable accuracy (overall accuracy
+0.985--0.991) with a simpler, cleaner workflow, while a related study
+applies the same embeddings to atoll island ecosystem mapping.
+Neither performs trajectory matching or forecasting --- both are
+single-snapshot classification --- but both independently validate
+the premise EcoTwin is built on: that a modern GeoFM's embedding
+space encodes ecologically meaningful structure that similarity
+operations can exploit directly, without hand-engineered spectral
+rules, for wetland-type ecosystems specifically.\footnote{S. Ryan,
+M. Powell, J. Ling, and L. Wen, ``Streamlining Wetland Vegetation
+Mapping with AlphaEarth Embeddings: Comparable Accuracy to
+Traditional Methods with Cleaner Maps and Minimal Preprocessing,''
+\textit{Remote Sensing}, vol. 18, no. 2, article 293, 2026.} EcoTwin
+differs from this line of work in two respects that follow directly
+from its forecasting goal rather than a classification goal: it
+compares five-year \emph{trajectories}, not single images
+(Section~\ref{sec:trajectory}), and it never asks the embedding
+space to output a class label or a reconstructed value, only a
+ranking (Section~\ref{sec:pooling}).
+
+\subsection{Independent Validation of the Ecological Indices}
+
+Section~\ref{sec:why_not_lstm} and the per-site \emph{Documented
+Condition} subsections of Chapter~\ref{chap:ramsar} ask whether
+EcoTwin's specific, measured results agree with independently
+published information about the same lakes. A complementary
+question is whether the \emph{index formulas} themselves --- as
+opposed to any one lake's trajectory --- are trustworthy in the
+first place. NDCI, the index EcoTwin uses for chlorophyll-a/algal
+bloom (Table~\ref{tab:indices}), is the most extensively validated
+of the five: a 2026 review synthesising validation evidence across
+122 published studies of Sentinel-2 chlorophyll-a monitoring reports
+NDCI achieving good agreement with in-situ chlorophyll-a
+measurements (correlation coefficients in the 0.8+ range) in
+eutrophic inland and coastal waters, while also flagging a known
+limitation directly relevant to this report: NDCI's relationship
+with chlorophyll-a becomes nonlinear and less reliable below roughly
+$12\,\mu\text{g/L}$, i.e. in clear, oligotrophic water --- exactly
+the regime of a site like Tso Morari (Chapter~\ref{chap:ramsar}),
+where NDCI readings should accordingly be read as a directional
+signal rather than a precise concentration proxy.\footnote{S.
+Goodrich \textit{et al.}, ``Sentinel-2 for chlorophyll-a water
+quality monitoring: a review of validation evidence and application
+potential,'' \textit{International Journal of Remote Sensing}, 2026.
+\url{https://doi.org/10.1080/01431161.2026.2637851}.} NDVI and NDWI,
+the two indices most affected by this report's switch from a B7
+proxy to true-NIR B8 (Section~\ref{sec:b8}), rest on the older and
+more extensively reviewed vegetation-index literature already cited
+in this report's bibliography (Pettorelli \textit{et al.}, 2005;
+Huete \textit{et al.}, 2002) rather than a site-specific validation
+study, since both are standard, widely-adopted formulas rather than
+novel constructions specific to this project.
+
+None of the work surveyed here validates EcoTwin's \emph{forecasts}
+directly --- that would require the hindcasting protocol of
+Section~\ref{sec:hindcast_protocol}, not yet run for the reasons
+given there. What it does provide is independent grounding for the
+two components the forecast is built from: that analog-based
+reasoning is a long-established, quantitatively understood
+forecasting paradigm rather than an ad hoc choice, and that both the
+foundation model supplying the similarity signal and the index
+formulas supplying the measured deltas have been separately
+evaluated, by researchers with no connection to this project, and
+found to carry real signal.
+
 % ============================================================
 % CHAPTER 2
 % ============================================================
@@ -1112,6 +1258,7 @@ model inference into distinct stages makes it possible to change the
 model without re-downloading the underlying satellite data.
 
 \section{Step 12: Prithvi Embedding Generation}
+\label{sec:step12_prithvi}
 
 Prithvi is used as the geospatial foundation model: each retained
 analysis cell, as a six-band \code{B2--B7} image $X$, is transformed
@@ -3446,6 +3593,43 @@ vegetation dynamics using NDVI time series data and LSTM,''
 Section~\ref{sec:why_not_lstm} as the basis for rejecting an
 LSTM-based forecast in favour of the analog-transfer method used
 throughout this report.
+
+\bibitem{lorenz1969analog}
+E. N. Lorenz, ``Atmospheric Predictability as Revealed by Naturally
+Occurring Analogues,'' \textit{Journal of the Atmospheric Sciences},
+vol. 26, no. 4, pp. 636--646, 1969.
+
+\bibitem{vandendool1989analog}
+H. M. van den Dool, ``A New Look at Weather Forecasting through
+Analogues,'' \textit{Monthly Weather Review}, vol. 117, no. 10,
+pp. 2230--2247, 1989.
+
+\bibitem{green2007structured}
+K. C. Green and J. S. Armstrong, ``Structured analogies for
+forecasting,'' \textit{International Journal of Forecasting},
+vol. 23, no. 3, pp. 365--376, 2007.
+
+\bibitem{szwarcman2024prithvi2}
+D. Szwarcman \textit{et al.}, ``Prithvi-EO-2.0: A Versatile
+Multi-Temporal Foundation Model for Earth Observation
+Applications,'' arXiv:2412.02732, 2024.
+
+\bibitem{hsu2024prithvi_domain}
+C.-Y. Hsu, W. Li, and S. Wang, ``Geospatial foundation models for
+image analysis: evaluating and enhancing NASA-IBM Prithvi's domain
+adaptability,'' arXiv:2409.00489, 2024.
+
+\bibitem{ryan2026alphaearth_wetland}
+S. Ryan, M. Powell, J. Ling, and L. Wen, ``Streamlining Wetland
+Vegetation Mapping with AlphaEarth Embeddings: Comparable Accuracy
+to Traditional Methods with Cleaner Maps and Minimal Preprocessing,''
+\textit{Remote Sensing}, vol. 18, no. 2, article 293, 2026.
+
+\bibitem{goodrich2026ndci}
+S. Goodrich \textit{et al.}, ``Sentinel-2 for chlorophyll-a water
+quality monitoring: a review of validation evidence and application
+potential,'' \textit{International Journal of Remote Sensing}, 2026.
+\url{https://doi.org/10.1080/01431161.2026.2637851}.
 
 \end{thebibliography}
 
