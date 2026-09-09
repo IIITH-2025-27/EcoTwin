@@ -694,42 +694,7 @@ spatial-spectral signature.
 
 \begin{figure}[H]
 \centering
-\begin{tikzpicture}[scale=1.0]
-
-% -- Panel 1: the original PostGIS lake polygon (irregular shape) --
-\begin{scope}[shift={(0,0)}]
-  \draw[thick, fill=blue!25] plot [smooth cycle, tension=0.7]
-    coordinates {
-      (0,1.3) (0.6,1.6) (1.3,1.2) (1.1,0.4)
-      (1.5,-0.3) (0.8,-1.1) (0.1,-1.3) (-0.6,-0.8)
-      (-1.0,0.0) (-0.7,0.9)
-    };
-  \node at (0,-2.0) {\small \textbf{(a) Original polygon}};
-  \node at (0,-2.4) {\scriptsize \code{lakes.geom} (PostGIS)};
-\end{scope}
-
-% -- Arrow 1 -------------------------------------------------------
-\draw[-Stealth, thick, teal!60!black] (2.1,0) -- node[above,font=\scriptsize]{buffer} node[below,font=\scriptsize]{1200 m} (3.3,0);
-
-% -- Panel 2: buffered polygon (dashed outer ring, expanded) --------
-\begin{scope}[shift={(5.3,0)}]
-  \draw[thick, dashed, fill=orange!12] plot [smooth cycle, tension=0.7]
-    coordinates {
-      (0,2.0) (0.95,2.4) (2.0,1.8) (1.7,0.6)
-      (2.3,-0.5) (1.2,-1.7) (0.15,-2.0) (-0.95,-1.25)
-      (-1.55,0.0) (-1.1,1.4)
-    };
-  \draw[thick, fill=blue!25] plot [smooth cycle, tension=0.7]
-    coordinates {
-      (0,1.3) (0.6,1.6) (1.3,1.2) (1.1,0.4)
-      (1.5,-0.3) (0.8,-1.1) (0.1,-1.3) (-0.6,-0.8)
-      (-1.0,0.0) (-0.7,0.9)
-    };
-  \node at (0,-2.7) {\small \textbf{(b) Buffered extent}};
-  \node at (0,-3.1) {\scriptsize water $+$ 1200\,m shoreline margin};
-\end{scope}
-
-\end{tikzpicture}
+\includegraphics[width=0.75\textwidth]{images/section_3/fig3_2_buffering.png}
 \caption{Step 2 (Buffering): the original polygon (a) is expanded by
 a fixed 1200\,m buffer (b); everything between the two boundaries is
 retained as part of the ecosystem representation.}
@@ -748,49 +713,7 @@ tiles depending on its size and shape.
 
 \begin{figure}[H]
 \centering
-\begin{tikzpicture}[scale=1.0]
-
-% -- Panel 1: buffered polygon overlaid with an 8.5km tile grid -----
-\begin{scope}[shift={(0,0)}]
-  \clip (-2.1,-2.3) rectangle (2.5,2.6);
-  \draw[thick, dashed, fill=orange!10] plot [smooth cycle, tension=0.7]
-    coordinates {
-      (0,2.0) (0.95,2.4) (2.0,1.8) (1.7,0.6)
-      (2.3,-0.5) (1.2,-1.7) (0.15,-2.0) (-0.95,-1.25)
-      (-1.55,0.0) (-1.1,1.4)
-    };
-  \foreach \x in {-2,-1,0,1,2}{
-    \draw[gray!70, thin] (\x,-2.5) -- (\x,2.7);
-  }
-  \foreach \y in {-2,-1,0,1,2}{
-    \draw[gray!70, thin] (-2.2,\y) -- (2.6,\y);
-  }
-  \node[fill=white, fill opacity=0.8, text opacity=1, font=\scriptsize] at (0.5,1.5) {tile 1};
-  \node[fill=white, fill opacity=0.8, text opacity=1, font=\scriptsize] at (1.5,0.3) {tile 2};
-  \node[fill=white, fill opacity=0.8, text opacity=1, font=\scriptsize] at (0.5,-1.2) {tile 3};
-  \node[fill=white, fill opacity=0.8, text opacity=1, font=\scriptsize] at (-1.2,-0.5) {tile 4};
-\end{scope}
-\node at (0.15,-3.0) {\small \textbf{(a) $\sim$8.5\,km imagery tile grid}};
-\node at (0.15,-3.4) {\scriptsize grid clipped to buffered extent};
-
-% -- Arrow ----------------------------------------------------------
-\draw[-Stealth, thick, blue!60!black] (3.1,0) -- node[above,font=\scriptsize]{one GEE request} node[below,font=\scriptsize]{per tile} (4.4,0);
-
-% -- Panel 2: each tile -> Earth Engine composite -> GeoTIFF --------
-\begin{scope}[shift={(7.3,1.55)},
-    stg/.style={rectangle, rounded corners, draw, thick, minimum width=2.6cm, minimum height=0.8cm, align=center, font=\scriptsize}]
-  \node[stg, fill=gray!12] (t) {Tile bbox\\(lat/lon)};
-  \node[stg, fill=cyan!10, below=0.3cm of t] (gee) {Earth Engine:\\S2\_SR\_HARMONIZED\\(fallback: S2)};
-  \node[stg, fill=green!10, below=0.3cm of gee] (comp) {Cloud mask $+$\\median composite};
-  \node[stg, fill=violet!10, below=0.3cm of comp] (tif) {Export: GeoTIFF\\(B2--B7, 10 m)};
-  \draw[-Stealth, thick] (t) -- (gee);
-  \draw[-Stealth, thick] (gee) -- (comp);
-  \draw[-Stealth, thick] (comp) -- (tif);
-\end{scope}
-\node at (7.3,-3.0) {\small \textbf{(b) Per-tile Earth Engine request}};
-\node at (7.3,-3.4) {\scriptsize repeated for every tile, every year};
-
-\end{tikzpicture}
+\includegraphics[width=0.85\textwidth]{images/section_3/fig3_3_tiling.png}
 \caption{Step 3 (Imagery Tiling): the buffered extent (a) is clipped
 against a $\sim$8.5\,km grid (here four tiles); each tile drives one
 Earth Engine request (b) --- the ``Fetch Images'' data-fetching
@@ -834,37 +757,7 @@ stable source from which analysis cells are extracted.
 
 \begin{figure}[H]
 \centering
-\begin{tikzpicture}[scale=1.0]
-
-% -- Panel 1: four separate tile GeoTIFFs on disk -------------------
-\begin{scope}[shift={(0,0)}]
-  \draw[thick, fill=violet!10] (-1.6,0.2) rectangle (-0.15,1.65);
-  \node[font=\scriptsize, align=center] at (-0.875,0.9) {tile\_01};
-  \draw[thick, fill=violet!10] (0.15,0.2) rectangle (1.6,1.65);
-  \node[font=\scriptsize, align=center] at (0.875,0.9) {tile\_02};
-  \draw[thick, fill=violet!10] (-1.6,-1.65) rectangle (-0.15,-0.2);
-  \node[font=\scriptsize, align=center] at (-0.875,-0.9) {tile\_03};
-  \draw[thick, fill=violet!10] (0.15,-1.65) rectangle (1.6,-0.2);
-  \node[font=\scriptsize, align=center] at (0.875,-0.9) {tile\_04};
-\end{scope}
-\node at (0,-2.3) {\small \textbf{(a) Independent tile GeoTIFFs}};
-\node at (0,-2.7) {\scriptsize separate files, own extent, own nodata border};
-
-% -- Arrow -----------------------------------------------------------
-\draw[-Stealth, thick, teal!60!black] (2.4,0) -- node[above,font=\scriptsize]{rasterio merge} node[below,font=\scriptsize]{reproject + mosaic} (3.9,0);
-
-% -- Panel 2: single seamless mosaic ----------------------------------
-\begin{scope}[shift={(6.0,0)}]
-  \draw[thick, fill=green!12] (-1.6,-1.65) rectangle (1.6,1.65);
-  \draw[gray!50, thin] (-1.6,0) -- (1.6,0);
-  \draw[gray!50, thin] (0,-1.65) -- (0,1.65);
-  \node[font=\scriptsize, align=center] at (0,0) {merged mosaic};
-  \node[font=\scriptsize, align=center] at (0,-1.3) {\texttt{lake\_images}};
-\end{scope}
-\node at (6.0,-2.3) {\small \textbf{(b) Single seamless mosaic}};
-\node at (6.0,-2.7) {\scriptsize one \code{lake\_images} row per lake-year};
-
-\end{tikzpicture}
+\includegraphics[width=0.85\textwidth]{images/section_3/fig3_4_merging.png}
 \caption{Step 9 (Local Raster Merging): independent tile GeoTIFFs (a)
 are mosaicked by \code{rasterio.merge} into one seamless lake-year
 raster (b), recorded in \code{lake\_images} --- the ``Merge Image
@@ -892,65 +785,7 @@ representative.
 
 \begin{figure}[H]
 \centering
-\begin{tikzpicture}[scale=1.0]
-
-\begin{scope}[shift={(0,0)}]
-  \clip (-2.3,-2.3) rectangle (2.3,2.3);
-  \draw[thick, fill=green!10] plot [smooth cycle, tension=0.7]
-    coordinates {
-      (0,2.0) (0.95,2.4) (2.0,1.8) (1.7,0.6)
-      (2.3,-0.5) (1.2,-1.7) (0.15,-2.0) (-0.95,-1.25)
-      (-1.55,0.0) (-1.1,1.4)
-    };
-  \foreach \x in {-2,-1.35,-0.7,-0.05,0.6,1.25,1.9}{
-    \draw[gray!60, thin] (\x,-2.5) -- (\x,2.7);
-  }
-  \foreach \y in {-2,-1.35,-0.7,-0.05,0.6,1.25,1.9}{
-    \draw[gray!60, thin] (-2.4,\y) -- (2.4,\y);
-  }
-  % retained cells (coverage >= 15%) -- solid green fill
-  \fill[green!45, opacity=0.55] (-2,-0.05) rectangle (-1.35,0.6);
-  \fill[green!45, opacity=0.55] (-1.35,-1.35) rectangle (-0.7,-0.7);
-  \fill[green!45, opacity=0.55] (-1.35,-0.7) rectangle (-0.7,-0.05);
-  \fill[green!45, opacity=0.55] (-1.35,-0.05) rectangle (-0.7,0.6);
-  \fill[green!45, opacity=0.55] (-1.35,0.6) rectangle (-0.7,1.25);
-  \fill[green!45, opacity=0.55] (-1.35,1.25) rectangle (-0.7,1.9);
-  \fill[green!45, opacity=0.55] (-0.7,-2) rectangle (-0.05,-1.35);
-  \fill[green!45, opacity=0.55] (-0.7,-1.35) rectangle (-0.05,-0.7);
-  \fill[green!45, opacity=0.55] (-0.7,-0.7) rectangle (-0.05,-0.05);
-  \fill[green!45, opacity=0.55] (-0.7,-0.05) rectangle (-0.05,0.6);
-  \fill[green!45, opacity=0.55] (-0.7,0.6) rectangle (-0.05,1.25);
-  \fill[green!45, opacity=0.55] (-0.7,1.25) rectangle (-0.05,1.9);
-  \fill[green!45, opacity=0.55] (-0.05,-2) rectangle (0.6,-1.35);
-  \fill[green!45, opacity=0.55] (-0.05,-1.35) rectangle (0.6,-0.7);
-  \fill[green!45, opacity=0.55] (-0.05,-0.7) rectangle (0.6,-0.05);
-  \fill[green!45, opacity=0.55] (-0.05,-0.05) rectangle (0.6,0.6);
-  \fill[green!45, opacity=0.55] (-0.05,0.6) rectangle (0.6,1.25);
-  \fill[green!45, opacity=0.55] (-0.05,1.25) rectangle (0.6,1.9);
-  \fill[green!45, opacity=0.55] (0.6,-2) rectangle (1.25,-1.35);
-  \fill[green!45, opacity=0.55] (0.6,-1.35) rectangle (1.25,-0.7);
-  \fill[green!45, opacity=0.55] (0.6,-0.7) rectangle (1.25,-0.05);
-  \fill[green!45, opacity=0.55] (0.6,-0.05) rectangle (1.25,0.6);
-  \fill[green!45, opacity=0.55] (0.6,0.6) rectangle (1.25,1.25);
-  \fill[green!45, opacity=0.55] (0.6,1.25) rectangle (1.25,1.9);
-  \fill[green!45, opacity=0.55] (1.25,-1.35) rectangle (1.9,-0.7);
-  \fill[green!45, opacity=0.55] (1.25,-0.7) rectangle (1.9,-0.05);
-  \fill[green!45, opacity=0.55] (1.25,-0.05) rectangle (1.9,0.6);
-  \fill[green!45, opacity=0.55] (1.25,0.6) rectangle (1.9,1.25);
-  \fill[green!45, opacity=0.55] (1.25,1.25) rectangle (1.9,1.9);
-  % discarded cells (coverage < 15%, corner touch only) -- red fill
-  \fill[red!45, opacity=0.5] (-2,-0.7) rectangle (-1.35,-0.05);
-  \fill[red!45, opacity=0.5] (-2,0.6) rectangle (-1.35,1.25);
-  \fill[red!45, opacity=0.5] (-1.35,-2) rectangle (-0.7,-1.35);
-  \fill[red!45, opacity=0.5] (1.25,-2) rectangle (1.9,-1.35);
-\end{scope}
-\node at (0,-2.9) {\small \textbf{1 km $\times$ 1 km analysis grid}};
-\node[align=center, font=\scriptsize] at (0,-3.35)
-  {\textcolor{green!55!black}{\rule{6pt}{6pt}}~retained ($\geq$15\% coverage)
-   \quad
-   \textcolor{red!55!black}{\rule{6pt}{6pt}}~discarded (corner touch only)};
-
-\end{tikzpicture}
+\includegraphics[width=0.55\textwidth]{images/section_3/fig3_5_cells.png}
 \caption{Step 10 (Analysis-Cell Generation): the merged mosaic is
 intersected with a 1\,km grid; cells with substantial coverage
 (green) are retained as embedding units, corner-touch cells below
