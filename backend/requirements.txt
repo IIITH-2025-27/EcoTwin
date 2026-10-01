@@ -23,17 +23,6 @@ python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
 python-multipart==0.0.12
 
-# ── General Python / Data utilities ──────────────────────────────────────────
-numpy==1.26.4
-pandas==2.2.3
-scikit-learn==1.5.2
-
-# ── Geospatial ────────────────────────────────────────────────────────────────
-shapely==2.0.6
-pyproj==3.7.0
-pyshp==2.3.1
-rasterio==1.3.10
-
 # ── PDF Generation ────────────────────────────────────────────────────────────
 weasyprint==69.0
 jinja2==3.1.4
