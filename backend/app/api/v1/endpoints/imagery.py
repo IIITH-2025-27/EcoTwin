@@ -15,10 +15,11 @@ from __future__ import annotations
 import asyncio
 
 import structlog
-from fastapi import APIRouter, BackgroundTasks, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from sqlalchemy import select
 
 from app.core.dependencies import DatabaseDep
+from app.core.permissions import require_pipeline_permission
 from app.image_acquisition.pipeline import (
     cancel_imagery_pipeline,
     get_imagery_progress,
@@ -53,6 +54,7 @@ logger = structlog.get_logger(__name__)
 async def fetch_images(
     body: FetchImagesRequest,
     background_tasks: BackgroundTasks,
+    _perm: None = Depends(require_pipeline_permission("fetch_images")),
 ) -> FetchImagesResponse:
     """
     Start downloading Sentinel-2 GeoTIFF composites for the specified
@@ -198,6 +200,7 @@ async def merge_options() -> MergeOptionsResponse:
 async def merge_tiles(
     body: MergeTilesRequest,
     background_tasks: BackgroundTasks,
+    _perm: None = Depends(require_pipeline_permission("merge_image_tiles")),
 ) -> MergeTilesResponse:
     """
     Start merging downloaded tiles for all active lakes.

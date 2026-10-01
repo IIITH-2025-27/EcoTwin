@@ -9,8 +9,9 @@ from __future__ import annotations
 import asyncio
 
 import structlog
-from fastapi import APIRouter, BackgroundTasks, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 
+from app.core.permissions import require_pipeline_permission
 from app.schemas.sync import (
     HydroLakeBoundaryResponse,
     IndiaStateImportResponse,
@@ -58,6 +59,7 @@ async def get_hydrolake_boundaries(
 @router.post("/lakes/import", response_model=LakeImportResponse)
 async def import_lakes(
     country: str = "India",
+    _perm: None = Depends(require_pipeline_permission("sync_lakes")),
 ) -> LakeImportResponse:
     """Import HydroLAKES shapefile rows into the lakes table."""
     try:
@@ -74,7 +76,9 @@ async def import_lakes(
 
 
 @router.post("/india-states/import", response_model=IndiaStateImportResponse)
-async def import_india_state_boundaries() -> IndiaStateImportResponse:
+async def import_india_state_boundaries(
+    _perm: None = Depends(require_pipeline_permission("sync_lakes")),
+) -> IndiaStateImportResponse:
     """Load India state/UT boundaries and backfill existing lake metadata."""
     try:
         return await asyncio.to_thread(import_india_states)
@@ -93,6 +97,7 @@ async def import_india_state_boundaries() -> IndiaStateImportResponse:
 async def start_sync_job(
     body: SyncRequest,
     background_tasks: BackgroundTasks,
+    _perm: None = Depends(require_pipeline_permission("sync_lakes")),
 ) -> SyncJobResponse:
     """
     Start the lake-region import and ML pipeline in the background.

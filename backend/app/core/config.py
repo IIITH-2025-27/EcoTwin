@@ -3,7 +3,7 @@ from typing import List, Optional
 from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from sqlalchemy.engine import URL
+from sqlalchemy.engine import URL, make_url
 
 
 class Settings(BaseSettings):
@@ -20,6 +20,14 @@ class Settings(BaseSettings):
     DEBUG: bool = False
     ENVIRONMENT: str = "production"
 
+    # ── Database URL Override ─────────────────────────────────────
+    # Leave empty for normal local PostgreSQL development.
+    # Set this when connecting to an external/hosted PostgreSQL
+    # database such as Supabase.
+    # When set, it takes precedence over all POSTGRES_* variables.
+    #
+    # Example:
+    #   DATABASE_URL_OVERRIDE=postgresql+asyncpg://user:pass@host:5432/db
     DATABASE_URL_OVERRIDE: Optional[str] = None
 
     # ── Server ────────────────────────────────────────────────────
@@ -27,7 +35,8 @@ class Settings(BaseSettings):
     PORT: int = 8000
     WORKERS: int = 4
 
-    # ── PostgreSQL ────────────────────────────────────────────────
+    # ── PostgreSQL (local fallback) ───────────────────────────────
+    # Used only when DATABASE_URL_OVERRIDE is empty or not set.
     POSTGRES_HOST: str = "localhost"
     POSTGRES_PORT: int = 5432
     POSTGRES_DB: str = "ecotwin"
@@ -106,11 +115,30 @@ class Settings(BaseSettings):
     EMBEDDING_GPU_BATCH_SIZE: int = 8
     EMBEDDING_MAX_WORKERS: int = 4
 
+    # ── Internal helpers ──────────────────────────────────────────
+
+    @property
+    def _has_override(self) -> bool:
+        """True when DATABASE_URL_OVERRIDE contains a non-empty, non-whitespace value."""
+        return bool(self.DATABASE_URL_OVERRIDE and self.DATABASE_URL_OVERRIDE.strip())
+
     @property
     def DATABASE_URL(self) -> str:
-        if self.DATABASE_URL_OVERRIDE:
-            return self.DATABASE_URL_OVERRIDE
-    
+        """Async database URL for SQLAlchemy / FastAPI (asyncpg driver).
+
+        Uses DATABASE_URL_OVERRIDE when provided; otherwise constructs
+        from POSTGRES_* variables.
+        """
+        if self._has_override:
+            override = self.DATABASE_URL_OVERRIDE.strip()  # type: ignore[union-attr]
+            # Ensure the asyncpg driver is used. Use SQLAlchemy's
+            # make_url so we never manually parse/reconstruct the URL
+            # (passwords may contain special characters like @, :, /).
+            parsed = make_url(override)
+            if parsed.drivername not in ("postgresql+asyncpg",):
+                parsed = parsed.set(drivername="postgresql+asyncpg")
+            return parsed.render_as_string(hide_password=False)
+
         return URL.create(
             drivername="postgresql+asyncpg",
             username=self.POSTGRES_USER,
@@ -119,15 +147,24 @@ class Settings(BaseSettings):
             port=self.POSTGRES_PORT,
             database=self.POSTGRES_DB,
         ).render_as_string(hide_password=False)
-    
+
     @property
     def SYNC_DATABASE_URL(self) -> str:
-        if self.DATABASE_URL_OVERRIDE:
-            return (
-                self.DATABASE_URL_OVERRIDE
-                .replace("postgresql+asyncpg://", "postgresql+psycopg2://", 1)
-            )
-    
+        """Synchronous database URL for Alembic migrations (psycopg2 driver).
+
+        Uses DATABASE_URL_OVERRIDE when provided; otherwise constructs
+        from POSTGRES_* variables.  The driver is always set to
+        ``postgresql+psycopg2`` via SQLAlchemy's ``make_url`` to avoid
+        corrupting passwords that contain special characters.
+        """
+        if self._has_override:
+            override = self.DATABASE_URL_OVERRIDE.strip()  # type: ignore[union-attr]
+            # Safely swap the driver to psycopg2 without touching the
+            # rest of the URL (host, password, path, query params).
+            parsed = make_url(override)
+            parsed = parsed.set(drivername="postgresql+psycopg2")
+            return parsed.render_as_string(hide_password=False)
+
         return URL.create(
             drivername="postgresql+psycopg2",
             username=self.POSTGRES_USER,

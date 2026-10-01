@@ -9,6 +9,7 @@ from app.models.embedding import RegionEmbedding
 from app.models.region import Region
 from app.models.report import Report, ReportStatus
 from app.models.sub_region import SubRegion, SubRegionFeature
+from app.models.pipeline_permission import PipelinePermission
 
 __all__ = [
     "Region",
@@ -23,4 +24,5 @@ __all__ = [
     "ReportStatus",
     "SubRegion",
     "SubRegionFeature",
+    "PipelinePermission",
 ]

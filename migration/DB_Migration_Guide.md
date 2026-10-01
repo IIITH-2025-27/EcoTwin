@@ -58,6 +58,16 @@ pg_restore \
 # /usr/lib/postgresql/17/bin/pg_restore     -h localhost     -U postgres     -O -x     -d ecotwin_peeyush     ecotwin_peeyush.dum
 ```
 
+## Note : Restore to Supabase 
+/usr/lib/postgresql/18/bin/pg_restore \
+  --dbname="Connection url" \
+  --clean \
+  --if-exists \
+  --no-owner \
+  --no-privileges \
+  ecotwin_lite_v3.dump
+
+
 The temporary database now contains the teammate's data.
 
 ------------------------------------------------------------------------

@@ -10,9 +10,10 @@ GET  /lake-features/status-b8    — poll B8 feature generation progress
 from __future__ import annotations
 
 import structlog
-from fastapi import APIRouter, BackgroundTasks, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 
 from app.core.dependencies import DatabaseDep
+from app.core.permissions import require_pipeline_permission
 from app.services.lake_feature_generator import (
     generate_lake_features,
     get_feature_progress,
@@ -35,6 +36,7 @@ logger = structlog.get_logger(__name__)
 async def generate_features(
     body: GenerateLakeFeaturesRequest,
     background_tasks: BackgroundTasks,
+    _perm: None = Depends(require_pipeline_permission("generate_features")),
 ) -> GenerateLakeFeaturesResponse:
     """
     Start computing ecological features from merged Sentinel-2 images.
@@ -96,6 +98,7 @@ async def get_status() -> LakeFeatureProgressResponse:
 async def generate_b8(
     body: GenerateLakeFeaturesRequest,
     background_tasks: BackgroundTasks,
+    _perm: None = Depends(require_pipeline_permission("fetch_b8")),
 ) -> GenerateLakeFeaturesResponse:
     """
     Start fetching Sentinel-2 B8 (NIR) and computing its zonal statistics.

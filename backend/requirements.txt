@@ -23,22 +23,10 @@ python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
 python-multipart==0.0.12
 
-# ── ML ────────────────────────────────────────────────────────────────────────
-# torch is installed separately in the Dockerfile from the CPU-only wheel index:
-#   pip install torch==2.4.1+cpu --index-url https://download.pytorch.org/whl/cpu
-# Listed here as a comment so the version is visible but not re-fetched from PyPI.
-# torch==2.4.1+cpu  (installed via Dockerfile)
+# ── General Python / Data utilities ──────────────────────────────────────────
 numpy==1.26.4
 pandas==2.2.3
 scikit-learn==1.5.2
-opencv-python-headless==4.10.0.84
-
-# ── HuggingFace (Prithvi encoder) ─────────────────────────────────────────────
-transformers==4.44.2
-huggingface-hub==0.25.2
-
-# ── Google Earth Engine ───────────────────────────────────────────────────────
-earthengine-api==0.1.413
 
 # ── Geospatial ────────────────────────────────────────────────────────────────
 shapely==2.0.6
@@ -47,9 +35,6 @@ pyshp==2.3.1
 rasterio==1.3.10
 
 # ── PDF Generation ────────────────────────────────────────────────────────────
-# HTML → PDF rendering for the Ecosystem Discovery Report.
-# Requires system libraries (Debian): libpango-1.0-0 libpangocairo-1.0-0
-# libgdk-pixbuf-2.0-0 libffi-dev shared-mime-info (installed in the Dockerfile).
 weasyprint==69.0
 jinja2==3.1.4
 

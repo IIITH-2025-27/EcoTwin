@@ -9,11 +9,12 @@ POST /embeddings/cancel    — cancel a running pipeline
 from __future__ import annotations
 
 import structlog
-from fastapi import APIRouter, BackgroundTasks, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.dependencies import DatabaseDep
+from app.core.permissions import require_pipeline_permission
 from app.embedding_pipeline.pipeline import (
     aggregate_lake_embeddings,
     cancel_embedding_pipeline,
@@ -82,6 +83,7 @@ async def get_available_embedding_years(
 async def generate_embeddings(
     body: GenerateEmbeddingsRequest,
     background_tasks: BackgroundTasks,
+    _perm: None = Depends(require_pipeline_permission("generate_embeddings")),
 ) -> GenerateEmbeddingsResponse:
     """
     Start the local Prithvi embedding pipeline.
@@ -146,6 +148,7 @@ async def merge_embeddings(
     body: MergeEmbeddingsRequest,
     background_tasks: BackgroundTasks,
     db: DatabaseDep,
+    _perm: None = Depends(require_pipeline_permission("merge_embeddings")),
 ) -> MergeEmbeddingsResponse:
     """Aggregate per-tile embeddings into lake-level embeddings in the regions table."""
     if body.country.lower() != "india":

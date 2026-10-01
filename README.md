@@ -24,6 +24,7 @@ source .venv/bin/activate
 ```bash
 cd backend
 pip install -r requirements.txt
+pip install -r requirements-ml.txt //only for Local Setup
 cd app/ML_models/Prithvi-EO-1.0-100M
 pip install -r requirements.txt
 ```

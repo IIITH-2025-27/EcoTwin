@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { BarChart3, Database, Layers, Leaf, PanelLeftClose, PanelLeftOpen, Radar, RefreshCw, Satellite } from 'lucide-react';
 import { useMapStore } from '@/store/mapStore';
 import { useRegion } from '@/hooks/useRegion';
+import { usePipelinePermissions } from '@/hooks/usePipelinePermissions';
 import SyncModal from '@/components/SyncModal/SyncModal';
 import SyncLakesModal from '@/components/SyncModal/SyncLakesModal';
 import FetchImagesModal from '@/components/SyncModal/FetchImagesModal';
@@ -10,9 +11,12 @@ import MergeEmbeddingsModal from '@/components/SyncModal/MergeEmbeddingsModal';
 import GenerateLakeFeaturesModal from '@/components/SyncModal/GenerateLakeFeaturesModal';
 import FetchB8Modal from '@/components/SyncModal/FetchB8Modal';
 
+const DENIED_TOOLTIP = 'Data Pipeline run Access denied';
+
 export default function Navbar() {
   const { selectedRegionId, isSidebarCollapsed, toggleSidebar } = useMapStore();
   const { data: regionData } = useRegion(selectedRegionId);
+  const { isPipelineActionAllowed } = usePipelinePermissions();
   const [showSync, setShowSync] = useState(false);
   const [showLakesSync, setShowLakesSync] = useState(false);
   const [showFetchImages, setShowFetchImages] = useState(false);
@@ -20,6 +24,14 @@ export default function Navbar() {
   const [showMergeEmbeddings, setShowMergeEmbeddings] = useState(false);
   const [showLakeFeatures, setShowLakeFeatures] = useState(false);
   const [showFetchB8, setShowFetchB8] = useState(false);
+
+  const canSyncLakes = isPipelineActionAllowed('sync_lakes');
+  const canFetchImages = isPipelineActionAllowed('fetch_images');
+  const canMergeTiles = isPipelineActionAllowed('merge_image_tiles');
+  const canGenerateEmbeddings = isPipelineActionAllowed('generate_embeddings');
+  const canMergeEmbeddings = isPipelineActionAllowed('merge_embeddings');
+  const canGenerateFeatures = isPipelineActionAllowed('generate_features');
+  const canFetchB8 = isPipelineActionAllowed('fetch_b8');
 
   return (
     <header className="flex h-14 items-center justify-between border-b border-slate-700/60 bg-surface-800/95 px-4 backdrop-blur-sm">
@@ -82,75 +94,82 @@ export default function Navbar() {
       {/* Right: sync actions + version tag */}
       <div className="flex items-center gap-3">
         <button
-          onClick={() => setShowLakesSync(true)}
+          onClick={() => canSyncLakes && setShowLakesSync(true)}
+          disabled={!canSyncLakes}
           className="flex items-center gap-1.5 rounded-lg border border-primary-600/40 bg-primary-600/15 px-3 py-1.5
                      text-xs font-medium text-primary-300 hover:bg-primary-600/25 hover:text-primary-200
-                     transition-colors"
-          title="Import HydroLAKES records into the lakes table"
+                     transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+          title={canSyncLakes ? 'Import HydroLAKES records into the lakes table' : DENIED_TOOLTIP}
         >
           <Database className="h-3.5 w-3.5" />
           <span className="hidden sm:inline">Sync Lakes</span>
         </button>
         <button
-          onClick={() => setShowFetchImages(true)}
+          onClick={() => canFetchImages && setShowFetchImages(true)}
+          disabled={!canFetchImages}
           className="flex items-center gap-1.5 rounded-lg border border-cyan-500/40 bg-cyan-500/15 px-3 py-1.5
                      text-xs font-medium text-cyan-300 hover:bg-cyan-500/25 hover:text-cyan-200
-                     transition-colors"
-          title="Download Sentinel-2 GeoTIFF composites for active lakes"
+                     transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+          title={canFetchImages ? 'Download Sentinel-2 GeoTIFF composites for active lakes' : DENIED_TOOLTIP}
         >
           <Satellite className="h-3.5 w-3.5" />
           <span className="hidden sm:inline">Fetch Images</span>
         </button>
         <button
-          onClick={() => setShowMergeTiles(true)}
+          onClick={() => canMergeTiles && setShowMergeTiles(true)}
+          disabled={!canMergeTiles}
           className="flex items-center gap-1.5 rounded-lg border border-amber-500/40 bg-amber-500/15 px-3 py-1.5
                      text-xs font-medium text-amber-300 hover:bg-amber-500/25 hover:text-amber-200
-                     transition-colors"
-          title="Merge downloaded tiles into single GeoTIFFs per lake"
+                     transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+          title={canMergeTiles ? 'Merge downloaded tiles into single GeoTIFFs per lake' : DENIED_TOOLTIP}
         >
           <Layers className="h-3.5 w-3.5" />
           <span className="hidden sm:inline">Merge Image Tiles</span>
         </button>
        
         <button
-          onClick={() => setShowSync(true)}
+          onClick={() => canGenerateEmbeddings && setShowSync(true)}
+          disabled={!canGenerateEmbeddings}
           className="flex items-center gap-1.5 rounded-lg border border-primary-600/40 bg-primary-600/15 px-3 py-1.5
                      text-xs font-medium text-primary-300 hover:bg-primary-600/25 hover:text-primary-200
-                     transition-colors"
-          title="Generate embeddings from locally merged lake images"
+                     transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+          title={canGenerateEmbeddings ? 'Generate embeddings from locally merged lake images' : DENIED_TOOLTIP}
         >
           <RefreshCw className="h-3.5 w-3.5" />
           <span className="hidden sm:inline">Generate Embeddings</span>
         </button>
 
          <button
-          onClick={() => setShowMergeEmbeddings(true)}
+          onClick={() => canMergeEmbeddings && setShowMergeEmbeddings(true)}
+          disabled={!canMergeEmbeddings}
           className="flex items-center gap-1.5 rounded-lg border border-purple-500/40 bg-purple-500/15 px-3 py-1.5
            text-xs font-medium text-purple-300 hover:bg-purple-500/25 hover:text-purple-200
-           transition-colors"
-          title="Aggregate lake tile embeddings into final lake embeddings in the regions table"
+           transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+          title={canMergeEmbeddings ? 'Aggregate lake tile embeddings into final lake embeddings in the regions table' : DENIED_TOOLTIP}
         >
           <RefreshCw className="h-3.5 w-3.5" />
           <span className="hidden sm:inline">Merge Embeddings</span>
         </button> 
 
         <button
-          onClick={() => setShowLakeFeatures(true)}
+          onClick={() => canGenerateFeatures && setShowLakeFeatures(true)}
+          disabled={!canGenerateFeatures}
           className="flex items-center gap-1.5 rounded-lg border border-emerald-500/40 bg-emerald-500/15 px-3 py-1.5
                      text-xs font-medium text-emerald-300 hover:bg-emerald-500/25 hover:text-emerald-200
-                     transition-colors"
-          title="Extract ecological features from merged Sentinel-2 images"
+                     transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+          title={canGenerateFeatures ? 'Extract ecological features from merged Sentinel-2 images' : DENIED_TOOLTIP}
         >
           <BarChart3 className="h-3.5 w-3.5" />
           <span className="hidden sm:inline">Generate Lake Features</span>
         </button>
 
         <button
-          onClick={() => setShowFetchB8(true)}
+          onClick={() => canFetchB8 && setShowFetchB8(true)}
+          disabled={!canFetchB8}
           className="flex items-center gap-1.5 rounded-lg border border-indigo-500/40 bg-indigo-500/15 px-3 py-1.5
                      text-xs font-medium text-indigo-300 hover:bg-indigo-500/25 hover:text-indigo-200
-                     transition-colors"
-          title="Fetch Sentinel-2 B8 (NIR) band and compute zonal statistics per lake-year"
+                     transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+          title={canFetchB8 ? 'Fetch Sentinel-2 B8 (NIR) band and compute zonal statistics per lake-year' : DENIED_TOOLTIP}
         >
           <Radar className="h-3.5 w-3.5" />
           <span className="hidden sm:inline">Fetch B8</span>

@@ -1,0 +1,15 @@
+# ── Base application dependencies ─────────────────────────────────────────────
+-r requirements.txt
+
+# ── ML / Deep Learning ────────────────────────────────────────────────────────
+torch==2.4.1
+
+# ── HuggingFace / Prithvi ─────────────────────────────────────────────────────
+transformers==4.44.2
+huggingface-hub==0.25.2
+
+# ── Computer Vision ───────────────────────────────────────────────────────────
+opencv-python-headless==4.10.0.84
+
+# ── Google Earth Engine ───────────────────────────────────────────────────────
+earthengine-api==0.1.413
