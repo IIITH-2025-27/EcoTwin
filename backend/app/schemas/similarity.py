@@ -24,6 +24,7 @@ class SimilarityMethod(str, Enum):
 
 class AnalogResult(BaseModel):
     region_id: UUID
+    lake_id: Optional[int] = None
     center_lat: float
     center_lon: float
     area_sqkm: Optional[float] = None

@@ -33,6 +33,7 @@ from __future__ import annotations
 
 from typing import Dict, List, Optional, Tuple
 from uuid import UUID
+import asyncio
 
 import numpy as np
 import structlog
@@ -280,26 +281,48 @@ class EcologicalForecastService:
 
         twin_data: List[dict] = []
 
-        for analog in search_response.analogs:
+        # ── Phase 1: Resolve twin lake IDs in parallel ───────────────
+        async def _resolve_twin(analog):
+            twin_lake_id = getattr(analog, 'lake_id', None)
+            if twin_lake_id is not None:
+                return (analog, twin_lake_id)
+            row = await self._region_repo.get_by_id_with_lake(analog.region_id)
+            if row is None:
+                return None
+            return (analog, int(row["lake_id"]))
+
+        resolved_twins = await asyncio.gather(
+            *[_resolve_twin(a) for a in search_response.analogs],
+            return_exceptions=True,
+        )
+        valid_twins = [
+            r for r in resolved_twins
+            if isinstance(r, tuple) and r[1] != lake_id
+        ]
+
+        # ── Phase 2: Fetch band rows for all candidates in parallel ──
+        async def _fetch_twin_bands(analog, twin_lake_id):
+            rows = await _fetch_band_rows(
+                self._session, twin_lake_id, analog.year
+            )
+            return (analog, twin_lake_id, rows)
+
+        band_results = await asyncio.gather(
+            *[_fetch_twin_bands(a, lid) for a, lid in valid_twins[:num_analogs * 2]],
+            return_exceptions=True,
+        )
+
+        # ── Phase 3: Process results sequentially (needs ordering) ───
+        for result in band_results:
             if len(twin_data) >= num_analogs:
                 break
-
-            # Resolve twin lake_id
-            twin_row = await self._region_repo.get_by_id_with_lake(analog.region_id)
-            if twin_row is None:
+            if isinstance(result, Exception):
                 continue
-            twin_lake_id: int = int(twin_row["lake_id"])
-            if twin_lake_id == lake_id:
+            analog, twin_lake_id, band_rows = result
+            if not band_rows:
                 continue
 
             twin_matched_year: int = analog.year
-
-            # Fetch twin's band time-series from matched year
-            band_rows = await _fetch_band_rows(
-                self._session, twin_lake_id, twin_matched_year
-            )
-            if not band_rows:
-                continue
 
             # Compute indices for each year
             yearly_indices: Dict[int, Dict[str, Optional[float]]] = {}

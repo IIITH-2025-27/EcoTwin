@@ -1,5 +1,6 @@
 from typing import List, Optional
 from uuid import UUID
+import asyncio
 
 import structlog
 
@@ -150,25 +151,29 @@ class ForecastService:
             return self._fallback_forecast(region_id, query_year)
 
         # ── Step 2: Build AnalogForecastInput list ───────────────────────────
-        # We need the lake_id and matched_window_start/end for each analog.
-        # SimilarityService now exposes the matched window directly on AnalogResult.
-        # We retrieve the lake_id from the DB for each analog region.
-        ranked_inputs: List[AnalogForecastInput] = []
-        for analog in search_response.analogs:
+        async def _resolve_analog(analog):
+            """Resolve a single analog's lake_id, preferring the embedded value."""
+            lake_id = getattr(analog, 'lake_id', None)
+            if lake_id is not None:
+                return AnalogForecastInput(
+                    lake_id=lake_id,
+                    region_id=analog.region_id,
+                    matched_window_start=analog.start_year,
+                    matched_window_end=analog.end_year,
+                    similarity_score=analog.similarity_score,
+                    forecast_horizon=forecast_horizon,
+                )
             try:
                 row = await self._region_repo.get_by_id_with_lake(analog.region_id)
                 if row is None:
-                    continue
-                lake_id: int = int(row["lake_id"])
-                ranked_inputs.append(
-                    AnalogForecastInput(
-                        lake_id=lake_id,
-                        region_id=analog.region_id,
-                        matched_window_start=analog.start_year,
-                        matched_window_end=analog.end_year,
-                        similarity_score=analog.similarity_score,
-                        forecast_horizon=forecast_horizon,
-                    )
+                    return None
+                return AnalogForecastInput(
+                    lake_id=int(row["lake_id"]),
+                    region_id=analog.region_id,
+                    matched_window_start=analog.start_year,
+                    matched_window_end=analog.end_year,
+                    similarity_score=analog.similarity_score,
+                    forecast_horizon=forecast_horizon,
                 )
             except Exception as exc:
                 logger.warning(
@@ -176,6 +181,16 @@ class ForecastService:
                     region_id=str(analog.region_id),
                     error=str(exc),
                 )
+                return None
+
+        resolved = await asyncio.gather(
+            *[_resolve_analog(a) for a in search_response.analogs],
+            return_exceptions=True,
+        )
+        ranked_inputs: List[AnalogForecastInput] = [
+            r for r in resolved
+            if isinstance(r, AnalogForecastInput)
+        ]
 
         if not ranked_inputs:
             logger.warning(

@@ -37,6 +37,7 @@ in the pipeline.
 
 from __future__ import annotations
 
+import asyncio
 from typing import Callable, Coroutine, Dict, List, Optional, Tuple
 from uuid import UUID
 
@@ -204,11 +205,31 @@ class ForecastingModule:
             ranked_results, key=lambda r: r.similarity_score, reverse=True
         )
 
-        # -- 2. Collect valid analogs -----------------------------------------
-        # We cache lake embeddings to avoid redundant DB round-trips when the
-        # same lake appears in the ranked list multiple times.
-        lake_cache: Dict[int, List[Tuple[int, List[float]]]] = {}
+        # -- 2. Batch-prefetch lake timelines ──────────────────────────────────
+        # Collect unique lake IDs from the top candidates, fetch all in parallel.
+        prefetch_candidates = sorted_results[:desired_num_analogs * 2]
+        unique_lake_ids = list({c.lake_id for c in prefetch_candidates})
 
+        async def _safe_lookup(lid: int):
+            try:
+                return lid, await embedding_lookup(lid)
+            except Exception as exc:
+                logger.warning(
+                    "Embedding lookup failed for lake; skipping",
+                    lake_id=lid, error=str(exc),
+                )
+                return lid, None
+
+        fetch_results = await asyncio.gather(
+            *[_safe_lookup(lid) for lid in unique_lake_ids]
+        )
+        lake_cache: Dict[int, List[Tuple[int, List[float]]]] = {
+            lid: sorted(tl, key=lambda t: t[0])
+            for lid, tl in fetch_results
+            if tl is not None
+        }
+
+        # -- 3. Select valid analogs from prefetched data ─────────────────────
         ValidEntry = Tuple[AnalogForecastInput, List[Tuple[int, List[float]]]]
         valid: List[ValidEntry] = []
 
@@ -219,22 +240,11 @@ class ForecastingModule:
             lake_id = candidate.lake_id
             horizon = candidate.forecast_horizon
 
-            # Fetch (and cache) the full embedding timeline for this lake.
-            if lake_id not in lake_cache:
-                try:
-                    timeline = await embedding_lookup(lake_id)
-                except Exception as exc:
-                    logger.warning(
-                        "Embedding lookup failed for lake; skipping",
-                        lake_id=lake_id,
-                        error=str(exc),
-                    )
-                    continue
-                lake_cache[lake_id] = sorted(timeline, key=lambda t: t[0])
+            timeline = lake_cache.get(lake_id)
+            if timeline is None:
+                continue
 
-            timeline = lake_cache[lake_id]
-
-            # -- 3. Verify there are enough future embeddings ------------------
+            # Verify there are enough future embeddings
             future = [
                 (yr, emb)
                 for yr, emb in timeline
@@ -286,37 +296,31 @@ class ForecastingModule:
             weights=[round(w, 4) for w in weights],
         )
 
-        # -- 5. Compute forecast embeddings per horizon year ------------------
-        # Use the horizon value from the first (best) analog as the authoritative
-        # horizon for the entire forecast.
+        # -- 5. Pre-compute future embeddings per analog ──────────────────────
         horizon = valid[0][0].forecast_horizon
         forecast_embeddings: Dict[int, List[float]] = {}
+
+        # Pre-sort future embeddings once per analog to avoid repeated sorting
+        precomputed_futures: List[Tuple[List[Tuple[int, List[float]]], float]] = []
+        for (analog_input, timeline), w in zip(valid, weights):
+            future_sorted = sorted(
+                [(yr, emb) for yr, emb in timeline if yr > analog_input.matched_window_end],
+                key=lambda t: t[0],
+            )
+            precomputed_futures.append((future_sorted, w))
 
         for offset in range(1, horizon + 1):
             year_embeddings: List[List[float]] = []
             year_weights: List[float] = []
 
-            for (analog_input, timeline), w in zip(valid, weights):
-                future_sorted = sorted(
-                    [
-                        (yr, emb)
-                        for yr, emb in timeline
-                        if yr > analog_input.matched_window_end
-                    ],
-                    key=lambda t: t[0],
-                )
+            for future_sorted, w in precomputed_futures:
                 if offset - 1 < len(future_sorted):
                     _, emb = future_sorted[offset - 1]
                     year_embeddings.append(emb)
                     year_weights.append(w)
 
             if year_embeddings:
-                # Re-normalise weights in case some analogs were missing this offset.
                 normalised = _normalize(year_weights)
-                # Label the forecast year relative to the QUERY lake's current
-                # year, not the analog's window end.  This ensures the output
-                # years are always in the future (query_year+1, +2, +3, …)
-                # regardless of when the matched analog windows ended.
                 forecast_year = query_year + offset
                 forecast_embeddings[forecast_year] = _weighted_average_embedding(
                     year_embeddings, normalised

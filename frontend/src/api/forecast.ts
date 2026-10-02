@@ -7,6 +7,7 @@ export async function getForecast(
 ): Promise<ForecastData> {
   const { data } = await apiClient.get<ForecastData>(`/forecast/${regionId}`, {
     params: { method },
+    timeout: 120_000,
   });
   return data;
 }
@@ -18,7 +19,7 @@ export async function getEcologicalForecast(
 ): Promise<EcologicalForecastData> {
   const { data } = await apiClient.get<EcologicalForecastData>(
     `/forecast/ecological/${regionId}`,
-    { params: { method, num_analogs: numAnalogs } },
+    { params: { method, num_analogs: numAnalogs }, timeout: 120_000 },
   );
   return data;
 }

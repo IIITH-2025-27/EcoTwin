@@ -236,6 +236,7 @@ class SimilarityService:
             end_year = best_window[-1][0]
             return {
                 "region_id": candidate["region_id"],
+                "lake_id": candidate_lake_id,
                 "start_year": start_year,
                 "end_year": end_year,
                 "similarity_score": self._rescale_score(best_window_score, method),
@@ -296,10 +297,11 @@ class SimilarityService:
         analogs = [
             AnalogResult(
                 region_id=row["region_id"],
+                lake_id=row.get("lake_id"),
                 center_lat=row["center_lat"],
                 center_lon=row["center_lon"],
                 area_sqkm=row.get("area_sqkm"),
-                similarity_score=self._rescale_score(float(row["similarity_score"]), method),
+                similarity_score=float(row["similarity_score"]),
                 year=row["year"],
                 start_year=row["start_year"],
                 end_year=row["end_year"],
