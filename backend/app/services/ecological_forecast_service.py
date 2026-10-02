@@ -31,9 +31,8 @@ Output
 
 from __future__ import annotations
 
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple
 from uuid import UUID
-import asyncio
 
 import numpy as np
 import structlog
@@ -50,7 +49,7 @@ from app.schemas.forecast import (
     TwinDeltaContribution,
     YearlyDirection,
 )
-from app.schemas.similarity import SimilarityMethod
+from app.schemas.similarity import AnalogResult, SimilarityMethod
 from app.services.index_calculator import compute_ecological_indices
 from app.services.similarity_service import SimilarityService
 
@@ -126,38 +125,57 @@ def _classify(score: float, num_twins: int) -> str:
     return "stable"
 
 
-async def _fetch_band_rows(
+async def _fetch_band_rows_for_twins(
     session: AsyncSession,
-    lake_id: int,
-    start_year: int,
-) -> List[Dict]:
-    """Fetch band mean rows from lake_features, sorted by year."""
-    result = await session.execute(
-        text("""
-            SELECT year,
-                   b2_mean, b3_mean, b4_mean, b5_mean, b6_mean, b7_mean, b8_mean
-            FROM lake_features
-            WHERE lake_id = :lake_id
-              AND year >= :start_year
-              AND status = 'completed'
-              AND b2_mean IS NOT NULL
-            ORDER BY year ASC
-        """),
-        {"lake_id": lake_id, "start_year": start_year},
+    twins: Sequence[Tuple[int, int]],
+) -> Dict[Tuple[int, int], List[Dict]]:
+    """Fetch all candidate band histories in one query on the shared session."""
+    if not twins:
+        return {}
+
+    values_sql = ", ".join(
+        f"(CAST(:lake_id_{index} AS bigint), CAST(:start_year_{index} AS integer))"
+        for index in range(len(twins))
     )
-    rows = []
-    for r in result.mappings().all():
-        rows.append({
-            "year": int(r["year"]),
-            "b2_mean": float(r["b2_mean"]) if r["b2_mean"] is not None else None,
-            "b3_mean": float(r["b3_mean"]) if r["b3_mean"] is not None else None,
-            "b4_mean": float(r["b4_mean"]) if r["b4_mean"] is not None else None,
-            "b5_mean": float(r["b5_mean"]) if r["b5_mean"] is not None else None,
-            "b6_mean": float(r["b6_mean"]) if r["b6_mean"] is not None else None,
-            "b7_mean": float(r["b7_mean"]) if r["b7_mean"] is not None else None,
-            "b8_mean": float(r["b8_mean"]) if r["b8_mean"] is not None else None,
+    params = {
+        key: value
+        for index, (lake_id, start_year) in enumerate(twins)
+        for key, value in (
+            (f"lake_id_{index}", lake_id),
+            (f"start_year_{index}", start_year),
+        )
+    }
+    result = await session.execute(
+        text(f"""
+            WITH targets(lake_id, start_year) AS (VALUES {values_sql})
+            SELECT targets.lake_id, targets.start_year, features.year,
+                   features.b2_mean, features.b3_mean, features.b4_mean,
+                   features.b5_mean, features.b6_mean, features.b7_mean,
+                   features.b8_mean
+            FROM targets
+            JOIN lake_features AS features
+              ON features.lake_id = targets.lake_id
+             AND features.year >= targets.start_year
+            WHERE features.status = 'completed'
+              AND features.b2_mean IS NOT NULL
+            ORDER BY targets.lake_id, targets.start_year, features.year ASC
+        """),
+        params,
+    )
+    grouped: Dict[Tuple[int, int], List[Dict]] = {}
+    for row in result.mappings():
+        key = (int(row["lake_id"]), int(row["start_year"]))
+        grouped.setdefault(key, []).append({
+            "year": int(row["year"]),
+            "b2_mean": float(row["b2_mean"]) if row["b2_mean"] is not None else None,
+            "b3_mean": float(row["b3_mean"]) if row["b3_mean"] is not None else None,
+            "b4_mean": float(row["b4_mean"]) if row["b4_mean"] is not None else None,
+            "b5_mean": float(row["b5_mean"]) if row["b5_mean"] is not None else None,
+            "b6_mean": float(row["b6_mean"]) if row["b6_mean"] is not None else None,
+            "b7_mean": float(row["b7_mean"]) if row["b7_mean"] is not None else None,
+            "b8_mean": float(row["b8_mean"]) if row["b8_mean"] is not None else None,
         })
-    return rows
+    return grouped
 
 
 async def _fetch_latest_band_row(
@@ -236,7 +254,7 @@ class EcologicalForecastService:
         year: Optional[int] = None,
         num_analogs: int = 5,
         method: SimilarityMethod = SimilarityMethod.COSINE,
-        precomputed_analogs=None,
+        precomputed_analogs: Optional[Sequence[AnalogResult]] = None,
     ) -> EcologicalForecastResponse:
         # ── 1. Resolve lake ──────────────────────────────────────────────
         region = await self._region_repo.get_by_id(region_id)
@@ -258,7 +276,7 @@ class EcologicalForecastService:
 
         # ── 3. Similarity search (skip if caller provided pre-computed analogs)
         if precomputed_analogs is not None:
-            analog_list = precomputed_analogs
+            analog_list = list(precomputed_analogs)
         else:
             sim_svc = self._get_similarity_service()
             search_response = await sim_svc.search_analogs(
@@ -286,44 +304,47 @@ class EcologicalForecastService:
 
         twin_data: List[dict] = []
 
-        # ── Phase 1: Resolve twin lake IDs in parallel ───────────────
-        async def _resolve_twin(analog):
-            twin_lake_id = getattr(analog, 'lake_id', None)
-            if twin_lake_id is not None:
-                return (analog, twin_lake_id)
-            row = await self._region_repo.get_by_id_with_lake(analog.region_id)
-            if row is None:
-                return None
-            return (analog, int(row["lake_id"]))
-
-        resolved_twins = await asyncio.gather(
-            *[_resolve_twin(a) for a in analog_list],
-            return_exceptions=True,
-        )
-        valid_twins = [
-            r for r in resolved_twins
-            if isinstance(r, tuple) and r[1] != lake_id
+        # Resolve missing IDs together, then fetch all band histories with one
+        # SQL statement. AsyncSession is not safe for concurrent execute calls.
+        analogs_needing_lake_id = [
+            analog for analog in analog_list
+            if getattr(analog, "lake_id", None) is None
         ]
-
-        # ── Phase 2: Fetch band rows for all candidates in parallel ──
-        async def _fetch_twin_bands(analog, twin_lake_id):
-            rows = await _fetch_band_rows(
-                self._session, twin_lake_id, analog.year
+        lake_ids_by_region: Dict[UUID, int] = {}
+        if analogs_needing_lake_id:
+            region_ids = [str(analog.region_id) for analog in analogs_needing_lake_id]
+            result = await self._session.execute(
+                text("""
+                    SELECT region_id, lake_id
+                    FROM regions
+                    WHERE region_id = ANY(CAST(:region_ids AS uuid[]))
+                """),
+                {"region_ids": region_ids},
             )
-            return (analog, twin_lake_id, rows)
+            lake_ids_by_region = {
+                row["region_id"]: int(row["lake_id"])
+                for row in result.mappings()
+            }
 
-        band_results = await asyncio.gather(
-            *[_fetch_twin_bands(a, lid) for a, lid in valid_twins[:num_analogs * 2]],
-            return_exceptions=True,
+        valid_twins: List[Tuple[AnalogResult, int]] = []
+        for analog in analog_list:
+            twin_lake_id = getattr(analog, "lake_id", None)
+            if twin_lake_id is None:
+                twin_lake_id = lake_ids_by_region.get(analog.region_id)
+            if twin_lake_id is not None and int(twin_lake_id) != lake_id:
+                valid_twins.append((analog, int(twin_lake_id)))
+
+        selected_twins = valid_twins[:num_analogs * 2]
+        band_rows_by_twin = await _fetch_band_rows_for_twins(
+            self._session,
+            [(twin_lake_id, analog.year) for analog, twin_lake_id in selected_twins],
         )
 
-        # ── Phase 3: Process results sequentially (needs ordering) ───
-        for result in band_results:
+        # Process in similarity rank order, retaining at most num_analogs.
+        for analog, twin_lake_id in selected_twins:
             if len(twin_data) >= num_analogs:
                 break
-            if isinstance(result, Exception):
-                continue
-            analog, twin_lake_id, band_rows = result
+            band_rows = band_rows_by_twin.get((twin_lake_id, analog.year), [])
             if not band_rows:
                 continue
 

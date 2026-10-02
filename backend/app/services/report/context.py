@@ -586,7 +586,7 @@ async def build_report_context(
                 region_id=region.region_id,
                 num_analogs=5,
                 method=method,
-                precomputed_analogs=analog_rows if analog_rows else None,
+                precomputed_analogs=analog_rows,
             )
         except Exception as exc:  # noqa: BLE001
             logger.warning(
