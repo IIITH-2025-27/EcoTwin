@@ -1,7 +1,7 @@
 import json
 import time
 from types import SimpleNamespace
-from typing import List, Optional, Tuple
+from typing import AsyncIterator, List, Optional, Tuple
 from uuid import UUID
 
 import structlog
@@ -173,6 +173,86 @@ class EmbeddingRepository:
                 )
 
         return list(grouped.values())
+
+    async def iter_historical_embedding_batches(
+        self,
+        batch_size: int = 50,
+        exclude_lake_id: Optional[int] = None,
+    ) -> AsyncIterator[List[dict]]:
+        """Stream complete histories in batches containing up to batch_size lakes."""
+        batch_size = max(1, batch_size)
+        result = await self.session.stream(
+            text("""
+                SELECT
+                    r.region_id,
+                    r.lake_id,
+                    r.year,
+                    r.center_lat,
+                    r.center_lon,
+                    r.embedding,
+                    l.display_name,
+                    l.area_sqkm
+                FROM regions AS r
+                LEFT JOIN lakes AS l ON l.lake_id = r.lake_id
+                WHERE r.embedding IS NOT NULL
+                  AND (
+                      CAST(:exclude_lake_id AS bigint) IS NULL
+                      OR r.lake_id <> CAST(:exclude_lake_id AS bigint)
+                  )
+                ORDER BY r.lake_id ASC, r.year ASC
+            """),
+            {"exclude_lake_id": exclude_lake_id},
+            execution_options={"yield_per": 100},
+        )
+
+        current_lake_id = None
+        current_lake = None
+        lake_batch: List[dict] = []
+        try:
+            async for row in result.mappings():
+                lake_id = row["lake_id"]
+                if lake_id != current_lake_id:
+                    if current_lake is not None:
+                        lake_batch.append(current_lake)
+                        if len(lake_batch) >= batch_size:
+                            yield lake_batch
+                            lake_batch = []
+                    current_lake_id = lake_id
+                    current_lake = {
+                        "lake_id": lake_id,
+                        "region_id": row["region_id"],
+                        "latest_year": row["year"],
+                        "center_lat": float(row["center_lat"]),
+                        "center_lon": float(row["center_lon"]),
+                        "dominant_ecosystem": row["display_name"],
+                        "area_sqkm": row["area_sqkm"],
+                        "records": [],
+                    }
+
+                current_lake["region_id"] = row["region_id"]
+                current_lake["latest_year"] = row["year"]
+                current_lake["center_lat"] = float(row["center_lat"])
+                current_lake["center_lon"] = float(row["center_lon"])
+                current_lake["dominant_ecosystem"] = row["display_name"]
+                current_lake["area_sqkm"] = row["area_sqkm"]
+
+                parsed_embedding = self._parse_embedding(row["embedding"])
+                if parsed_embedding is not None:
+                    current_lake["records"].append(
+                        SimpleNamespace(
+                            region_id=row["region_id"],
+                            lake_id=lake_id,
+                            year=row["year"],
+                            embedding=parsed_embedding,
+                        )
+                    )
+
+            if current_lake is not None:
+                lake_batch.append(current_lake)
+            if lake_batch:
+                yield lake_batch
+        finally:
+            await result.close()
 
     async def get_timeline_for_lake(
         self,

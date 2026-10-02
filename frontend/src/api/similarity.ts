@@ -15,7 +15,7 @@ export async function getAnalogs(
 
   const { data } = await apiClient.get<SimilarityResponse>(
     `/similarity/${regionId}`,
-    { params },
+    { params, timeout: 120_000 },
   );
   return data;
 }

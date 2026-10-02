@@ -1,7 +1,9 @@
+import heapq
 import time
 from typing import List, Optional, Sequence, Tuple
 from uuid import UUID
 
+import numpy as np
 import structlog
 
 from app.core.config import settings
@@ -79,6 +81,48 @@ class SimilarityService:
             )
 
         return sum(pair_scores) / len(pair_scores) if pair_scores else 0.0
+
+    @staticmethod
+    def _best_candidate_window(
+        query_trajectory: Sequence[Tuple[int, List[float]]],
+        candidate_records: Sequence[Tuple[int, List[float]]],
+        method: SimilarityMethod,
+    ) -> Tuple[Optional[Sequence[Tuple[int, List[float]]]], float]:
+        """Score all five-record windows for one lake using vectorized arrays."""
+        if len(candidate_records) < 5:
+            return None, -1.0
+
+        # The historical implementation scores only five-record candidate
+        # windows. Preserve its zero score when the query has fewer than five
+        # observations, while avoiding the per-dimension Python loops.
+        windows = [candidate_records[i:i + 5] for i in range(len(candidate_records) - 4)]
+        if len(query_trajectory) != 5:
+            return windows[0], 0.0
+
+        query_vectors = np.asarray([embedding for _, embedding in query_trajectory], dtype=np.float64)
+        candidate_vectors = np.asarray(
+            [embedding for _, embedding in candidate_records], dtype=np.float64
+        )
+        candidate_windows = np.lib.stride_tricks.sliding_window_view(
+            candidate_vectors, window_shape=5, axis=0
+        ).transpose(0, 2, 1)
+
+        dots = np.einsum("wkd,kd->wk", candidate_windows, query_vectors)
+        if method == SimilarityMethod.EUCLIDEAN:
+            distances = np.linalg.norm(candidate_windows - query_vectors[None, :, :], axis=2)
+            pair_scores = 1.0 / (1.0 + distances)
+        elif method == SimilarityMethod.KNN:
+            pair_scores = (dots + 1.0) / 2.0
+        else:
+            query_norms = np.linalg.norm(query_vectors, axis=1)
+            candidate_norms = np.linalg.norm(candidate_windows, axis=2)
+            denominators = candidate_norms * query_norms[None, :]
+            pair_scores = np.ones_like(dots)
+            np.divide(dots, denominators, out=pair_scores, where=denominators > 0)
+
+        scores = pair_scores.mean(axis=1)
+        best_index = int(np.argmax(scores))
+        return windows[best_index], float(scores[best_index])
 
     @staticmethod
     def _compute_pair_similarity(
@@ -167,53 +211,77 @@ class SimilarityService:
         )
 
         start_time = time.perf_counter()
-        candidate_records = await self._embedding_repo.get_all_historical_embeddings()
-        logger.info(
-            "Candidate lakes fetched",
-            candidate_count=len(candidate_records),
-        )
-        best_matches: List[dict] = []
-        for candidate in candidate_records:
+        result_limit = min(top_k, settings.MAX_TOP_K)
+        best_matches: list[tuple[float, int, dict]] = []
+        match_order = 0
+
+        def score_candidate(candidate: dict) -> Optional[dict]:
             candidate_lake_id = candidate["lake_id"]
             if exclude_same_region and candidate_lake_id == query_lake_id:
-                continue
+                return None
 
             records = [
                 (embedding.year, embedding.embedding)
                 for embedding in candidate["records"]
                 if embedding.embedding is not None
             ]
-            windows = self._build_candidate_windows(records, window_size=5)
-            if not windows:
-                continue
+            records.sort(key=lambda record: record[0])
+            best_window, best_window_score = self._best_candidate_window(
+                query_trajectory, records, method
+            )
+            if best_window is None:
+                return None
 
-            best_window_score = -1.0
-            best_window = None
-            for window in windows:
-                window_score = self._compute_window_similarity(query_trajectory, window, method=method)
-                if window_score > best_window_score:
-                    best_window_score = window_score
-                    best_window = window
+            start_year = best_window[0][0]
+            end_year = best_window[-1][0]
+            return {
+                "region_id": candidate["region_id"],
+                "start_year": start_year,
+                "end_year": end_year,
+                "similarity_score": self._rescale_score(best_window_score, method),
+                "year": end_year,
+                "center_lat": candidate["center_lat"],
+                "center_lon": candidate["center_lon"],
+                "area_sqkm": candidate.get("area_sqkm"),
+                "dominant_ecosystem": candidate["dominant_ecosystem"],
+            }
 
-            if best_window is not None:
-                start_year = best_window[0][0]
-                end_year = best_window[-1][0]
-                best_matches.append(
-                    {
-                        "region_id": candidate["region_id"],
-                        "start_year": start_year,
-                        "end_year": end_year,
-                        "similarity_score": self._rescale_score(best_window_score, method),
-                        "year": end_year,
-                        "center_lat": candidate["center_lat"],
-                        "center_lon": candidate["center_lon"],
-                        "area_sqkm": candidate.get("area_sqkm"),
-                        "dominant_ecosystem": candidate["dominant_ecosystem"],
-                    }
-                )
+        candidate_count = 0
+        if hasattr(self._embedding_repo, "iter_historical_embedding_batches"):
+            async for candidate_batch in self._embedding_repo.iter_historical_embedding_batches(
+                batch_size=settings.SIMILARITY_BATCH_SIZE,
+                exclude_lake_id=query_lake_id if exclude_same_region else None
+            ):
+                for candidate in candidate_batch:
+                    candidate_count += 1
+                    match = score_candidate(candidate)
+                    if match is not None:
+                        heap_entry = (match["similarity_score"], -match_order, match)
+                        match_order += 1
+                        if len(best_matches) < result_limit:
+                            heapq.heappush(best_matches, heap_entry)
+                        elif heap_entry[:2] > best_matches[0][:2]:
+                            heapq.heapreplace(best_matches, heap_entry)
+        else:
+            # Compatibility for repository substitutes used by integrations.
+            candidate_records = await self._embedding_repo.get_all_historical_embeddings()
+            candidate_count = len(candidate_records)
+            for candidate in candidate_records:
+                match = score_candidate(candidate)
+                if match is not None:
+                    heap_entry = (match["similarity_score"], -match_order, match)
+                    match_order += 1
+                    if len(best_matches) < result_limit:
+                        heapq.heappush(best_matches, heap_entry)
+                    elif heap_entry[:2] > best_matches[0][:2]:
+                        heapq.heapreplace(best_matches, heap_entry)
 
-        best_matches.sort(key=lambda item: item["similarity_score"], reverse=True)
-        raw_results = best_matches[: min(top_k, settings.MAX_TOP_K)]
+        logger.info("Candidate lakes scored", candidate_count=candidate_count)
+
+        raw_results = [
+            entry[2]
+            for entry in sorted(best_matches, key=lambda item: (-item[0], -item[1]))
+        ]
         latency_ms = (time.perf_counter() - start_time) * 1000
 
         logger.info(

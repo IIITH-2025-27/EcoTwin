@@ -53,6 +53,7 @@ class Settings(BaseSettings):
     DEFAULT_TOP_K: int = 10
     MAX_TOP_K: int = 50
     SIMILARITY_TARGET_MS: int = 500
+    SIMILARITY_BATCH_SIZE: int = 50
 
     # ── CORS ──────────────────────────────────────────────────────
     ALLOWED_ORIGINS: List[str] = ["http://localhost:3000", "http://localhost:5173"]
