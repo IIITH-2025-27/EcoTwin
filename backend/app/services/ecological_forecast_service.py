@@ -236,6 +236,7 @@ class EcologicalForecastService:
         year: Optional[int] = None,
         num_analogs: int = 5,
         method: SimilarityMethod = SimilarityMethod.COSINE,
+        precomputed_analogs=None,
     ) -> EcologicalForecastResponse:
         # ── 1. Resolve lake ──────────────────────────────────────────────
         region = await self._region_repo.get_by_id(region_id)
@@ -255,17 +256,21 @@ class EcologicalForecastService:
 
         forecast_years = [anchor_year + h for h in range(1, _FORECAST_HORIZON + 1)]
 
-        # ── 3. Similarity search ─────────────────────────────────────────
-        sim_svc = self._get_similarity_service()
-        search_response = await sim_svc.search_analogs(
-            region_id=region_id,
-            year=year,
-            top_k=min(num_analogs * 4, 50),
-            exclude_same_region=True,
-            method=method,
-        )
+        # ── 3. Similarity search (skip if caller provided pre-computed analogs)
+        if precomputed_analogs is not None:
+            analog_list = precomputed_analogs
+        else:
+            sim_svc = self._get_similarity_service()
+            search_response = await sim_svc.search_analogs(
+                region_id=region_id,
+                year=year,
+                top_k=min(num_analogs * 4, 50),
+                exclude_same_region=True,
+                method=method,
+            )
+            analog_list = search_response.analogs
 
-        if not search_response.analogs:
+        if not analog_list:
             return self._empty_forecast(
                 region_id, lake_id, anchor_year, anchor_indices, forecast_years,
                 "No analog lakes found by embedding similarity search.",
@@ -292,7 +297,7 @@ class EcologicalForecastService:
             return (analog, int(row["lake_id"]))
 
         resolved_twins = await asyncio.gather(
-            *[_resolve_twin(a) for a in search_response.analogs],
+            *[_resolve_twin(a) for a in analog_list],
             return_exceptions=True,
         )
         valid_twins = [

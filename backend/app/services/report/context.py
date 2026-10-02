@@ -568,38 +568,52 @@ async def build_report_context(
     eco_forecast_years: list[int] = []
     eco_forecast_current_year: Optional[int] = None
     eco_forecast_twin_count = 0
-    try:
-        eco_forecast_service = EcologicalForecastService(
-            session=db,
-            region_repo=RegionRepository(db),
-            embedding_repo=EmbeddingRepository(db),
-        )
-        eco_forecast_response = await eco_forecast_service.generate_ecological_forecast(
-            region_id=region.region_id,
-            num_analogs=5,
-            method=method,
-        )
-        eco_forecast = _build_eco_forecast_items(eco_forecast_response)
-        eco_forecast_years = eco_forecast_response.forecast_years
-        eco_forecast_current_year = eco_forecast_response.current_year
-        eco_forecast_twin_count = len(eco_forecast_response.twins_used)
-    except Exception as exc:  # noqa: BLE001
-        logger.warning(
-            "Ecological forecast unavailable during report generation",
-            lake_id=lake_id,
-            error=str(exc),
-        )
 
-    # ── Imagery (satellite + maps) ───────────────────────────────────────────
+    # ── Imagery + ecological forecast (run concurrently) ─────────────────
+    # The ecological forecast and map renders are independent — run them all
+    # in parallel.  Pass the already-found analog_rows to the forecast so it
+    # does NOT re-run the full similarity scan (saves ~15-25s).
     bbox = _lake_bbox(geometry, center_lat, center_lon)
-    cover_image = await maps.render_cover_satellite(bbox)
-    boundary_image = await maps.render_boundary_map(bbox, geometry)
-    map_image = await maps.render_similar_lakes_map(
-        bbox=bbox,
-        center=(center_lat, center_lon),
-        geometry=geometry,
-        analogs=analogs,
+
+    async def _run_eco_forecast():
+        try:
+            svc = EcologicalForecastService(
+                session=db,
+                region_repo=RegionRepository(db),
+                embedding_repo=EmbeddingRepository(db),
+            )
+            return await svc.generate_ecological_forecast(
+                region_id=region.region_id,
+                num_analogs=5,
+                method=method,
+                precomputed_analogs=analog_rows if analog_rows else None,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "Ecological forecast unavailable during report generation",
+                lake_id=lake_id,
+                error=str(exc),
+            )
+            return None
+
+    eco_result, cover_image, boundary_image, map_image = await asyncio.gather(
+        _run_eco_forecast(),
+        maps.render_cover_satellite(bbox),
+        maps.render_boundary_map(bbox, geometry),
+        maps.render_similar_lakes_map(
+            bbox=bbox,
+            center=(center_lat, center_lon),
+            geometry=geometry,
+            analogs=analogs,
+        ),
     )
+
+    if eco_result is not None:
+        eco_forecast = _build_eco_forecast_items(eco_result)
+        eco_forecast_years = eco_result.forecast_years
+        eco_forecast_current_year = eco_result.current_year
+        eco_forecast_twin_count = len(eco_result.twins_used)
+
 
     # Per-analog boundary/satellite imagery (Section 4 profiles), fetched
     # concurrently and coloured green to match the focused-analog polygon.
