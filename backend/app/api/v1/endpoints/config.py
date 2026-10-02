@@ -14,15 +14,20 @@ from app.core.permissions import load_pipeline_permissions
 
 router = APIRouter(tags=["Config"])
 
-
 @router.get("")
 async def get_config(db: DatabaseDep) -> dict:
     """Return the public application configuration for the frontend."""
-    perms = await load_pipeline_permissions(db)
+    try:
+        perms = await load_pipeline_permissions(db)
 
-    master = perms.pop("allow_data_pipeline_run", False)
+        master = perms.pop("allow_data_pipeline_run", False)
 
-    return {
-        "allow_data_pipeline_run": master,
-        "pipeline_permissions": perms,
-    }
+        return {
+            "allow_data_pipeline_run": master,
+            "pipeline_permissions": perms,
+        }
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise
