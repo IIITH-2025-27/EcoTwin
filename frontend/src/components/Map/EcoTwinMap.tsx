@@ -444,7 +444,7 @@ export default function EcoTwinMap() {
     clearRegion,
   } = useMapStore();
 
-  const { data: regions = EMPTY_REGIONS } = useRegions('India');
+  const { data: regions = EMPTY_REGIONS, isLoading: isLoadingRegions } = useRegions('India');
   const { data: similarityData } = useSimilarity(selectedRegionId, topK);
 
   const [activeLakeId, setActiveLakeId] = useState<number | null>(null);
@@ -456,6 +456,7 @@ export default function EcoTwinMap() {
 
   // ── Active lake markers ──────────────────────────────────────────────────
   const [lakeMarkers, setLakeMarkers] = useState<LakeMarker[]>([]);
+  const [isLoadingLakeMarkers, setIsLoadingLakeMarkers] = useState(true);
   const [showLakeMarkers, setShowLakeMarkers] = useState(false);
   const [focusedAnalogLake, setFocusedAnalogLake] = useState<LakeGeometry | null>(null);
 
@@ -469,7 +470,8 @@ export default function EcoTwinMap() {
     let cancelled = false;
     getActiveLakeMarkers('India')
       .then((markers) => { if (!cancelled) setLakeMarkers(markers); })
-      .catch(() => { /* silently ignore — markers are optional UI enhancement */ });
+      .catch(() => { /* silently ignore — markers are optional UI enhancement */ })
+      .finally(() => { if (!cancelled) setIsLoadingLakeMarkers(false); });
     return () => { cancelled = true; };
   }, []);
 
@@ -602,6 +604,7 @@ export default function EcoTwinMap() {
   }, [loadLakeGeometry]);
 
   const isLoadingGeometry = lakeLoading || mapClickLoading;
+  const isLoadingInitialMapData = isLoadingRegions || isLoadingLakeMarkers;
 
   return (
     <div className="relative h-full w-full">
@@ -718,6 +721,15 @@ export default function EcoTwinMap() {
         )}
 
       </MapContainer>
+
+      {isLoadingInitialMapData && (
+        <div className="absolute inset-0 z-[1100] flex items-center justify-center bg-surface-900/45 backdrop-blur-[2px]" role="status" aria-live="polite">
+          <div className="flex items-center gap-3 rounded-xl border border-slate-700/60 bg-surface-800/95 px-5 py-4 shadow-2xl">
+            <Loader2 className="h-5 w-5 animate-spin text-cyan-400" />
+            <span className="text-sm font-medium text-slate-200">Loading map data…</span>
+          </div>
+        </div>
+      )}
 
       {/* Layer legend + Show Lakes toggle */}
       <div className="absolute bottom-8 left-4 z-[1000] rounded-lg border border-slate-700/50 bg-surface-800/90 p-3 backdrop-blur-sm">
