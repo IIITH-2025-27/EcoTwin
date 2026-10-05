@@ -1,0 +1,22 @@
+name: Keep backend warm
+
+on:
+  schedule:
+    # Ping every 10 minutes to stay below common free-tier idle windows.
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+jobs:
+  keep-backend-awake:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check backend health
+        env:
+          BACKEND_URL: ${{ secrets.BACKEND_URL }}
+        run: |
+          if [ -z "$BACKEND_URL" ]; then
+            echo "Set the BACKEND_URL repository secret to the deployed backend origin."
+            exit 1
+          fi
+          curl --fail --silent --show-error --max-time 30 \
+            "${BACKEND_URL%/}/api/v1/health"
