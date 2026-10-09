@@ -3,7 +3,7 @@ name: Keep backend warm
 on:
   schedule:
     # Ping every 10 minutes to stay below common free-tier idle windows.
-    - cron: '*/10 * * * *'
+    - cron: '*/15 * * * *'
   workflow_dispatch:
 
 jobs:
