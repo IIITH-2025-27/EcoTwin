@@ -124,7 +124,7 @@ export default function FetchImagesModal({ onClose }: FetchImagesModalProps) {
         if (event.target === event.currentTarget && !isRunning) onClose();
       }}
     >
-      <div className="w-full max-w-lg rounded-2xl border border-slate-700/60 bg-surface-900 shadow-2xl">
+      <div className="max-h-[90dvh] w-full max-w-lg overflow-y-auto rounded-2xl border border-slate-700/60 bg-surface-900 shadow-2xl scrollbar-thin">
         {/* ── Header ──────────────────────────────────────────────── */}
         <div className="flex items-center justify-between border-b border-slate-700/60 px-5 py-4">
           <div className="flex items-center gap-2.5">

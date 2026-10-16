@@ -66,12 +66,27 @@ function Sidebar() {
     selectedLake,
     setSelectedLake,
     clearRegion,
+    toggleSidebar,
   } = useMapStore();
 
   return (
-    <aside className="flex h-full flex-col border-r border-slate-700/60 bg-surface-900">
+    <aside
+      className="flex h-full flex-col overflow-hidden rounded-t-2xl border-t border-slate-700/60 bg-surface-900 shadow-2xl
+                 md:rounded-none md:border-r md:border-t-0 md:shadow-none"
+    >
       {/* Tab bar */}
       <div className="border-b border-slate-700/60 bg-surface-800/50">
+        {/* Bottom-sheet handle (mobile only) */}
+        <button
+          type="button"
+          onClick={toggleSidebar}
+          className="flex w-full items-center justify-center py-2 md:hidden"
+          aria-label="Hide panel"
+          title="Hide panel"
+        >
+          <span className="h-1 w-10 rounded-full bg-slate-600" />
+        </button>
+
         {/* Clear region button */}
         {selectedRegionId && (
           <div className="flex items-center justify-between border-b border-slate-700/40 px-3 py-2">
@@ -156,18 +171,22 @@ export default function MapPage() {
   const { isSidebarCollapsed } = useMapStore();
 
   return (
-    <div className="flex h-screen flex-col bg-surface-900">
+    <div className="flex h-dvh flex-col bg-surface-900">
       {/* Navbar */}
       <Navbar />
 
       {/* Main area */}
-      <div className="flex flex-1 overflow-hidden">
-        {/* Sidebar */}
+      <div className="relative flex flex-1 overflow-hidden">
+        {/* Sidebar — bottom sheet over the map on mobile, side column from md up */}
         <div
           className={clsx(
-            'transition-all duration-300 ease-in-out',
-            isSidebarCollapsed ? 'w-0 overflow-hidden' : 'w-[360px] min-w-[360px]',
+            'absolute inset-x-0 bottom-0 z-[1200] h-[60%] transition-transform duration-300 ease-in-out',
+            'md:relative md:inset-auto md:z-auto md:h-auto md:translate-y-0 md:transition-all',
+            isSidebarCollapsed
+              ? 'pointer-events-none translate-y-full md:w-0 md:min-w-0 md:overflow-hidden'
+              : 'translate-y-0 md:w-[360px] md:min-w-[360px]',
           )}
+          aria-hidden={isSidebarCollapsed}
         >
           <Sidebar />
         </div>

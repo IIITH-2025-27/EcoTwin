@@ -629,14 +629,14 @@ export default function EcoTwinMap() {
 
       {/* Error */}
       {lakeSearchError && (
-        <div className="absolute left-1/2 top-16 z-[1000] -translate-x-1/2 rounded-md bg-rose-950/95 px-3 py-2 text-xs text-rose-200 shadow-lg">
+        <div className="absolute left-1/2 top-16 z-[1000] max-w-[calc(100%-2rem)] -translate-x-1/2 rounded-md bg-rose-950/95 px-3 py-2 text-xs text-rose-200 shadow-lg">
           {lakeSearchError}
         </div>
       )}
 
       {/* Hint */}
       {!selectedRegionId && !isLoadingGeometry && (
-        <div className="pointer-events-none absolute bottom-8 left-1/2 z-[1000] -translate-x-1/2">
+        <div className="pointer-events-none absolute inset-x-4 top-16 z-[1000] flex justify-center md:inset-x-auto md:left-1/2 md:top-auto md:bottom-8 md:-translate-x-1/2">
           <div className="flex items-center gap-2 rounded-full border border-cyan-500/30 bg-surface-800/80 px-4 py-2 backdrop-blur-sm">
             <span className="h-2 w-2 flex-shrink-0 rounded-full bg-cyan-400" />
             <span className="text-xs text-slate-300">
@@ -732,7 +732,7 @@ export default function EcoTwinMap() {
       )}
 
       {/* Layer legend + Show Lakes toggle */}
-      <div className="absolute bottom-8 left-4 z-[1000] rounded-lg border border-slate-700/50 bg-surface-800/90 p-3 backdrop-blur-sm">
+      <div className="absolute bottom-6 left-3 z-[1000] rounded-lg border border-slate-700/50 bg-surface-800/90 p-2 backdrop-blur-sm md:bottom-8 md:left-4 md:p-3">
         <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-slate-400">Map Layers</p>
         <div className="space-y-1.5">
 
@@ -808,7 +808,7 @@ export default function EcoTwinMap() {
 
       {/* Similarity legend */}
       {similarityData && similarityData.analogs.length > 0 && (
-        <div className="absolute bottom-8 right-12 z-[1000] rounded-lg border border-slate-700/50 bg-surface-800/90 p-3 backdrop-blur-sm">
+        <div className="absolute bottom-6 right-14 z-[1000] rounded-lg border border-slate-700/50 bg-surface-800/90 p-2 backdrop-blur-sm md:bottom-8 md:right-12 md:p-3">
           <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-slate-400">Similarity</p>
           {[
             { label: '≥ 85%', color: '#22c55e' },

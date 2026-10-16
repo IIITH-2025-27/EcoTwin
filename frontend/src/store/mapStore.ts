@@ -38,6 +38,10 @@ interface MapState {
   toggleSidebar: () => void;
 }
 
+// Matches Tailwind's `md` breakpoint — below it the sidebar is a bottom sheet.
+const isMobileViewport = () =>
+  typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches;
+
 export const useMapStore = create<MapState>()(
   devtools(
     (set) => ({
@@ -54,7 +58,7 @@ export const useMapStore = create<MapState>()(
       mapClickLoading: false,
       selectedLake: null,
       selectedLakeFocusRevision: 0,
-      isSidebarCollapsed: false,
+      isSidebarCollapsed: isMobileViewport(),
 
       // Actions
       selectRegion: (id, lat, lon) =>
@@ -65,6 +69,8 @@ export const useMapStore = create<MapState>()(
             selectedRegionLon: lon,
             activeTab: 'overview',
             focusedAnalogRegionId: null,
+            // On phones, reveal the panel so the selection's details are visible
+            ...(isMobileViewport() ? { isSidebarCollapsed: false } : {}),
           },
           false,
           'selectRegion',
