@@ -1,7 +1,7 @@
 import React from 'react';
 import { MapPin, Timer, ArrowRight, Zap, Ruler, GitMerge } from 'lucide-react';
 import { clsx } from 'clsx';
-import LoadingSpinner from '@/components/common/LoadingSpinner';
+import TimedProgress from '@/components/common/TimedProgress';
 import ErrorMessage from '@/components/common/ErrorMessage';
 import Card from '@/components/common/Card';
 import { useSimilarity } from '@/hooks/useSimilarity';
@@ -183,9 +183,7 @@ export default function AnalogPanel() {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center py-12">
-        <LoadingSpinner size="lg" label="Searching for analogs…" />
-      </div>
+      <TimedProgress title="Searching for similar lakes" />
     );
   }
 

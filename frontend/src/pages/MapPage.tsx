@@ -6,6 +6,8 @@ import {
   TrendingUp,
   FileText,
   ChevronRight,
+  ChevronsDown,
+  ChevronsUp,
   X,
 } from 'lucide-react';
 import Navbar from '@/components/Layout/Navbar';
@@ -66,20 +68,28 @@ function Sidebar() {
     selectedLake,
     setSelectedLake,
     clearRegion,
-    toggleSidebar,
+    setSidebarCollapsed,
+    isSheetExpanded,
+    setSheetExpanded,
   } = useMapStore();
 
   return (
     <aside
-      className="flex h-full flex-col overflow-hidden rounded-t-2xl border-t border-slate-700/60 bg-surface-900 shadow-2xl
-                 md:rounded-none md:border-r md:border-t-0 md:shadow-none"
+      className={clsx(
+        'flex h-full flex-col overflow-hidden border-t border-slate-700/60 bg-surface-900 shadow-2xl',
+        'md:rounded-none md:border-r md:border-t-0 md:shadow-none',
+        !isSheetExpanded && 'rounded-t-2xl',
+      )}
     >
       {/* Tab bar */}
       <div className="border-b border-slate-700/60 bg-surface-800/50">
         {/* Bottom-sheet handle (mobile only) */}
         <button
           type="button"
-          onClick={toggleSidebar}
+          onClick={() => {
+            setSidebarCollapsed(true);
+            setSheetExpanded(false);
+          }}
           className="flex w-full items-center justify-center py-2 md:hidden"
           aria-label="Hide panel"
           title="Hide panel"
@@ -125,8 +135,8 @@ function Sidebar() {
           </div>
         )}
 
-        {/* Tabs */}
-        <div className="flex overflow-x-auto">
+        {/* Tabs — on mobile these live in the bottom nav bar instead */}
+        <div className="hidden overflow-x-auto md:flex">
           {TABS.map((tab) => {
             const disabled = tab.requiresRegion && !selectedRegionId;
             const isActive = activeTab === tab.id;
@@ -166,9 +176,80 @@ function Sidebar() {
   );
 }
 
+// ── Mobile bottom nav (Amazon-style tab bar) ─────────────────────────────
+function MobileBottomNav() {
+  const {
+    activeTab,
+    setActiveTab,
+    selectedRegionId,
+    isSidebarCollapsed,
+    setSidebarCollapsed,
+    isSheetExpanded,
+    setSheetExpanded,
+  } = useMapStore();
+
+  // Expand steps up: hidden → half → full. Squeeze steps back to half.
+  const handleExpandSqueeze = () => {
+    if (isSidebarCollapsed) {
+      setSidebarCollapsed(false);
+    } else {
+      setSheetExpanded(!isSheetExpanded);
+    }
+  };
+  const showSqueeze = !isSidebarCollapsed && isSheetExpanded;
+
+  return (
+    <nav className="flex flex-shrink-0 border-t border-slate-700/60 bg-surface-800 pb-[env(safe-area-inset-bottom)] md:hidden">
+      {TABS.map((tab) => {
+        const disabled = tab.requiresRegion && !selectedRegionId;
+        const isActive = activeTab === tab.id && !isSidebarCollapsed;
+        return (
+          <button
+            key={tab.id}
+            onClick={() => {
+              if (disabled) return;
+              setActiveTab(tab.id);
+              setSidebarCollapsed(false);
+            }}
+            disabled={disabled}
+            className={clsx(
+              'relative flex flex-1 flex-col items-center gap-1 py-2 text-[10px] font-medium transition-colors',
+              isActive
+                ? 'text-primary-400'
+                : disabled
+                ? 'cursor-not-allowed text-slate-700'
+                : 'text-slate-400 active:text-slate-200',
+            )}
+          >
+            {/* Active indicator bar */}
+            <span
+              className={clsx(
+                'absolute inset-x-4 top-0 h-0.5 rounded-b-full',
+                isActive ? 'bg-primary-500' : 'bg-transparent',
+              )}
+            />
+            {tab.icon}
+            <span>{tab.label}</span>
+          </button>
+        );
+      })}
+
+      <button
+        onClick={handleExpandSqueeze}
+        className="flex flex-1 flex-col items-center gap-1 border-l border-slate-700/60 py-2 text-[10px] font-medium
+                   text-slate-400 transition-colors active:text-slate-200"
+        aria-label={showSqueeze ? 'Squeeze panel' : 'Expand panel'}
+      >
+        {showSqueeze ? <ChevronsDown className="h-4 w-4" /> : <ChevronsUp className="h-4 w-4" />}
+        <span>{showSqueeze ? 'Squeeze' : 'Expand'}</span>
+      </button>
+    </nav>
+  );
+}
+
 // ── MapPage ────────────────────────────────────────────────────────────────
 export default function MapPage() {
-  const { isSidebarCollapsed } = useMapStore();
+  const { isSidebarCollapsed, isSheetExpanded } = useMapStore();
 
   return (
     <div className="flex h-dvh flex-col bg-surface-900">
@@ -180,7 +261,8 @@ export default function MapPage() {
         {/* Sidebar — bottom sheet over the map on mobile, side column from md up */}
         <div
           className={clsx(
-            'absolute inset-x-0 bottom-0 z-[1200] h-[60%] transition-transform duration-300 ease-in-out',
+            'absolute inset-x-0 bottom-0 z-[1200] transition-[transform,height] duration-300 ease-in-out',
+            isSheetExpanded ? 'h-full' : 'h-[60%]',
             'md:relative md:inset-auto md:z-auto md:h-auto md:translate-y-0 md:transition-all',
             isSidebarCollapsed
               ? 'pointer-events-none translate-y-full md:w-0 md:min-w-0 md:overflow-hidden'
@@ -196,6 +278,9 @@ export default function MapPage() {
           <EcoTwinMap />
         </main>
       </div>
+
+      {/* Mobile bottom tab bar */}
+      <MobileBottomNav />
     </div>
   );
 }

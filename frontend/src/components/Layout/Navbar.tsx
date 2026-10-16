@@ -6,8 +6,6 @@ import {
   Database,
   Layers,
   Leaf,
-  PanelBottomClose,
-  PanelBottomOpen,
   PanelLeftClose,
   PanelLeftOpen,
   Radar,
@@ -121,19 +119,13 @@ export default function Navbar() {
       <div className="flex min-w-0 items-center gap-2 sm:gap-3">
         <button
           onClick={toggleSidebar}
-          className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-700/50 hover:text-slate-200 transition-colors"
-          title={isSidebarCollapsed ? 'Show panel' : 'Hide panel'}
+          className="hidden rounded-lg p-1.5 md:block text-slate-400 hover:bg-slate-700/50 hover:text-slate-200 transition-colors"
+          title={isSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
         >
           {isSidebarCollapsed ? (
-            <>
-              <PanelBottomOpen className="h-5 w-5 md:hidden" />
-              <PanelLeftOpen className="hidden h-5 w-5 md:block" />
-            </>
+            <PanelLeftOpen className="h-5 w-5" />
           ) : (
-            <>
-              <PanelBottomClose className="h-5 w-5 md:hidden" />
-              <PanelLeftClose className="hidden h-5 w-5 md:block" />
-            </>
+            <PanelLeftClose className="h-5 w-5" />
           )}
         </button>
 
@@ -154,7 +146,7 @@ export default function Navbar() {
 
       {/* Center: selected region info */}
       {regionData && (
-        <div className="hidden items-center gap-4 md:flex">
+        <div className="hidden items-center gap-4 2xl:flex">
           <div className="text-center">
             <p className="text-xs text-slate-500">Region</p>
             <p className="font-mono text-xs text-slate-300">
@@ -181,28 +173,28 @@ export default function Navbar() {
 
       {/* Right: sync actions + status */}
       <div className="flex items-center gap-3">
-        {/* Inline pipeline buttons (2xl and up) */}
-        <div className="hidden items-center gap-2 2xl:flex">
+        {/* Inline pipeline buttons (tablet / desktop) */}
+        <div className="hidden items-center gap-2 md:flex">
           {pipelineActions.map((action) => (
             <button
               key={action.key}
               onClick={() => action.allowed && action.open()}
               disabled={!action.allowed}
               className={clsx(
-                'flex items-center gap-1.5 whitespace-nowrap rounded-lg border px-3 py-1.5 text-xs font-medium',
+                'flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium',
                 'transition-colors disabled:cursor-not-allowed disabled:opacity-50',
                 action.className,
               )}
               title={action.allowed ? action.description : DENIED_TOOLTIP}
             >
               {action.icon}
-              <span>{action.label}</span>
+              <span className="hidden xl:inline">{action.label}</span>
             </button>
           ))}
         </div>
 
-        {/* Collapsed pipeline menu (below 2xl) */}
-        <div className="relative 2xl:hidden">
+        {/* Collapsed pipeline menu (phone only) */}
+        <div className="relative md:hidden">
           <button
             onClick={() => setShowPipelineMenu((open) => !open)}
             className="flex items-center gap-1.5 rounded-lg border border-slate-600/60 bg-slate-700/30 px-3 py-1.5

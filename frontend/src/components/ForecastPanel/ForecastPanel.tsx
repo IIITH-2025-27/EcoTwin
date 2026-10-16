@@ -15,6 +15,7 @@ import {
 } from 'recharts';
 import { TrendingUp, TrendingDown, Minus, Info, AlertTriangle, ChevronDown, ChevronUp } from 'lucide-react';
 import LoadingSpinner from '@/components/common/LoadingSpinner';
+import TimedProgress from '@/components/common/TimedProgress';
 import ErrorMessage from '@/components/common/ErrorMessage';
 import Card from '@/components/common/Card';
 import Badge, { trendToBadgeVariant } from '@/components/common/Badge';
@@ -223,9 +224,7 @@ export default function ForecastPanel() {
 
   if (fLoading) {
     return (
-      <div className="flex items-center justify-center py-12">
-        <LoadingSpinner size="lg" label="Generating forecast…" />
-      </div>
+      <TimedProgress title="Generating forecast" />
     );
   }
 
