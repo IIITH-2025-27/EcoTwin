@@ -95,6 +95,21 @@
   @apply bg-surface-800/80 text-slate-400 text-xs;
 }
 
+/* Phones: the full credit line covers the map, so show a compact one instead.
+   Esri's tile terms require visible attribution, so it is shortened, not removed. */
+@media (max-width: 767px) {
+  .leaflet-control-attribution {
+    font-size: 0 !important;
+    line-height: 1;
+    padding: 2px 6px !important;
+    border-top-left-radius: 4px;
+  }
+  .leaflet-control-attribution::after {
+    content: '\00a9  Esri';
+    font-size: 9px;
+  }
+}
+
 .leaflet-control-zoom a {
   @apply bg-surface-800 text-slate-200 border-slate-700 hover:bg-surface-700;
 }

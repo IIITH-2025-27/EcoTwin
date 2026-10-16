@@ -4,7 +4,8 @@ import { clsx } from 'clsx';
 import TimedProgress from '@/components/common/TimedProgress';
 import ErrorMessage from '@/components/common/ErrorMessage';
 import Card from '@/components/common/Card';
-import { useSimilarity } from '@/hooks/useSimilarity';
+import { similarityQueryKey, useSimilarity } from '@/hooks/useSimilarity';
+import { clearRequestStart } from '@/lib/requestStart';
 import { useMapStore } from '@/store/mapStore';
 import type { AnalogResult, SimilarityMethod } from '@/types';
 
@@ -183,7 +184,10 @@ export default function AnalogPanel() {
 
   if (isLoading) {
     return (
-      <TimedProgress title="Searching for similar lakes" />
+      <TimedProgress
+        title="Searching for similar lakes"
+        requestKey={similarityQueryKey(selectedRegionId, topK, undefined, similarityMethod)}
+      />
     );
   }
 
@@ -191,7 +195,10 @@ export default function AnalogPanel() {
     return (
       <ErrorMessage
         message={error.message}
-        onRetry={() => refetch()}
+        onRetry={() => {
+          clearRequestStart(similarityQueryKey(selectedRegionId, topK, undefined, similarityMethod));
+          void refetch();
+        }}
         className="m-4"
       />
     );

@@ -66,7 +66,7 @@ export default function LakeSearch({
   };
 
   return (
-    <div className="absolute left-1/2 top-3 z-[1000] w-[min(28rem,calc(100%-2rem))] -translate-x-1/2">
+    <div className="absolute left-1/2 top-3 z-[1050] w-[min(28rem,calc(100%-2rem))] -translate-x-1/2">
       <div className="rounded-lg border border-slate-600/70 bg-surface-800/95 shadow-xl backdrop-blur-sm">
         <div className="flex items-center gap-2 px-3 py-2">
           <Search className="h-4 w-4 shrink-0 text-slate-400" />

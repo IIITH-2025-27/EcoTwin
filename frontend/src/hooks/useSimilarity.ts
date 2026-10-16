@@ -1,6 +1,14 @@
 import { useQuery } from '@tanstack/react-query';
 import { getAnalogs } from '@/api/similarity';
+import { trackRequest } from '@/lib/requestStart';
 import type { SimilarityMethod, SimilarityResponse } from '@/types';
+
+export const similarityQueryKey = (
+  regionId: string | null,
+  topK: number = 10,
+  year?: number,
+  method: SimilarityMethod = 'cosine',
+) => ['similarity', regionId, topK, year, method] as const;
 
 function emptySimilarityResponse(
   regionId: string,
@@ -26,11 +34,12 @@ export function useSimilarity(
   year?: number,
   method: SimilarityMethod = 'cosine',
 ) {
+  const queryKey = similarityQueryKey(regionId, topK, year, method);
   return useQuery({
-    queryKey: ['similarity', regionId, topK, year, method],
+    queryKey,
     queryFn: async () => {
       try {
-        const result = await getAnalogs(regionId!, topK, year, method);
+        const result = await trackRequest(queryKey, () => getAnalogs(regionId!, topK, year, method));
         console.debug(
           '[useSimilarity] Results received:',
           result.analogs.length,

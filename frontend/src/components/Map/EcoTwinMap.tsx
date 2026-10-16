@@ -23,6 +23,9 @@ import type { LakeMarker } from '@/api/regions';
 import type { AnalogResult, LakeGeometry, LakeRegionResponse, LakeSearchResult } from '@/types';
 import LakeSearch from './LakeSearch';
 
+const HINT_TOAST_MS = 5_000;
+const HINT_FADE_MS = 500;
+
 const DEFAULT_CENTER: LatLngExpression = [20.5937, 78.9629];
 const DEFAULT_ZOOM = 5;
 const INDIA_BOUNDS: [[number, number], [number, number]] = [[6.0, 68.0], [38.5, 98.5]];
@@ -606,6 +609,22 @@ export default function EcoTwinMap() {
   const isLoadingGeometry = lakeLoading || mapClickLoading;
   const isLoadingInitialMapData = isLoadingRegions || isLoadingLakeMarkers;
 
+  // Hint toast: shown once the map has loaded, fades out and removes itself after 5s
+  const [hintPhase, setHintPhase] = useState<'pending' | 'shown' | 'fading' | 'gone'>('pending');
+  useEffect(() => {
+    if (!isLoadingInitialMapData && hintPhase === 'pending') setHintPhase('shown');
+  }, [isLoadingInitialMapData, hintPhase]);
+  useEffect(() => {
+    if (hintPhase === 'shown') {
+      const id = window.setTimeout(() => setHintPhase('fading'), HINT_TOAST_MS - HINT_FADE_MS);
+      return () => window.clearTimeout(id);
+    }
+    if (hintPhase === 'fading') {
+      const id = window.setTimeout(() => setHintPhase('gone'), HINT_FADE_MS);
+      return () => window.clearTimeout(id);
+    }
+  }, [hintPhase]);
+
   return (
     <div className="relative h-full w-full">
       {/* Search bar */}
@@ -634,10 +653,19 @@ export default function EcoTwinMap() {
         </div>
       )}
 
-      {/* Hint */}
-      {!selectedRegionId && !isLoadingGeometry && (
-        <div className="pointer-events-none absolute inset-x-4 top-16 z-[1000] flex justify-center md:inset-x-auto md:left-1/2 md:top-auto md:bottom-8 md:-translate-x-1/2">
-          <div className="flex items-center gap-2 rounded-full border border-cyan-500/30 bg-surface-800/80 px-4 py-2 backdrop-blur-sm">
+      {/* Hint toast */}
+      {(hintPhase === 'shown' || hintPhase === 'fading') &&
+        !selectedRegionId && !isLoadingGeometry && !selectedLakeQuery && (
+        <div
+          className={clsx(
+            'pointer-events-none absolute inset-x-4 top-16 z-[1000] flex justify-center transition-opacity ease-out',
+            'md:inset-x-auto md:left-1/2 md:top-auto md:bottom-8 md:-translate-x-1/2',
+            hintPhase === 'fading' ? 'opacity-0' : 'opacity-100 tab-content-enter',
+          )}
+          style={{ transitionDuration: `${HINT_FADE_MS}ms` }}
+          role="status"
+        >
+          <div className="flex items-center gap-2 rounded-full border border-cyan-500/30 bg-surface-800/90 px-4 py-2 shadow-xl backdrop-blur-sm">
             <span className="h-2 w-2 flex-shrink-0 rounded-full bg-cyan-400" />
             <span className="text-xs text-slate-300">
               Click a lake marker or search to explore its ecosystem profile

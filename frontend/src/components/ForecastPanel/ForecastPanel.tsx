@@ -19,7 +19,8 @@ import TimedProgress from '@/components/common/TimedProgress';
 import ErrorMessage from '@/components/common/ErrorMessage';
 import Card from '@/components/common/Card';
 import Badge, { trendToBadgeVariant } from '@/components/common/Badge';
-import { useForecast } from '@/hooks/useForecast';
+import { forecastQueryKey, useForecast } from '@/hooks/useForecast';
+import { clearRequestStart } from '@/lib/requestStart';
 import { useEcologicalForecast } from '@/hooks/useEcologicalForecast';
 import { useMapStore } from '@/store/mapStore';
 import type { TrendDirection, EcologicalForecastData, EcoDirection, IndexForecast } from '@/types';
@@ -224,7 +225,10 @@ export default function ForecastPanel() {
 
   if (fLoading) {
     return (
-      <TimedProgress title="Generating forecast" />
+      <TimedProgress
+        title="Generating forecast"
+        requestKey={forecastQueryKey(selectedRegionId, similarityMethod)}
+      />
     );
   }
 
@@ -232,7 +236,10 @@ export default function ForecastPanel() {
     return (
       <ErrorMessage
         message={fError.message}
-        onRetry={() => fRefetch()}
+        onRetry={() => {
+          clearRequestStart(forecastQueryKey(selectedRegionId, similarityMethod));
+          void fRefetch();
+        }}
         className="m-4"
       />
     );

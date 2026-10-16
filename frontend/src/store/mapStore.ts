@@ -20,8 +20,8 @@ interface MapState {
   selectedLake: LakeGeometry | null;
   selectedLakeFocusRevision: number;
   isSidebarCollapsed: boolean;
-  // Mobile only: the bottom sheet fills the whole map area instead of ~60%
-  isSheetExpanded: boolean;
+  // Mobile bottom sheet height as a fraction (0–1) of the map area
+  sheetHeight: number;
 
   // ── Actions ──────────────────────────────────────────────────────────────
   selectRegion: (
@@ -39,7 +39,7 @@ interface MapState {
   setSelectedLake: (lake: LakeGeometry | null) => void;
   toggleSidebar: () => void;
   setSidebarCollapsed: (collapsed: boolean) => void;
-  setSheetExpanded: (expanded: boolean) => void;
+  setSheetHeight: (height: number) => void;
 }
 
 // Matches Tailwind's `md` breakpoint — below it the sidebar is a bottom sheet.
@@ -63,7 +63,7 @@ export const useMapStore = create<MapState>()(
       selectedLake: null,
       selectedLakeFocusRevision: 0,
       isSidebarCollapsed: isMobileViewport(),
-      isSheetExpanded: false,
+      sheetHeight: 0.6,
 
       // Actions
       selectRegion: (id, lat, lon) =>
@@ -139,8 +139,7 @@ export const useMapStore = create<MapState>()(
       setSidebarCollapsed: (collapsed) =>
         set({ isSidebarCollapsed: collapsed }, false, 'setSidebarCollapsed'),
 
-      setSheetExpanded: (expanded) =>
-        set({ isSheetExpanded: expanded }, false, 'setSheetExpanded'),
+      setSheetHeight: (height) => set({ sheetHeight: height }, false, 'setSheetHeight'),
     }),
     { name: 'EcoTwinMapStore' },
   ),
