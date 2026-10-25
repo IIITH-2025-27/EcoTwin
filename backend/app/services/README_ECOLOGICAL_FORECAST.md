@@ -46,20 +46,20 @@ Implementation: `app/services/ecological_forecast_service.py`,
 
 ## 1. The five indices
 
-Computed on-the-fly from `lake_features` band means (B2–B7 only — no B8/NIR,
-no SWIR, no thermal band is available in the merged imagery). Implementation:
+Computed on-the-fly from `lake_features` band means (B3, B4, B5, B7, B8 from
+the main download stack). Implementation:
 `app/services/index_calculator.py::compute_ecological_indices`.
 
 | Key | Formula | What it tracks |
 | --- | --- | --- |
 | `ndci` | `(B5 − B4) / (B5 + B4)` | Chlorophyll-a / algal bloom |
-| `ndvi_b7` | `(B7 − B4) / (B7 + B4)` | Vegetation vigor / greenness proxy |
-| `ndwi` | `(B3 − B7) / (B3 + B7)` | Water mask / wetness (note: this is a *different* NDWI formula than the McFeeters `(Green−NIR)/(Green+NIR)` used elsewhere in `app/processing/spectral_indices.py` — this service is restricted to B2–B7 and has no true NIR band) |
+| `ndvi` | `(B8 − B4) / (B8 + B4)` | Vegetation vigor |
+| `ndwi` | `(B3 − B8) / (B3 + B8)` | Water mask / wetness (McFeeters) |
 | `turbidity_ratio` | `(B4 − B3) / (B4 + B3)` | Water clarity / suspended sediment |
 | `red_edge_slope` | `(B7 − B5) / 78` (Δλ between 705 nm and 783 nm) | Pigment concentration trend, units: reflectance per nm |
 
-If any of B2–B7 is missing/non-finite for a given lake-year, all five indices
-are `None` for that row (`_is_missing` guard). Divisions near zero return
+Each index is `None` only when one of *its own* bands is missing/non-finite
+for that lake-year; the others are still computed. Divisions near zero return
 `0.0` rather than raising (`_safe_ratio`, epsilon `1e-10`).
 
 ## 2. Finding twin lakes

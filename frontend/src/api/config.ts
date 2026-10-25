@@ -7,7 +7,6 @@ export interface PipelinePermissions {
   generate_embeddings: boolean;
   merge_embeddings: boolean;
   generate_features: boolean;
-  fetch_b8: boolean;
 }
 
 export interface AppConfig {

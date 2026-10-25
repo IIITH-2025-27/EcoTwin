@@ -591,8 +591,13 @@ def import_lakes_table(country: str = "India") -> dict:
     }
 
 
-def _wipe_country_sub_regions(country: str) -> None:
-    """Remove generated processing cells for a country before a refresh."""
+def _reset_country_embeddings(country: str) -> None:
+    """Mark a country's lake-year embeddings for recomputation (REFRESH).
+
+    The embedding pipeline skips lake-years whose current-method embedding is
+    already completed; resetting ``status`` makes a refresh recompute them.
+    Stored vectors are kept until they are overwritten.
+    """
     from sqlalchemy import text  # noqa: PLC0415
 
     engine = _sync_engine()
@@ -601,9 +606,10 @@ def _wipe_country_sub_regions(country: str) -> None:
             conn.execute(
                 text(
                     """
-                    DELETE FROM sub_regions AS sub_region
-                    USING lakes AS lake
-                    WHERE sub_region.lake_id = lake.lake_id
+                    UPDATE regions AS region
+                    SET status = 'pending', updated_at = NOW()
+                    FROM lakes AS lake
+                    WHERE region.lake_id = lake.lake_id
                       AND lower(lake.country) = lower(:country)
                     """
                 ),
@@ -613,13 +619,10 @@ def _wipe_country_sub_regions(country: str) -> None:
         engine.dispose()
 
 
-def _create_lake_sub_regions(country: str, years: list[int], states: list[str] | None = None) -> list[dict]:
-    """Create valid 1 km processing cells and return one row per cell/year.
-
-    The grid is built in EPSG:6933 (a metre-based equal-area CRS), then
-    transformed back to WGS84 for storage and the GEE request.  Coverage is
-    the percentage of each full grid cell occupied by the lake polygon.
-    """
+def _select_active_lake_years(
+    country: str, years: list[int], states: list[str] | None = None
+) -> list[dict]:
+    """Return one ``{"lake_id", "year"}`` job per active lake and year."""
     from sqlalchemy import text  # noqa: PLC0415
 
     if not years:
@@ -627,92 +630,28 @@ def _create_lake_sub_regions(country: str, years: list[int], states: list[str] |
 
     statement = text(
         """
-        WITH lake_cells AS (
-            SELECT
-                lake.lake_id,
-                grid.geom AS metric_geom,
-                ST_Transform(lake.geom, 6933) AS lake_metric_geom
-            FROM lakes AS lake
-            CROSS JOIN LATERAL ST_SquareGrid(
-                :cell_size_metres, ST_Transform(lake.geom, 6933)
-            ) AS grid
-            WHERE lower(lake.country) = lower(:country)
-              AND lake.is_active = true
-              AND lake.geom IS NOT NULL
-              AND (:states IS NULL OR lake.state = ANY(CAST(:states AS text[])))
-        ),
-        valid_cells AS (
-            SELECT
-                lake_id,
-                metric_geom,
-                100.0 * ST_Area(ST_Intersection(metric_geom, lake_metric_geom))
-                    / NULLIF(ST_Area(metric_geom), 0) AS coverage_percent
-            FROM lake_cells
-            WHERE ST_Intersects(metric_geom, lake_metric_geom)
-        ),
-        numbered_cells AS (
-            SELECT
-                lake_id,
-                ROW_NUMBER() OVER (
-                    PARTITION BY lake_id
-                    ORDER BY ST_Y(ST_Centroid(metric_geom)), ST_X(ST_Centroid(metric_geom))
-                )::integer AS cell_number,
-                ST_Transform(metric_geom, 4326) AS geom,
-                coverage_percent
-            FROM valid_cells
-            WHERE coverage_percent >= :minimum_coverage_percent
-        ),
-        inserted AS (
-            INSERT INTO sub_regions (
-                sub_region_id, lake_id, cell_number, year, coverage_percent,
-                center_lat, center_lon, geom
-            )
-            SELECT
-                gen_random_uuid(), numbered_cells.lake_id, numbered_cells.cell_number,
-                requested_year.year, numbered_cells.coverage_percent,
-                ST_Y(ST_Centroid(numbered_cells.geom)),
-                ST_X(ST_Centroid(numbered_cells.geom)),
-                numbered_cells.geom
-            FROM numbered_cells
-            CROSS JOIN unnest(CAST(:years AS integer[])) AS requested_year(year)
-            ON CONFLICT (lake_id, cell_number, year) DO UPDATE SET
-                coverage_percent = EXCLUDED.coverage_percent,
-                center_lat = EXCLUDED.center_lat,
-                center_lon = EXCLUDED.center_lon,
-                geom = EXCLUDED.geom,
-                updated_at = NOW()
-            RETURNING sub_region_id, lake_id, cell_number, year, center_lat, center_lon,
-                      coverage_percent, ST_AsText(geom) AS geom_wkt
-        )
-        SELECT * FROM inserted
-        ORDER BY lake_id, cell_number, year
+        SELECT lake.lake_id
+        FROM lakes AS lake
+        WHERE lower(lake.country) = lower(:country)
+          AND lake.is_active = true
+          AND lake.geom IS NOT NULL
+          AND (:states IS NULL OR lake.state = ANY(CAST(:states AS text[])))
+        ORDER BY lake.lake_id
         """
     )
     engine = _sync_engine()
     try:
-        with engine.begin() as conn:
-            rows = conn.execute(
-                statement,
-                {
-                    "country": country,
-                    "years": years,
-                    "states": states,
-                    "cell_size_metres": settings.LAKE_GRID_CELL_SIZE_METRES,
-                    "minimum_coverage_percent": settings.LAKE_GRID_MIN_COVERAGE_PERCENT,
-                },
-            ).mappings().all()
+        with engine.connect() as conn:
+            lake_ids = [
+                int(row[0])
+                for row in conn.execute(
+                    statement, {"country": country, "states": states}
+                ).fetchall()
+            ]
         return [
-            {
-                "sub_region_id": str(row["sub_region_id"]),
-                "lake_id": int(row["lake_id"]),
-                "cell_number": int(row["cell_number"]),
-                "year": int(row["year"]),
-                "center_lat": float(row["center_lat"]),
-                "center_lon": float(row["center_lon"]),
-                "coverage_percent": float(row["coverage_percent"]),
-                "geom_wkt": row["geom_wkt"],
-            }
-            for row in rows
+            {"lake_id": lake_id, "year": int(year)}
+            for lake_id in lake_ids
+            for year in years
         ]
     finally:
         engine.dispose()
@@ -851,7 +790,7 @@ def start_sync(request: SyncRequest, job_id: str | None = None) -> SyncJobRespon
     try:
         if request.sync_mode == SyncMode.REFRESH:
             if request.source_type == SyncSource.HYDROLAKES:
-                _wipe_country_sub_regions(request.country)
+                _reset_country_embeddings(request.country)
             else:
                 _wipe_country_data(request.country)
     except Exception as exc:
@@ -879,10 +818,10 @@ def start_sync(request: SyncRequest, job_id: str | None = None) -> SyncJobRespon
     region_jobs: list[dict] = []
     if request.source_type == SyncSource.HYDROLAKES:
         try:
-            region_jobs = _create_lake_sub_regions(request.country, years, states=request.states)
+            region_jobs = _select_active_lake_years(request.country, years, states=request.states)
             inserted_regions = len(region_jobs)
         except Exception as exc:
-            log.error("Could not create lake sub-regions", error=str(exc))
+            log.error("Could not select active lakes", error=str(exc))
             return SyncJobResponse(
                 job_id=job_id,
                 status="failed",
@@ -896,7 +835,7 @@ def start_sync(request: SyncRequest, job_id: str | None = None) -> SyncJobRespon
                 inserted_regions=0,
                 updated_regions=0,
                 skipped_regions=0,
-                message=f"Could not create lake sub-regions: {exc}",
+                message=f"Could not select active lakes: {exc}",
                 backup_path=backup_path,
             )
     else:
@@ -912,7 +851,7 @@ def start_sync(request: SyncRequest, job_id: str | None = None) -> SyncJobRespon
 
     from app.embedding_pipeline.pipeline import run_embedding_pipeline  # noqa: PLC0415
 
-    # ── Collect unique lake IDs and years from the generated sub-regions ───
+    # ── Collect unique lake IDs and years from the selected jobs ──────────
     lake_ids_set: set[int] = set()
     unique_years: set[int] = set()
     for lake in region_jobs:
@@ -946,10 +885,9 @@ def start_sync(request: SyncRequest, job_id: str | None = None) -> SyncJobRespon
 
     # ── Run the local embedding pipeline ──────────────────────────────────────
     # The embedding pipeline handles: GeoTIFF lookup from lake_images,
-    # grid generation, cell extraction, GPU-batched Prithvi inference,
-    # and per-cell storage (sub_regions / sub_region_features). It respects
-    # sync cancellation
-    # via check_sync_cancel=True.
+    # lake + shore token windows, Prithvi inference, and storage of the
+    # lake / shore / combined embeddings on regions. It respects sync
+    # cancellation via check_sync_cancel=True.
     tasks_dispatched = 0
     try:
         emb_result = run_embedding_pipeline(
@@ -1005,7 +943,7 @@ def start_sync(request: SyncRequest, job_id: str | None = None) -> SyncJobRespon
         status=status,
         source_type=request.source_type,
         country=request.country,
-        region_ids=[lake.get("sub_region_id") or lake.get("lake_id", "") for lake in region_jobs],
+        region_ids=[lake.get("lake_id", "") for lake in region_jobs],
         years=years,
         sync_mode=request.sync_mode,
         tasks_dispatched=tasks_dispatched,

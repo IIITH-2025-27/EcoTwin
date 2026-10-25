@@ -39,9 +39,7 @@ BEGIN
         ('lake_images_COMPLETED'),
         ('lake_images_FAILED'),
         ('lake_images_MERGED'),
-        ('sub_regions_completed'),
-		('sub_regions_failed'),
-        ('sub_regions_lake_count'),
+        ('regions_embedding_v2'),
         ('regions_completed'),
 		('regions_failed'),
         ('lake_features_completed'),
@@ -111,36 +109,12 @@ BEGIN
             'UPDATE tmp_verify_counts
              SET "%1$s" = (
                  SELECT COUNT(*)
-                 FROM sub_regions
+                 FROM regions
                  WHERE year=%1$s
-                 AND status=''completed''
-				 And embedding is not null
+                   AND embedding_version = 2
+                   AND lake_embedding IS NOT NULL
              )
-             WHERE table_name=''sub_regions_completed'' ;',
-            p_years[i]);
-		EXECUTE format(
-            'UPDATE tmp_verify_counts
-             SET "%1$s" = (
-                 SELECT COUNT(*)
-                 FROM sub_regions
-                 WHERE year=%1$s
-                   AND (
-                        status <> ''completed''
-                        OR embedding IS NULL
-                   )
-             )
-             WHERE table_name=''sub_regions_failed'';',
-            p_years[i]);
-        EXECUTE format(
-            'UPDATE tmp_verify_counts
-             SET "%1$s" = (
-                 SELECT COUNT(DISTINCT lake_id)
-                 FROM sub_regions
-                 WHERE year=%1$s
-                   AND status=''completed''
-                   AND embedding IS NOT NULL
-             )
-             WHERE table_name=''sub_regions_lake_count'';',
+             WHERE table_name=''regions_embedding_v2'';',
             p_years[i]);
         EXECUTE format(
             'UPDATE tmp_verify_counts

@@ -8,7 +8,6 @@ import {
   Leaf,
   PanelLeftClose,
   PanelLeftOpen,
-  Radar,
   RefreshCw,
   Satellite,
   Workflow,
@@ -22,7 +21,6 @@ import FetchImagesModal from '@/components/SyncModal/FetchImagesModal';
 import MergeTilesModal from '@/components/SyncModal/MergeTilesModal';
 import MergeEmbeddingsModal from '@/components/SyncModal/MergeEmbeddingsModal';
 import GenerateLakeFeaturesModal from '@/components/SyncModal/GenerateLakeFeaturesModal';
-import FetchB8Modal from '@/components/SyncModal/FetchB8Modal';
 
 const DENIED_TOOLTIP = 'Data Pipeline run Access denied';
 
@@ -36,7 +34,6 @@ export default function Navbar() {
   const [showMergeTiles, setShowMergeTiles] = useState(false);
   const [showMergeEmbeddings, setShowMergeEmbeddings] = useState(false);
   const [showLakeFeatures, setShowLakeFeatures] = useState(false);
-  const [showFetchB8, setShowFetchB8] = useState(false);
   const [showPipelineMenu, setShowPipelineMenu] = useState(false);
 
   const canSyncLakes = isPipelineActionAllowed('sync_lakes');
@@ -45,7 +42,6 @@ export default function Navbar() {
   const canGenerateEmbeddings = isPipelineActionAllowed('generate_embeddings');
   const canMergeEmbeddings = isPipelineActionAllowed('merge_embeddings');
   const canGenerateFeatures = isPipelineActionAllowed('generate_features');
-  const canFetchB8 = isPipelineActionAllowed('fetch_b8');
 
   const pipelineActions = [
     {
@@ -87,7 +83,7 @@ export default function Navbar() {
     {
       key: 'merge_embeddings',
       label: 'Merge Embeddings',
-      description: 'Aggregate lake tile embeddings into final lake embeddings in the regions table',
+      description: 'Re-blend stored lake and shore embeddings with a chosen lake / shore weighting',
       icon: <RefreshCw className="h-3.5 w-3.5" />,
       allowed: canMergeEmbeddings,
       open: () => setShowMergeEmbeddings(true),
@@ -101,15 +97,6 @@ export default function Navbar() {
       allowed: canGenerateFeatures,
       open: () => setShowLakeFeatures(true),
       className: 'border-emerald-500/40 bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25 hover:text-emerald-200',
-    },
-    {
-      key: 'fetch_b8',
-      label: 'Fetch B8',
-      description: 'Fetch Sentinel-2 B8 (NIR) band and compute zonal statistics per lake-year',
-      icon: <Radar className="h-3.5 w-3.5" />,
-      allowed: canFetchB8,
-      open: () => setShowFetchB8(true),
-      className: 'border-indigo-500/40 bg-indigo-500/15 text-indigo-300 hover:bg-indigo-500/25 hover:text-indigo-200',
     },
   ];
 
@@ -256,7 +243,6 @@ export default function Navbar() {
       {showMergeTiles && <MergeTilesModal onClose={() => setShowMergeTiles(false)} />}
       {showMergeEmbeddings && <MergeEmbeddingsModal onClose={() => setShowMergeEmbeddings(false)} />}
       {showLakeFeatures && <GenerateLakeFeaturesModal onClose={() => setShowLakeFeatures(false)} />}
-      {showFetchB8 && <FetchB8Modal onClose={() => setShowFetchB8(false)} />}
     </header>
   );
 }

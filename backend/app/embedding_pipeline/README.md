@@ -1,103 +1,49 @@
-# Lake embedding generation from multiple lake tiles
+# Lake embedding generation (lake + shore tokens)
 
-This pipeline creates one embedding per lake and year by combining embeddings from many smaller lake tiles (also called cells or sub-regions).
+One embedding per lake and year, stored on `regions`:
 
-## Overview
+| Column | Meaning |
+|---|---|
+| `lake_embedding` | Prithvi tokens over the lake polygon, pooled |
+| `shore_embedding` | Prithvi tokens over the 500 m ring outside the polygon, pooled |
+| `embedding` | `normalize(w · lake + (1 − w) · shore)` — the single vector used by similarity and forecasting |
+| `lake_weight` | `w` used for `embedding` (default `EMBEDDING_LAKE_WEIGHT` = 0.7) |
+| `lake_token_weight`, `shore_token_weight` | Σ of valid-pixel token fractions pooled into each part |
+| `tokens_encoded` | tokens fed to Prithvi |
+| `embedding_version` | 1 = legacy 1 km cells (10 m, B2–B7); 2 = this method |
 
-For each lake/year pair, the system:
+## Flow per lake-year
 
-1. Finds the relevant GeoTIFF for that lake and year.
-2. Reads the lake polygon from PostGIS.
-3. Splits the lake footprint into a grid of spatial cells.
-4. Extracts a raster patch for each cell.
-5. Runs the Prithvi model on each cell to generate a feature embedding.
-6. Stores each cell embedding in the `sub_regions` table.
-7. Aggregates all valid cell embeddings into one lake-level embedding.
-8. Stores the final lake embedding in the `regions` table on the matching lake/region row.
+1. Read the merged 30 m GeoTIFF (`S2_BANDS_DOWNLOAD` stack, EPSG:4326, fixed global grid).
+2. Rasterise the lake polygon and the 500 m shore ring on the image grid (pixel centres).
+3. Tile their joint extent into 224 × 224 px windows (6.72 km). Each window is a
+   14 × 14 grid of 16 px tokens (480 m).
+4. Per token: fraction of pixels that are valid lake, valid shore, valid.
+5. Prithvi input = B2, B3, B4, B8A, B11, B12 (HLS Blue, Green, Red, Narrow NIR,
+   SWIR1, SWIR2), nodata filled with the band mean, normalised with the model's
+   mean / std.
+6. The encoder sees **only tokens touching the lake or shore** (as in MAE
+   pre-training, where it saw a 25 % token subset) — distant land never enters
+   attention.
+7. `lake = Σ lake_frac · v / Σ lake_frac`, `shore = Σ shore_frac · v / Σ shore_frac`,
+   both L2-normalised; `embedding = blend(lake, shore, w)`.
 
-## Why multiple tiles are used
+A lake-year fails (row stored with `status = 'failed'` and NULL vectors) if it has
+fewer than `EMBEDDING_MIN_LAKE_PIXELS` valid lake pixels.
 
-A lake is often larger than a single image patch. Using multiple tiles lets the model capture spatial variation across the lake rather than compressing everything into one patch. The final lake embedding is therefore a summary of the whole lake surface, not just a single region.
+## Re-blending without re-running Prithvi
 
-## End-to-end flow
+`POST /embeddings/merge` with `lake_weight` recomputes `embedding` from the stored
+parts for the selected years — seconds, no GPU, no imagery.
 
-```text
-GeoTIFF + lake polygon
-    -> generate grid cells / tiles
-    -> extract raster for each tile
-    -> run Prithvi inference
-    -> save cell embeddings in sub_regions
-    -> aggregate tile embeddings into one lake embedding
-    -> save lake embedding in lake_embeddings
-```
+## Why these choices
 
-## How the per-lake embedding is built
-
-For each `(lake_id, year)` pair, the pipeline collects all completed tile embeddings that:
-
-- have `status = 'completed'`
-- are not `NULL`
-- have a positive `coverage_percent`
-
-Each tile contributes with its coverage percentage as a weight. The final embedding is computed as a coverage-weighted mean of the tile embeddings, followed by L2 normalization.
-
-This is implemented in the aggregation step using:
-
-- `weighted_mean_pool(...)` for the weighted aggregation
-- `aggregate_single_lake_year(...)` for one lake/year pair
-- `aggregate_all_lake_embeddings(...)` for batch processing
-
-## Storage model
-
-### Cell-level embeddings
-
-Cell embeddings are stored in `sub_regions` with metadata such as:
-
-- `lake_id`
-- `year`
-- `cell_number`
-- `coverage_percent`
-- `embedding`
-- `status`
-- `error_message`
-
-### Lake-level embeddings
-
-The aggregated result is stored in `regions` as one row per `(lake_id, year)` with the embedding plus metadata such as `coverage_percent`, `num_cells`, `status`, and the lake identifier.
-
-## Notes on quality control
-
-The aggregation step skips invalid contributions:
-
-- embeddings with the wrong dimension
-- embeddings containing `NaN` or `Inf`
-- zero vectors
-- rows with zero or negative coverage
-
-If no valid tile embeddings are found, the lake/year pair is skipped.
-
-## How to run
-
-### Full pipeline
-
-Use the main embedding pipeline entrypoint to process lakes and years.
-
-### Aggregation only
-
-To aggregate already-generated tile embeddings into lake embeddings:
-
-```bash
-python -m app.embedding_pipeline.lake_aggregator
-```
-
-You can also call the aggregation functions from application code:
-
-```python
-from app.embedding_pipeline.lake_aggregator import aggregate_all_lake_embeddings
-
-aggregate_all_lake_embeddings()
-```
-
-## Summary
-
-Each lake embedding is created by combining many tile-level embeddings from the lake surface. The system uses coverage-weighted pooling so that tiles covering more of the lake have a stronger influence on the final representation.
+- **30 m**: Prithvi was pre-trained on HLS L30 (30 m); tokens are then 480 m.
+- **500 m ring**: JRC Global Surface Water over all 829 lakes shows the lake's own
+  water-level fluctuation zone ends at ~500 m outside the HydroLAKES polygon
+  (0–250 m: 41 % ever-water; 250–500 m: 10 %; beyond: 2–5 % background). It is
+  also one token wide, the smallest resolvable ring.
+- **Separate pooling**: a joint lake+ring pool would make the land share depend
+  on lake size and shape (82 % land for small lakes, 59 % for large at 1 km).
+  Pooling separately and blending with a fixed `w` gives every lake the same
+  water / shore balance.

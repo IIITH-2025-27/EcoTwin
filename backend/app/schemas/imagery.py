@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import List, Literal, Optional
+from typing import Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -28,6 +28,33 @@ class FetchImagesRequest(BaseModel):
         ...,
         description="Must be true to acknowledge the download.",
     )
+    data_root: Optional[str] = Field(
+        default=None,
+        max_length=1024,
+        description=(
+            "Absolute directory to download every requested year into. "
+            "When null, SENTINEL_DATA_DIR (backend/data/sentinel) is used."
+        ),
+    )
+    year_roots: Optional[Dict[int, str]] = Field(
+        default=None,
+        description=(
+            "Per-year directories ({year: path}); override data_root for "
+            "those years. The paths end up in lake_images / lake_tiles."
+        ),
+    )
+
+    @field_validator("year_roots")
+    @classmethod
+    def _validate_year_roots(cls, v: Optional[Dict[int, str]]) -> Optional[Dict[int, str]]:
+        if v is None:
+            return v
+        for y, path in v.items():
+            if not (PIPELINE_YEAR_START <= y <= PIPELINE_YEAR_END):
+                raise ValueError(f"Year {y} is out of range.")
+            if len(path) > 1024:
+                raise ValueError(f"Path for {y} is too long.")
+        return v
 
     @field_validator("years", mode="before")
     @classmethod
@@ -57,18 +84,94 @@ class FetchImagesResponse(BaseModel):
 
 
 class ImageryProgressResponse(BaseModel):
-    """Real-time progress of the running (or last completed) imagery fetch."""
+    """Real-time progress of the running (or last completed) imagery fetch.
 
-    status: Literal["idle", "running", "done", "failed", "cancelled"]
+    ``total`` / ``processed`` / ``success`` / ``failed`` / ``skipped`` count
+    lake-years; ``tiles_*`` count individual tile downloads.
+    """
+
+    status: Literal["idle", "running", "cancelling", "done", "failed", "cancelled"]
     total: int
     processed: int
     success: int
     failed: int
     skipped: int
+    tiles_completed: int = 0
+    tiles_failed: int = 0
+    active_lakes: int = 0
     current_lake_id: Optional[int] = None
     current_year: Optional[int] = None
     current_tile_index: Optional[str] = None
+    year_roots: Dict[str, str] = Field(
+        default_factory=dict, description="Storage root per year of this run."
+    )
     errors: List[str] = Field(default_factory=list)
+
+
+class StorageLocation(BaseModel):
+    """A directory the imagery can be downloaded into."""
+
+    path: str
+    label: str
+    free_bytes: int
+    total_bytes: int
+
+
+class YearRootUsage(BaseModel):
+    """A storage root holding some of a year's lake images."""
+
+    root: str
+    lakes: int
+    free_bytes: Optional[int] = None
+    total_bytes: Optional[int] = None
+
+
+class YearStorage(BaseModel):
+    """Where one year's images are, read from ``lake_images``.
+
+    ``data_root`` is where new downloads of the year go unless another
+    folder is chosen: SENTINEL_DATA_DIR. ``roots`` lists where the year's
+    existing images are.
+    """
+
+    year: int
+    data_root: str
+    is_default: bool
+    free_bytes: Optional[int] = None
+    total_bytes: Optional[int] = None
+    roots: List[YearRootUsage] = Field(default_factory=list)
+
+
+class StorageInfoResponse(BaseModel):
+    """Storage location per year, free space and size estimate."""
+
+    default_root: str
+    years: List[YearStorage]
+    active_lakes: int
+    estimated_bytes_per_year: int = Field(
+        description=(
+            "Upper bound for the merged GeoTIFFs of one year (all active "
+            "lakes). Tiles take about the same again until they are deleted "
+            "by the merge step."
+        ),
+    )
+    suggestions: List[StorageLocation] = Field(default_factory=list)
+
+
+class StorageCheckRequest(BaseModel):
+    """Request body for POST /imagery/storage/check."""
+
+    path: str = Field(..., max_length=1024)
+
+
+class StorageCheckResponse(BaseModel):
+    """Result of validating a candidate storage directory."""
+
+    path: str
+    valid: bool
+    error: Optional[str] = None
+    free_bytes: Optional[int] = None
+    total_bytes: Optional[int] = None
 
 
 class LakeTileRecord(BaseModel):
@@ -165,7 +268,12 @@ class MergeOptionsResponse(BaseModel):
     """Available years with completed tiles that can be merged."""
 
     years: List[MergeYearOption]
-    data_root: str = Field(description="Base data directory for merged files.")
+    data_root: str = Field(
+        description=(
+            "Default storage root. Years stored elsewhere show their own "
+            "location in output_path_pattern."
+        ),
+    )
 
 
 # Fix forward references

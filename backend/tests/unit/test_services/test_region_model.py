@@ -19,16 +19,18 @@ def test_region_has_uuid_primary_key_and_lake_year_unique_constraint():
     assert {"region_id", "lake_id", "year", "center_lat", "center_lon", "embedding", "status"} <= set(
         columns.keys()
     )
+    assert {
+        "lake_embedding", "shore_embedding", "lake_weight",
+        "lake_token_weight", "shore_token_weight", "tokens_encoded",
+        "embedding_version",
+    } <= set(columns.keys())
     assert "uq_regions_lake_year" in {
         constraint.name for constraint in Region.__table__.constraints
     }
 
 
 def test_lake_embedding_upsert_sql_maps_region_columns():
-    for relative_path in (
-        "app/embedding_pipeline/storage.py",
-        "app/embedding_pipeline/lake_aggregator.py",
-    ):
+    for relative_path in ("app/embedding_pipeline/storage.py",):
         source = (BACKEND_ROOT / relative_path).read_text()
         for fragment in EXPECTED_UPSERT_FRAGMENTS:
             assert fragment in source, f"Missing `{fragment}` in {relative_path}"

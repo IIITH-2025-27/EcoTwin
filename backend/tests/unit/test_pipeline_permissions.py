@@ -49,7 +49,7 @@ async def _set_permission(db_session, key: str, enabled: bool) -> None:
 
 
 async def _seed_all_disabled(db_session) -> None:
-    """Ensure all 8 default permission rows exist and are disabled."""
+    """Ensure all 7 default permission rows exist and are disabled."""
     keys = [
         "allow_data_pipeline_run",
         "sync_lakes",
@@ -58,7 +58,6 @@ async def _seed_all_disabled(db_session) -> None:
         "generate_embeddings",
         "merge_embeddings",
         "generate_features",
-        "fetch_b8",
     ]
     for key in keys:
         await _set_permission(db_session, key, False)
@@ -73,7 +72,6 @@ PIPELINE_ENDPOINTS = [
     ("/api/v1/embeddings/generate", "generate_embeddings"),
     ("/api/v1/embeddings/merge", "merge_embeddings"),
     ("/api/v1/lake-features/generate", "generate_features"),
-    ("/api/v1/lake-features/generate-b8", "fetch_b8"),
 ]
 
 
@@ -180,7 +178,6 @@ async def test_config_endpoint_returns_permissions(client: AsyncClient, db_sessi
         "generate_embeddings",
         "merge_embeddings",
         "generate_features",
-        "fetch_b8",
     }
     assert set(data["pipeline_permissions"].keys()) == expected_keys
     assert data["allow_data_pipeline_run"] is False

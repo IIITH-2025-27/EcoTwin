@@ -25,7 +25,6 @@ export function usePipelinePermissions() {
     generate_embeddings: false,
     merge_embeddings: false,
     generate_features: false,
-    fetch_b8: false,
   };
 
   /**

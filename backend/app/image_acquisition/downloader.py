@@ -5,7 +5,7 @@ Orchestrates the full pipeline for a single lake:
   1. Read lake polygon from PostGIS.
   2. Convert to projected CRS → buffer → convert back to EPSG:4326.
   3. Compute bounding box.
-  4. Generate 10 km × 10 km tile grid over the buffered region.
+  4. Generate the tile grid (IMAGERY_TILE_SIZE_METRES) over the buffered region.
   5. Build Sentinel-2 composite via Earth Engine (once per lake).
   6. Download one GeoTIFF per intersecting tile.
   7. Upsert metadata rows in the ``lake_tiles`` table.
@@ -14,6 +14,7 @@ Orchestrates the full pipeline for a single lake:
 
 from __future__ import annotations
 
+import math
 import os
 from datetime import datetime, timezone
 from pathlib import Path
@@ -24,7 +25,7 @@ from geoalchemy2.shape import to_shape
 from pyproj import Transformer
 from shapely.geometry import mapping
 from shapely.ops import transform
-from sqlalchemy import select, func
+from sqlalchemy import case, delete, func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.engine import create_engine
 from sqlalchemy.orm import Session as SyncSession
@@ -32,6 +33,7 @@ from sqlalchemy.orm import sessionmaker
 
 from app.core.config import settings
 from app.image_acquisition.config import AcquisitionMode, ImageAcquisitionConfig
+from app.ML_pipeline.constants import GEE_PIXEL_DEG, S2_BANDS_DOWNLOAD
 from app.image_acquisition.gee_helper import SentinelCompositeBuilder
 from app.image_acquisition.grid import TileInfo, generate_tile_grid
 from app.models.lake import Lake
@@ -51,6 +53,41 @@ def _sync_engine():
         pool_size=5,
         max_overflow=10,
     )
+
+
+def _is_current_tile(path: Path) -> bool:
+    """True if ``path`` is a GeoTIFF with the current stack and resolution."""
+    if not path.is_file():
+        return False
+    try:
+        import rasterio  # noqa: PLC0415
+
+        with rasterio.open(path) as src:
+            return (
+                src.count == len(S2_BANDS_DOWNLOAD)
+                and math.isclose(abs(src.transform.a), GEE_PIXEL_DEG, rel_tol=1e-6)
+            )
+    except Exception:
+        return False
+
+
+def merged_image_is_current(session_factory, config, lake_id: int, year: int) -> bool:
+    """True if the lake-year already has a merged image in the current format.
+
+    Lets download and merge skip finished lake-years on a re-run, including
+    when the tiles were deleted after merging (``delete_tiles=True``). A new
+    download moves ``lake_images.status`` away from ``merged``, so a stale
+    merge is never mistaken for a current one.
+    """
+    with session_factory() as session:
+        row = session.execute(
+            select(LakeImage.status, LakeImage.file_path).where(
+                LakeImage.lake_id == lake_id, LakeImage.year == year
+            )
+        ).first()
+    if row is None or row.status != "merged" or not row.file_path:
+        return False
+    return _is_current_tile(config.resolve_path(row.file_path))
 
 
 class LakeImageDownloader:
@@ -141,6 +178,11 @@ class LakeImageDownloader:
         log = logger.bind(lake_id=lake_id, year=year)
 
         try:
+            # 0. Already merged in the current format — nothing to download
+            if merged_image_is_current(self._Session, self._cfg, lake_id, year):
+                log.info("Current merged image exists — skipping download")
+                return "skipped"
+
             # 1. Read lake polygon from PostGIS
             log.info("Step 1: Reading lake polygon from PostGIS")
             geom_4326 = self._read_lake_polygon(lake_id)
@@ -173,7 +215,8 @@ class LakeImageDownloader:
                 log.warning("No intersecting tiles found — skipping")
                 return "skipped"
 
-            # 5. Upsert PENDING rows for all tiles
+            # 5. Drop rows from an older tile grid, upsert rows for this one
+            self._prune_stale_tiles(lake_id, year, {t.tile_index for t in tiles})
             self._ensure_tile_rows(lake_id, year, tiles)
 
             # 6. Filter to tiles not yet completed
@@ -202,7 +245,9 @@ class LakeImageDownloader:
                 east=full_bbox[2],
                 north=full_bbox[3],
             )
-            full_aoi = self.gee.build_aoi_from_bbox(*full_bbox)
+            # Clip to the buffered lake shape, not its bounding box: Earth
+            # Engine then skips the median outside the shape.
+            full_aoi = self.gee.build_aoi_from_geojson(mapping(buffered_geom))
             composite = self.gee.build_composite(full_aoi, year)
 
             if cancel_check and cancel_check():
@@ -291,17 +336,16 @@ class LakeImageDownloader:
             # Mark as downloading
             self._upsert_tile_status(lake_id, year, tile.tile_index, "DOWNLOADING")
 
-            # Build tile AOI and clip the composite
-            tile_aoi = self.gee.build_aoi_from_bbox(*tile.bbox)
-            clipped = composite.clip(tile_aoi)
+            # Clip the composite to the tile
+            clipped = composite.clip(self.gee.build_aoi_from_bbox(*tile.bbox))
 
             # Export GeoTIFF
             dest_path = self._cfg.tile_file_path(lake_id, year, tile.tile_index)
             log.info("Exporting tile GeoTIFF", dest=str(dest_path))
 
-            self.gee.export_geotiff(
+            self.gee.export_geotiff_split(
                 clipped,
-                tile_aoi,
+                tile.bbox,
                 dest_path,
                 max_retries=self._cfg.max_retries,
                 retry_delay=self._cfg.retry_delay_sec,
@@ -311,9 +355,7 @@ class LakeImageDownloader:
 
             # Update metadata
             file_size = dest_path.stat().st_size
-            rel_path = str(
-                dest_path.relative_to(self._cfg.data_root.parent.parent)
-            )
+            rel_path = self._cfg.stored_path(dest_path)
             self._upsert_tile_status(
                 lake_id,
                 year,
@@ -398,7 +440,9 @@ class LakeImageDownloader:
                 east=full_bbox[2],
                 north=full_bbox[3],
             )
-            full_aoi = self.gee.build_aoi_from_bbox(*full_bbox)
+            # Clip to the buffered lake shape, not its bounding box: Earth
+            # Engine then skips the median outside the shape.
+            full_aoi = self.gee.build_aoi_from_geojson(mapping(buffered_geom))
             composite = self.gee.build_composite(full_aoi, year)
 
             if cancel_check and cancel_check():
@@ -562,8 +606,13 @@ class LakeImageDownloader:
         ).transform
         projected_geom = transform(to_projected, geom_4326)
 
-        # Buffer in projected CRS (metres)
-        buffered = projected_geom.buffer(self._cfg.buffer_distance_m)
+        # Buffer in projected CRS (metres), then simplify to one output pixel:
+        # HydroLAKES shorelines carry thousands of vertices, which slow Earth
+        # Engine down and bloat requests; a pixel-sized tolerance is invisible
+        # in the 30 m output and only nibbles the outer buffer edge.
+        buffered = projected_geom.buffer(self._cfg.buffer_distance_m).simplify(
+            self._cfg.scale_metres, preserve_topology=True
+        )
 
         # Inverse transform: projected → 4326
         to_4326 = Transformer.from_crs(
@@ -592,20 +641,60 @@ class LakeImageDownloader:
                     tile_geometry=from_shape(tile.geometry_4326, srid=4326),
                     bbox=f"{tile.bbox[0]},{tile.bbox[1]},{tile.bbox[2]},{tile.bbox[3]}",
                     status="PENDING",
-                    image_path=str(
-                        self._cfg.tile_file_path(
-                            lake_id, year, tile.tile_index
-                        ).relative_to(self._cfg.data_root.parent.parent)
+                    image_path=self._cfg.stored_path(
+                        self._cfg.tile_file_path(lake_id, year, tile.tile_index)
                     ),
                     created_at=now,
                     updated_at=now,
                 )
-                # Don't overwrite completed tiles
-                stmt = stmt.on_conflict_do_nothing(
-                    constraint="uq_lake_tiles_lake_year_tile"
+                # Keep completed tiles, unless the tile's extent changed
+                # (different grid / buffer settings) — then re-download it.
+                # A kept tile also keeps its path, so tiles already on disk
+                # are reused when the year's storage location was changed.
+                keep_tile = (LakeTile.status == "COMPLETED") & LakeTile.bbox.is_not_distinct_from(
+                    stmt.excluded.bbox
+                )
+                stmt = stmt.on_conflict_do_update(
+                    constraint="uq_lake_tiles_lake_year_tile",
+                    set_={
+                        "tile_geometry": stmt.excluded.tile_geometry,
+                        "bbox": stmt.excluded.bbox,
+                        "image_path": case(
+                            (keep_tile, LakeTile.image_path),
+                            else_=stmt.excluded.image_path,
+                        ),
+                        "status": case(
+                            (LakeTile.bbox.is_distinct_from(stmt.excluded.bbox), "PENDING"),
+                            else_=LakeTile.status,
+                        ),
+                        "updated_at": now,
+                    },
                 )
                 session.execute(stmt)
             session.commit()
+
+    def _prune_stale_tiles(
+        self, lake_id: int, year: int, valid_indices: set
+    ) -> None:
+        """Delete lake_tiles rows whose tile_index is not in the current grid.
+
+        Rows left over from an earlier tile size / buffer would otherwise be
+        picked up by the merge step.
+        """
+        with self._Session() as session:
+            result = session.execute(
+                delete(LakeTile).where(
+                    LakeTile.lake_id == lake_id,
+                    LakeTile.year == year,
+                    LakeTile.tile_index.not_in(list(valid_indices)),
+                )
+            )
+            session.commit()
+        if result.rowcount:
+            logger.info(
+                "Pruned stale tile rows",
+                lake_id=lake_id, year=year, removed=result.rowcount,
+            )
 
     def _get_pending_tile_indices(
         self, lake_id: int, year: int
@@ -625,13 +714,14 @@ class LakeImageDownloader:
 
         pending = set()
         for tile_index, status, image_path in rows:
-            if status != "COMPLETED":
+            if status != "COMPLETED" or not image_path:
                 pending.add(tile_index)
-            elif image_path:
-                # Verify file still exists on disk
-                full_path = self._cfg.data_root.parent.parent / image_path
-                if not full_path.is_file():
-                    pending.add(tile_index)
+                continue
+            # A completed tile only counts if its file exists and holds the
+            # current band stack at the current resolution.
+            full_path = self._cfg.resolve_path(image_path)
+            if not _is_current_tile(full_path):
+                pending.add(tile_index)
 
         return pending
 
@@ -736,12 +826,9 @@ class LakeImageDownloader:
         else:
             agg_status = "downloading"
 
-        # Build the tile directory as the "file_path" for the lake image
-        tile_dir = str(
-            self._cfg.lake_tile_dir(lake_id, year).relative_to(
-                self._cfg.data_root.parent.parent
-            )
-        )
+        # The lake image's "file_path" is the folder its tiles are in — the
+        # tiles may sit under an earlier root if they were reused.
+        tile_dir = self._actual_tile_dir(lake_id, year)
 
         self._upsert_lake_image_status(
             lake_id,
@@ -750,6 +837,21 @@ class LakeImageDownloader:
             file_path=tile_dir,
             file_size_bytes=total_size if agg_status == "completed" else None,
         )
+
+    def _actual_tile_dir(self, lake_id: int, year: int) -> str:
+        """Stored folder of the lake-year's tiles (most of them, if split)."""
+        with self._Session() as session:
+            paths = session.execute(
+                select(LakeTile.image_path).where(
+                    LakeTile.lake_id == lake_id,
+                    LakeTile.year == year,
+                    LakeTile.image_path != "",
+                )
+            ).scalars().all()
+        if not paths:
+            return self._cfg.stored_path(self._cfg.lake_tile_dir(lake_id, year))
+        dirs = [str(Path(p).parent) for p in paths]
+        return max(set(dirs), key=dirs.count)
 
     def _upsert_lake_image_status(
         self,
@@ -764,11 +866,7 @@ class LakeImageDownloader:
     ) -> None:
         """Insert or update the lake_images metadata row."""
         now = datetime.now(timezone.utc)
-        default_path = str(
-            self._cfg.lake_tile_dir(lake_id, year).relative_to(
-                self._cfg.data_root.parent.parent
-            )
-        )
+        default_path = self._cfg.stored_path(self._cfg.lake_tile_dir(lake_id, year))
 
         with self._Session() as session:
             stmt = pg_insert(LakeImage).values(
@@ -804,6 +902,28 @@ class LakeImageDownloader:
             )
             session.execute(stmt)
             session.commit()
+
+    def get_last_error(self, lake_id: int, year: int) -> Optional[str]:
+        """Most relevant stored error for a failed lake-year (for the UI)."""
+        with self._Session() as session:
+            tile_error = session.execute(
+                select(LakeTile.tile_index, LakeTile.error_message)
+                .where(
+                    LakeTile.lake_id == lake_id,
+                    LakeTile.year == year,
+                    LakeTile.status == "FAILED",
+                    LakeTile.error_message.is_not(None),
+                )
+                .order_by(LakeTile.updated_at.desc())
+                .limit(1)
+            ).first()
+            if tile_error is not None:
+                return f"tile {tile_error.tile_index}: {tile_error.error_message}"
+            return session.execute(
+                select(LakeImage.error_message).where(
+                    LakeImage.lake_id == lake_id, LakeImage.year == year
+                )
+            ).scalar_one_or_none()
 
     def get_active_lake_ids(self) -> List[int]:
         """Return all active lake IDs from the database."""

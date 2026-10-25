@@ -19,6 +19,8 @@ from sqlalchemy.orm import sessionmaker
 
 from app.core.config import settings
 from app.image_acquisition.config import get_image_acquisition_config
+from app.image_acquisition.storage import root_of_stored_path, summarise_year_roots
+from app.image_acquisition.downloader import _is_current_tile, merged_image_is_current
 from app.image_acquisition.merger import TileMerger
 # from app.models.lake import Lake
 from app.models.lake_image import LakeImage
@@ -95,7 +97,8 @@ def _sync_engine():
 
 
 def get_mergeable_years() -> List[Dict]:
-    """Return years that have completed tiles, with lake counts."""
+    """Return years that have completed tiles, with lake counts and the
+    folder(s) the merged images will be written to (next to the tiles)."""
     config = get_image_acquisition_config()
     engine = _sync_engine()
     Session = sessionmaker(bind=engine)
@@ -113,14 +116,22 @@ def get_mergeable_years() -> List[Dict]:
             )
             .all()
         )
+        # One path per lake-year is enough to know its root
+        tile_paths = session.execute(
+            select(LakeTile.year, func.min(LakeTile.image_path), func.max(LakeTile.updated_at))
+            .where(LakeTile.status == "COMPLETED")
+            .group_by(LakeTile.lake_id, LakeTile.year)
+        ).all()
 
+    roots_by_year = summarise_year_roots(tile_paths)
     results = []
     for year, lake_count in rows:
+        roots = [e["root"] for e in roots_by_year.get(year, [])] or [config.root_for_year(year)]
         results.append({
             "year": year,
             "lake_count": lake_count,
-            "output_path_pattern": str(
-                config.data_root / str(year) / "lake_{lake_id}.tif"
+            "output_path_pattern": " · ".join(
+                str(r / str(year) / "lake_{lake_id:06d}.tif") for r in roots
             ),
         })
 
@@ -133,9 +144,11 @@ def get_mergeable_years() -> List[Dict]:
 def run_merge_pipeline(
     years: List[int],
     delete_tiles: bool = False,
+    lake_ids: Optional[List[int]] = None,
 ) -> Dict:
     """
-    Merge downloaded tiles for all active lakes across the given years.
+    Merge downloaded tiles for all active lakes across the given years
+    (or only ``lake_ids`` when given).
 
     Runs synchronously (designed for ``BackgroundTasks``).
     Progress is tracked via ``_merge_progress``.
@@ -156,6 +169,7 @@ def run_merge_pipeline(
                 .where(
                     LakeTile.status == "COMPLETED",
                     LakeTile.year.in_(years),
+                    *([LakeTile.lake_id.in_(lake_ids)] if lake_ids else []),
                 )
                 .group_by(LakeTile.lake_id, LakeTile.year)
                 .order_by(LakeTile.lake_id, LakeTile.year)
@@ -177,7 +191,7 @@ def run_merge_pipeline(
         delete_tiles=delete_tiles,
     )
 
-    results = {"success": 0, "failed": 0}
+    results = {"success": 0, "failed": 0, "skipped": 0}
 
     for lake_id, year in combos:
         with _lock:
@@ -185,7 +199,7 @@ def run_merge_pipeline(
             _merge_progress["current_year"] = year
 
         try:
-            _merge_single_lake(
+            outcome = _merge_single_lake(
                 lake_id=lake_id,
                 year=year,
                 config=config,
@@ -193,7 +207,8 @@ def run_merge_pipeline(
                 merger=merger,
                 delete_tiles=delete_tiles,
             )
-            results["success"] += 1
+            results["success" if outcome == "merged" else "skipped"] += 1
+            # Progress has no "skipped" field; an already-merged lake is done
             _record_merge_result(lake_id, year, "success")
 
         except Exception as exc:
@@ -223,50 +238,61 @@ def _merge_single_lake(
     session_factory,
     merger: TileMerger,
     delete_tiles: bool,
-) -> None:
-    """Merge tiles for a single lake/year combo."""
+) -> str:
+    """Merge tiles for a single lake/year combo.
+
+    Returns ``"merged"`` or ``"skipped"`` (current merged image exists).
+    """
     log = logger.bind(lake_id=lake_id, year=year)
 
-    # 1. Get completed tile paths
+    # 0. Already merged in the current format (tiles may have been deleted)
+    if merged_image_is_current(session_factory, config, lake_id, year):
+        log.info("Current merged image exists — skipping merge")
+        return "skipped"
+
+    # 1. Every tile of the lake-year must be downloaded — merging a subset
+    #    would silently produce an image with holes in the lake.
     with session_factory() as session:
         tile_rows = (
             session.execute(
-                select(LakeTile.image_path)
+                select(LakeTile.tile_index, LakeTile.status, LakeTile.image_path)
                 .where(
                     LakeTile.lake_id == lake_id,
                     LakeTile.year == year,
-                    LakeTile.status == "COMPLETED",
                 )
             )
-            .scalars()
             .all()
         )
 
     if not tile_rows:
-        log.warning("No completed tiles found — skipping")
-        return
+        log.warning("No tiles found — skipping")
+        return "skipped"
 
-    # Resolve tile paths relative to data_root's grandparent (backend/)
-    base_dir = config.data_root.parent.parent
-    tile_paths = []
-    for rel_path in tile_rows:
-        full_path = base_dir / rel_path
-        if full_path.is_file():
-            tile_paths.append(full_path)
-        else:
-            log.warning("Tile file missing on disk", path=str(full_path))
+    incomplete = sorted(t for t, st, _ in tile_rows if st != "COMPLETED")
+    if incomplete:
+        raise RuntimeError(
+            f"{len(incomplete)} of {len(tile_rows)} tiles not downloaded "
+            f"({incomplete[:5]}); re-run the download before merging"
+        )
 
-    if not tile_paths:
+    tile_paths = [config.resolve_path(rel_path) for _, _, rel_path in tile_rows]
+    bad = [str(p) for p in tile_paths if not _is_current_tile(p)]
+    if bad:
         raise FileNotFoundError(
-            f"No tile files found on disk for lake {lake_id} / {year}"
+            f"{len(bad)} tile file(s) missing or not the current band stack / "
+            f"resolution for lake {lake_id} / {year}: {bad[:3]}"
         )
 
     log.info("Merging tiles", tile_count=len(tile_paths))
 
     
 
-    # 3. Merge + crop
-    output_path = config.lake_file_path(lake_id, year)
+    # 3. Merge + crop — the merged image goes next to its tiles, i.e. into
+    #    the storage root this lake-year was downloaded to.
+    tile_roots = [root_of_stored_path(p, year) for _, _, p in tile_rows]
+    tile_roots = [r for r in tile_roots if r is not None]
+    root = max(set(tile_roots), key=tile_roots.count) if tile_roots else config.root_for_year(year)
+    output_path = root / str(year) / config.lake_file_path(lake_id, year).name
     
     merger.merge_tiles_only(
         tile_paths=tile_paths,
@@ -279,7 +305,7 @@ def _merge_single_lake(
 
     now = datetime.now(timezone.utc)
     file_size = output_path.stat().st_size
-    rel_output = str(output_path.relative_to(base_dir))
+    rel_output = config.stored_path(output_path)
 
     from sqlalchemy.dialects.postgresql import insert as pg_insert
 
@@ -313,3 +339,4 @@ def _merge_single_lake(
         output=str(output_path),
         file_size=file_size,
     )
+    return "merged"

@@ -44,11 +44,6 @@ CREATE INDEX IF NOT EXISTS ix_regions_embedded_lake_year
 --     WITH (m = 16, ef_construction = 64)
 --     WHERE embedding IS NOT NULL;
 
--- Supports selecting completed subregion embedding years for /embeddings/merge/options.
-CREATE INDEX IF NOT EXISTS ix_sub_regions_completed_embedding_year
-    ON sub_regions (year)
-    WHERE status = 'completed' AND embedding IS NOT NULL;
-
 -- lake_tiles has a unique (lake_id, year, tile_index) index already. This
 -- ordering matches GET /imagery/lakes/{lake_id}: newest year first, tile index
 -- ascending within a year.
@@ -74,5 +69,4 @@ CREATE INDEX IF NOT EXISTS ix_regions_center_geography_gist
 -- Refresh planner statistics after index creation.
 ANALYZE lakes;
 ANALYZE regions;
-ANALYZE sub_regions;
 ANALYZE lake_tiles;

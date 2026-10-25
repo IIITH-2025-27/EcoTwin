@@ -4,6 +4,9 @@ Embedding generation endpoints.
 POST /embeddings/generate  — start the local Prithvi embedding pipeline
 GET  /embeddings/status    — poll embedding generation progress
 POST /embeddings/cancel    — cancel a running pipeline
+GET  /embeddings/merge/options — years with lake / shore parts + lake weights in use
+POST /embeddings/merge     — re-blend stored lake / shore parts with a new weight
+GET  /embeddings/merge/status — poll re-blend progress
 """
 
 from __future__ import annotations
@@ -15,18 +18,28 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.dependencies import DatabaseDep
 from app.core.permissions import require_pipeline_permission
+import asyncio
+
+from app.core.config import settings
 from app.embedding_pipeline.pipeline import (
     aggregate_lake_embeddings,
     cancel_embedding_pipeline,
+    claim_embedding_run,
+    claim_merge_run,
+    fail_embedding_run,
+    fail_merge_run,
     get_embedding_progress,
     get_merge_embedding_progress,
-    reset_merge_embedding_progress,
     run_embedding_pipeline,
 )
-from app.models.sub_region import SubRegion
+from app.embedding_pipeline.storage import EmbeddingStorage
+from app.ML_pipeline.constants import EMBEDDING_VERSION
+from app.models.region import Region
 from app.schemas.embedding_pipeline import (
     AvailableEmbeddingYearsResponse,
     EmbeddingProgressResponse,
+    EmbeddingYearInfo,
+    LakeWeightCount,
     GenerateEmbeddingsRequest,
     GenerateEmbeddingsResponse,
     MergeEmbeddingsRequest,
@@ -41,16 +54,16 @@ logger = structlog.get_logger(__name__)
 async def get_available_embedding_years(
     db: DatabaseDep,
 ) -> list[int]:
-    """Return all database-backed years with completed subregion embeddings."""
+    """Return years with current-method lake / shore embedding parts stored."""
     try:
         rows = await db.execute(
-            select(SubRegion.year)
+            select(Region.year)
             .where(
-                SubRegion.status == "completed",
-                SubRegion.embedding.is_not(None),
+                Region.embedding_version == EMBEDDING_VERSION,
+                Region.lake_embedding.is_not(None),
             )
             .distinct()
-            .order_by(SubRegion.year.asc())
+            .order_by(Region.year.asc())
         )
         years = [int(year) for (year,) in rows.all()]
     except SQLAlchemyError as exc:
@@ -65,11 +78,11 @@ async def get_available_embedding_years(
 
     if not years:
         logger.warning(
-            "No completed subregion embeddings available for merge",
+            "No lake / shore embeddings available for re-blend",
         )
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="No completed subregion embeddings are available for merge.",
+            detail="No lake / shore embeddings are available to re-blend yet.",
         )
 
     logger.info(
@@ -88,16 +101,16 @@ async def generate_embeddings(
     """
     Start the local Prithvi embedding pipeline.
 
-    Processes downloaded GeoTIFFs through grid generation, cell extraction,
-    GPU-batched inference, and weighted pooling. No GEE queries.
+    Encodes each lake and its 500 m shore ring from the merged 30 m
+    GeoTIFFs with Prithvi, pools lake / shore parts and blends them.
+    No GEE queries.
 
     Runs as a background task. Poll ``GET /embeddings/status`` for progress.
     """
-    current = get_embedding_progress()
-    if current["status"] == "running":
+    if not claim_embedding_run():
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="An embedding pipeline is already running. "
+            detail="An embedding generation or merge is already running. "
             "Cancel it first or wait for it to complete.",
         )
 
@@ -116,9 +129,11 @@ async def generate_embeddings(
             run_embedding_pipeline,
             lake_ids=body.lake_ids,
             years=body.years,
+            lake_weight=body.lake_weight,
         )
     except Exception as exc:
         logger.error("Failed to start embedding pipeline", error=str(exc))
+        fail_embedding_run(f"Failed to start: {str(exc)[:300]}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(exc),
@@ -134,13 +149,41 @@ async def generate_embeddings(
     )
 
 
+def _weight_summary() -> dict:
+    storage = EmbeddingStorage()
+    try:
+        return {
+            "summary": storage.weight_summary(),
+            "current": storage.current_lake_weight(),
+        }
+    finally:
+        storage.dispose()
+
+
 @router.get("/merge/options", response_model=AvailableEmbeddingYearsResponse)
-async def get_merge_available_years(
-    db: DatabaseDep,
-) -> AvailableEmbeddingYearsResponse:
-    """Return all years with completed subregion embeddings available for merge."""
-    years = await get_available_embedding_years(db)
-    return AvailableEmbeddingYearsResponse(years=years)
+async def get_merge_available_years() -> AvailableEmbeddingYearsResponse:
+    """Years with lake / shore embeddings, and the lake weights in use.
+
+    An empty list (not 404) when nothing has been generated yet.
+    """
+    info = await asyncio.to_thread(_weight_summary)
+    summary = info["summary"]
+    return AvailableEmbeddingYearsResponse(
+        years=sorted(summary),
+        year_details=[
+            EmbeddingYearInfo(
+                year=year,
+                lakes=entry["lakes"],
+                weights=[
+                    LakeWeightCount(lake_weight=w, lakes=n)
+                    for w, n in sorted(entry["weights"].items())
+                ],
+            )
+            for year, entry in sorted(summary.items())
+        ],
+        current_lake_weight=info["current"],
+        default_lake_weight=settings.EMBEDDING_LAKE_WEIGHT,
+    )
 
 
 @router.post("/merge", response_model=MergeEmbeddingsResponse)
@@ -150,18 +193,16 @@ async def merge_embeddings(
     db: DatabaseDep,
     _perm: None = Depends(require_pipeline_permission("merge_embeddings")),
 ) -> MergeEmbeddingsResponse:
-    """Aggregate per-tile embeddings into lake-level embeddings in the regions table."""
+    """Re-blend ``regions.embedding`` from stored lake / shore parts.
+
+    Recomputes ``normalize(w · lake + (1 − w) · shore)`` for the selected
+    years with ``body.lake_weight`` (default ``EMBEDDING_LAKE_WEIGHT``).
+    No Prithvi inference.
+    """
     if body.country.lower() != "india":
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Only India is currently supported for embedding merge.",
-        )
-
-    current = get_merge_embedding_progress()
-    if current["status"] == "running":
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="An embedding merge is already in progress. Wait for it to complete.",
         )
 
     available_years = await get_available_embedding_years(db)
@@ -175,7 +216,7 @@ async def merge_embeddings(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=(
-                "The selected years do not have completed subregion embeddings: "
+                "The selected years have no lake / shore embeddings: "
                 f"{unavailable_years}."
             ),
         )
@@ -184,16 +225,25 @@ async def merge_embeddings(
         "Embedding merge request received",
         country=body.country,
         years=body.years,
+        lake_weight=body.lake_weight,
     )
 
+    if not claim_merge_run():
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="An embedding merge or generation is already running. "
+            "Wait for it to complete.",
+        )
+
     try:
-        reset_merge_embedding_progress(total=0)
         background_tasks.add_task(
             aggregate_lake_embeddings,
             years=body.years,
+            lake_weight=body.lake_weight,
         )
     except Exception as exc:
         logger.error("Failed to start embedding merge", error=str(exc))
+        fail_merge_run(f"Failed to start: {str(exc)[:300]}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(exc),

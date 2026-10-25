@@ -23,7 +23,7 @@ from app.processing.constants import (
     NIR,
     NUM_BANDS,
     RED,
-    SWIR,
+    SWIR1,
 )
 
 
@@ -34,11 +34,11 @@ def compute_band_statistics(
     bands: np.ndarray,
     nodata: Optional[float] = None,
 ) -> Dict[str, Optional[float]]:
-    """Per-band mean/std/min/max/median for B2–B7.
+    """Per-band mean/std/min/max/median for every band in the stack.
 
     Parameters
     ----------
-    bands : (6, H, W) float32 array
+    bands : (NUM_BANDS, H, W) float32 array
     nodata : nodata sentinel value
 
     Returns
@@ -75,7 +75,7 @@ def compute_single_band_statistics(
     """Mean/std/min/max/median for one named band.
 
     Same computation as ``compute_band_statistics``, but for a single band
-    fetched outside the standard B2-B7 set (e.g. B8), which isn't part of
+    held outside the standard download stack, i.e. not part of
     ``BAND_NAMES``/``NUM_BANDS``.
 
     Parameters
@@ -101,19 +101,57 @@ def compute_single_band_statistics(
     }
 
 
+def compute_clear_observation_statistics(
+    clear_count: np.ndarray,
+    bands: np.ndarray,
+    nodata: Optional[float] = None,
+) -> Dict[str, Optional[float]]:
+    """Composite quality: cloud-free scenes per pixel behind the median.
+
+    Parameters
+    ----------
+    clear_count : (H, W) CLEAR_COUNT band from the download stack
+    bands : (NUM_BANDS, H, W) spectral cube, used for the valid-pixel mask
+    nodata : nodata sentinel value
+
+    Returns
+    -------
+    Dict with clear_obs_mean, clear_obs_min, clear_obs_median over valid
+    pixels (None if there are none).
+    """
+    if nodata is not None:
+        valid = np.all(bands != nodata, axis=0) & (clear_count != nodata)
+    else:
+        valid = np.all(np.isfinite(bands), axis=0)
+
+    counts = clear_count[valid]
+    if counts.size == 0:
+        return {"clear_obs_mean": None, "clear_obs_min": None, "clear_obs_median": None}
+
+    return {
+        "clear_obs_mean": round(float(np.mean(counts)), 4),
+        "clear_obs_min": float(np.min(counts)),
+        "clear_obs_median": float(np.median(counts)),
+    }
+
+
 # ── Pixel Statistics ──────────────────────────────────────────────────────────
 
 
 def compute_pixel_statistics(
     bands: np.ndarray,
     nodata: Optional[float] = None,
+    lake_mask: Optional[np.ndarray] = None,
 ) -> Dict[str, Optional[float]]:
-    """Pixel count statistics.
+    """Pixel count statistics over the lake.
 
     Parameters
     ----------
-    bands : (6, H, W) float32 array
+    bands : (NUM_BANDS, H, W) float32 array
     nodata : nodata sentinel value
+    lake_mask : (H, W) bool, True inside the lake polygon. The clipped
+        raster is the polygon's bounding box, so without it the pixels
+        outside the lake would be counted as masked (cloud).
 
     Returns
     -------
@@ -121,13 +159,16 @@ def compute_pixel_statistics(
     coverage_percent, cloud_percent, valid_pixel_ratio,
     masked_pixel_percentage.
     """
-    total_pixels = int(bands.shape[1] * bands.shape[2])
+    if lake_mask is None:
+        lake_mask = np.ones(bands.shape[1:], dtype=bool)
+    total_pixels = int(np.sum(lake_mask))
 
     if nodata is not None:
         # A pixel is valid if ALL bands have non-nodata values
         valid_mask = np.all(bands != nodata, axis=0)
     else:
         valid_mask = np.all(np.isfinite(bands), axis=0)
+    valid_mask &= lake_mask
 
     valid_count = int(np.sum(valid_mask))
     nodata_count = total_pixels - valid_count
@@ -316,13 +357,13 @@ def compute_spectral_summary(
     These are simplified spectral metrics (not true Tasseled Cap):
     - visible_brightness: mean of visible bands (B2, B3, B4)
     - nir_red_difference: mean(NIR − RED) across valid pixels
-    - green_swir_difference: mean(GREEN − SWIR) across valid pixels
-    - spectral_variance: mean of per-pixel variance across 6 bands
+    - green_swir_difference: mean(GREEN − SWIR1) across valid pixels
+    - spectral_variance: mean of per-pixel variance across all bands
     - spectral_entropy: normalised Shannon entropy of band means (0–1)
 
     Parameters
     ----------
-    bands : (6, H, W) float32 array
+    bands : (NUM_BANDS, H, W) float32 array
     nodata : nodata sentinel value
 
     Returns
@@ -345,31 +386,31 @@ def compute_spectral_summary(
             "spectral_entropy": None,
         }
 
-    # Extract valid pixels for each band → (6, N)
+    # Extract valid pixels for each band → (NUM_BANDS, N)
     valid_bands = bands[:, valid]
 
     # Visible brightness: mean of B2, B3, B4 across all valid pixels
-    visible_brightness = float(np.mean(valid_bands[:3]))
+    visible_brightness = float(np.mean(valid_bands[[BLUE, GREEN, RED]]))
 
     # NIR − RED difference (proxy for vegetation vigour)
     nir_red_difference = float(np.mean(valid_bands[NIR] - valid_bands[RED]))
 
-    # GREEN − SWIR difference (proxy for moisture)
-    green_swir_difference = float(np.mean(valid_bands[GREEN] - valid_bands[SWIR]))
+    # GREEN − SWIR1 difference (proxy for moisture)
+    green_swir_difference = float(np.mean(valid_bands[GREEN] - valid_bands[SWIR1]))
 
-    # Spectral Variance: per-pixel variance across 6 bands, then mean
+    # Spectral Variance: per-pixel variance across all bands, then mean
     per_pixel_var = np.var(valid_bands, axis=0)
     spectral_variance = float(np.mean(per_pixel_var))
 
     # Normalised Spectral Entropy: Shannon entropy / log₂(num_bands)
     # Range: 0 (all energy in one band) to 1 (uniform distribution)
-    band_means = np.mean(valid_bands, axis=1)  # (6,)
+    band_means = np.mean(valid_bands, axis=1)  # (NUM_BANDS,)
     total = np.sum(band_means)
     if total > EPSILON:
         probs = band_means / total
         probs = probs[probs > 0]
         raw_entropy = float(-np.sum(probs * np.log2(probs)))
-        max_entropy = np.log2(NUM_BANDS)  # log₂(6) ≈ 2.585
+        max_entropy = np.log2(NUM_BANDS)
         spectral_entropy = raw_entropy / max_entropy if max_entropy > 0 else 0.0
     else:
         spectral_entropy = 0.0

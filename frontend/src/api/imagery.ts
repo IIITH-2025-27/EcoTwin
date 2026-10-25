@@ -6,6 +6,10 @@ export interface FetchImagesRequest {
   lake_ids: number[] | null;
   years: number[];
   confirmed: true;
+  /** Absolute directory for every requested year; null = each year's current folder. */
+  data_root?: string | null;
+  /** Per-year directories; override data_root. Recorded via lake_images / lake_tiles paths. */
+  year_roots?: Record<number, string> | null;
 }
 
 export interface FetchImagesResponse {
@@ -14,17 +18,67 @@ export interface FetchImagesResponse {
   message: string;
 }
 
+/** Lake-year counters (total/processed/success/failed/skipped) drive the
+ *  progress bar; tile counters are extra detail. */
 export interface ImageryProgress {
-  status: 'idle' | 'running' | 'done' | 'failed' | 'cancelled';
+  status: 'idle' | 'running' | 'cancelling' | 'done' | 'failed' | 'cancelled';
   total: number;
   processed: number;
   success: number;
   failed: number;
   skipped: number;
+  tiles_completed: number;
+  tiles_failed: number;
+  active_lakes: number;
   current_lake_id: number | null;
   current_year: number | null;
   current_tile_index: string | null;
+  /** Storage root per year of this run. */
+  year_roots: Record<string, string>;
   errors: string[];
+}
+
+export interface StorageLocation {
+  path: string;
+  label: string;
+  free_bytes: number;
+  total_bytes: number;
+}
+
+export interface YearRootUsage {
+  root: string;
+  lakes: number;
+  free_bytes: number | null;
+  total_bytes: number | null;
+}
+
+/** Where a year's images are, read from the paths in lake_images. */
+export interface YearStorage {
+  year: number;
+  /** Folder new downloads of this year go to unless changed (SENTINEL_DATA_DIR). */
+  data_root: string;
+  /** True when the year has no images yet (SENTINEL_DATA_DIR). */
+  is_default: boolean;
+  free_bytes: number | null;
+  total_bytes: number | null;
+  roots: YearRootUsage[];
+}
+
+export interface StorageInfo {
+  default_root: string;
+  years: YearStorage[];
+  active_lakes: number;
+  /** Upper bound for one year of merged images (tiles need about as much again). */
+  estimated_bytes_per_year: number;
+  suggestions: StorageLocation[];
+}
+
+export interface StorageCheck {
+  path: string;
+  valid: boolean;
+  error: string | null;
+  free_bytes: number | null;
+  total_bytes: number | null;
 }
 
 // ── Merge types ───────────────────────────────────────────────────────────
@@ -75,6 +129,16 @@ export async function startFetchImages(
 
 export async function getImageryProgress(): Promise<ImageryProgress> {
   const { data } = await apiClient.get<ImageryProgress>('/imagery/status');
+  return data;
+}
+
+export async function getImageryStorage(): Promise<StorageInfo> {
+  const { data } = await apiClient.get<StorageInfo>('/imagery/storage');
+  return data;
+}
+
+export async function checkImageryStorage(path: string): Promise<StorageCheck> {
+  const { data } = await apiClient.post<StorageCheck>('/imagery/storage/check', { path });
   return data;
 }
 

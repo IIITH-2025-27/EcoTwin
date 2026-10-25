@@ -1,16 +1,12 @@
 """
 Local Prithvi embedding pipeline.
 
-Processes downloaded GeoTIFFs through grid generation, cell extraction,
-GPU-batched inference, and weighted mean pooling to produce per-cell
-and per-lake embeddings — without querying Google Earth Engine.
+Processes downloaded 30 m GeoTIFFs into one embedding per lake-year: Prithvi
+encodes the lake and its 500 m shore ring, the two are pooled separately and
+blended into the single vector used by similarity and forecasting — without
+querying Google Earth Engine.
 """
 
-from app.embedding_pipeline.lake_aggregator import (
-    BatchResult,
-    LakeYearResult,
-    aggregate_all_lake_embeddings,
-)
 from app.embedding_pipeline.pipeline import (
     aggregate_lake_embeddings,
     cancel_embedding_pipeline,
@@ -23,8 +19,4 @@ __all__ = [
     "get_embedding_progress",
     "cancel_embedding_pipeline",
     "aggregate_lake_embeddings",
-    "aggregate_all_lake_embeddings",
-    "BatchResult",
-    "LakeYearResult",
 ]
-

@@ -27,16 +27,25 @@ from sqlalchemy.engine import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from app.core.config import settings
+from app.image_acquisition.config import get_image_acquisition_config
 from app.models.lake import Lake
 from app.models.lake_feature import LakeFeature
 from app.models.lake_image import LakeImage
 from app.processing.clipping import clip_raster_to_polygon
+from app.ML_pipeline.constants import S2_BANDS_DOWNLOAD
+from app.processing.constants import (
+    CLEAR_COUNT,
+    FEATURE_VERSION,
+    NUM_BANDS,
+    STACK_BAND_COUNT,
+)
 from app.processing.spectral_indices import (
     compute_all_indices,
     compute_index_statistics,
 )
 from app.processing.statistics import (
     compute_band_statistics,
+    compute_clear_observation_statistics,
     compute_pixel_statistics,
     compute_spectral_summary,
     compute_water_statistics,
@@ -44,6 +53,7 @@ from app.processing.statistics import (
 from app.processing.texture import compute_glcm_features
 
 logger = structlog.get_logger(__name__)
+
 
 # ── Thread-safe progress tracking ─────────────────────────────────────────────
 
@@ -64,10 +74,54 @@ _progress: Dict[str, Any] = {
 }
 
 
+_ACTIVE_STATUSES = ("running", "cancelling")
+_cancelled = False
+
+
 def get_feature_progress() -> Dict[str, Any]:
     """Return a snapshot of the current pipeline progress."""
     with _progress_lock:
-        return dict(_progress)
+        snapshot = dict(_progress)
+        snapshot["errors"] = list(_progress["errors"])
+        return snapshot
+
+
+def is_feature_active() -> bool:
+    """True while generation runs or is still finishing after cancel."""
+    with _progress_lock:
+        return _progress["status"] in _ACTIVE_STATUSES
+
+
+def claim_feature_run() -> bool:
+    """Atomically mark a run as started before it is queued, so polls never
+    see a stale status and two runs never overlap. False if one is active."""
+    global _cancelled
+    with _progress_lock:
+        if _progress["status"] in _ACTIVE_STATUSES:
+            return False
+        _cancelled = False
+        _progress["status"] = "running"
+        _progress["errors"] = []
+    _reset_progress(total=0)
+    return True
+
+
+def fail_feature_run(message: str) -> None:
+    """Mark a claimed run as failed before it started."""
+    _update_progress(status="failed", errors=[message], current_lake_id=None, current_year=None)
+
+
+def cancel_feature_pipeline() -> bool:
+    """Request cancellation: ``cancelling`` until the current lake-year is
+    saved, then ``cancelled``."""
+    global _cancelled
+    with _progress_lock:
+        if _progress["status"] != "running":
+            return False
+        _cancelled = True
+        _progress["status"] = "cancelling"
+    logger.warning("Lake feature generation cancellation requested")
+    return True
 
 
 def _update_progress(**kwargs: Any) -> None:
@@ -76,10 +130,10 @@ def _update_progress(**kwargs: Any) -> None:
 
 
 def _reset_progress(total: int = 0) -> None:
+    """Reset counters for a run (the status is set by ``claim_feature_run``)."""
     with _progress_lock:
         _progress.update(
             {
-                "status": "running",
                 "total": total,
                 "processed": 0,
                 "skipped": 0,
@@ -174,6 +228,7 @@ class _StageTimer:
 def generate_lake_features(
     year: Optional[int] = None,
     overwrite: bool = False,
+    lake_ids: Optional[List[int]] = None,
 ) -> Dict[str, int]:
     """Run the full lake feature extraction pipeline.
 
@@ -183,14 +238,21 @@ def generate_lake_features(
     Parameters
     ----------
     year : If provided, only process merged images for this year.
-    overwrite : If True, re-compute features even if they already exist.
+    overwrite : If True, re-compute features even if they already exist
+        for the current FEATURE_VERSION.
+    lake_ids : If provided, only process these lakes.
 
     Returns
     -------
     Dict with total, processed, skipped, failed counts.
     """
+    # Direct callers (scripts) have not claimed the run via the API
+    if not is_feature_active():
+        claim_feature_run()
+
     engine = _sync_engine()
     Session = sessionmaker(bind=engine)
+    image_cfg = get_image_acquisition_config()
 
     try:
         # ── Fetch all merged images ───────────────────────────────────────
@@ -198,6 +260,8 @@ def generate_lake_features(
             stmt = select(LakeImage).where(LakeImage.status == "merged")
             if year is not None:
                 stmt = stmt.where(LakeImage.year == year)
+            if lake_ids:
+                stmt = stmt.where(LakeImage.lake_id.in_(lake_ids))
             stmt = stmt.order_by(LakeImage.lake_id, LakeImage.year)
             images = list(session.execute(stmt).scalars().all())
 
@@ -219,9 +283,13 @@ def generate_lake_features(
         errors: List[str] = []
 
         for img in images:
+            if _cancelled:
+                logger.warning("Lake feature generation cancelled")
+                break
+
             lake_id = img.lake_id
             img_year = img.year
-            file_path = img.file_path
+            file_path = str(image_cfg.resolve_path(img.file_path))
 
             _update_progress(
                 current_lake_id=lake_id,
@@ -231,13 +299,17 @@ def generate_lake_features(
             # ── One session per lake — commit on success, rollback on failure ──
             session = Session()
             try:
-                # Step 1: Skip if features exist and no overwrite
+                # Step 1: Skip if current-version features exist and no
+                # overwrite. Rows from an older feature method, or computed
+                # before the image was merged again, are recomputed.
                 if not overwrite:
                     existing = session.execute(
                         select(LakeFeature).where(
                             LakeFeature.lake_id == lake_id,
                             LakeFeature.year == img_year,
                             LakeFeature.status == "completed",
+                            LakeFeature.feature_version == FEATURE_VERSION,
+                            LakeFeature.updated_at >= img.updated_at,
                         )
                     ).scalar_one_or_none()
 
@@ -283,16 +355,22 @@ def generate_lake_features(
                         lake_shape=lake_shape,
                         geom_srid=4326,
                     )
-                    bands = clipped.data  # (6, H, W) float32
-
-                    if bands.shape[0] < 6:
+                    if clipped.data.shape[0] != STACK_BAND_COUNT:
                         raise ValueError(
-                            f"Expected 6 bands, got {bands.shape[0]}"
+                            f"Expected {STACK_BAND_COUNT}-band stack "
+                            f"{S2_BANDS_DOWNLOAD}, got {clipped.data.shape[0]} "
+                            "bands — re-download imagery with the current band set"
                         )
+                    bands = clipped.data[:NUM_BANDS]  # spectral (NUM_BANDS, H, W)
+                    clear_count = clipped.data[CLEAR_COUNT]  # QA (H, W)
 
-                # Step 5: Band statistics (now includes median)
+                # Step 5: Band statistics for every spectral band, plus
+                # composite quality (cloud-free scenes per pixel)
                 with timer.stage("band_statistics"):
                     band_stats = compute_band_statistics(bands, clipped.nodata)
+                    clear_obs_stats = compute_clear_observation_statistics(
+                        clear_count, bands, clipped.nodata
+                    )
 
                 # Step 6 & 7: Spectral indices + statistics
                 with timer.stage("spectral_indices"):
@@ -356,7 +434,7 @@ def generate_lake_features(
                 # Step 10: Pixel statistics
                 with timer.stage("pixel_statistics"):
                     pixel_stats = compute_pixel_statistics(
-                        bands, nodata=clipped.nodata
+                        bands, nodata=clipped.nodata, lake_mask=clipped.lake_mask
                     )
 
                 # Step 11: Water statistics (now uses MNDWI + improved area calc)
@@ -375,42 +453,35 @@ def generate_lake_features(
                 now = datetime.now(timezone.utc)
                 all_features: Dict[str, Any] = {
                     "status": "completed",
+                    "feature_version": FEATURE_VERSION,
                     "error_message": None,
                     "updated_at": now,
+                    # B8 is part of the main stack now, so its stats are
+                    # filled here rather than by the separate B8 pass.
+                    "b8_status": "completed",
                     **band_stats,
                     **index_features,
                     **texture_features,
                     **spectral_summary,
                     **pixel_stats,
+                    **clear_obs_stats,
                     **water_stats,
                 }
 
                 with timer.stage("db_save"):
-                    if overwrite:
-                        # PostgreSQL upsert
-                        stmt = pg_insert(LakeFeature).values(
-                            lake_id=lake_id,
-                            year=img_year,
-                            created_at=now,
-                            **all_features,
-                        )
-                        update_cols = {
-                            k: v
-                            for k, v in all_features.items()
-                        }
-                        stmt = stmt.on_conflict_do_update(
-                            constraint="uq_lake_features_lake_year",
-                            set_=update_cols,
-                        )
-                        session.execute(stmt)
-                    else:
-                        feature = LakeFeature(
-                            lake_id=lake_id,
-                            year=img_year,
-                            created_at=now,
-                            **all_features,
-                        )
-                        session.add(feature)
+                    # Always upsert: a row may already exist from an older
+                    # feature version or a previous failed attempt.
+                    stmt = pg_insert(LakeFeature).values(
+                        lake_id=lake_id,
+                        year=img_year,
+                        created_at=now,
+                        **all_features,
+                    )
+                    stmt = stmt.on_conflict_do_update(
+                        constraint="uq_lake_features_lake_year",
+                        set_=dict(all_features),
+                    )
+                    session.execute(stmt)
                     session.commit()
 
                 elapsed = time.monotonic() - t0
@@ -487,7 +558,7 @@ def generate_lake_features(
 
         total_elapsed = time.monotonic() - pipeline_start
         _update_progress(
-            status="done",
+            status="cancelled" if _cancelled else "done",
             current_lake_id=None,
             current_year=None,
             elapsed_seconds=round(total_elapsed, 2),

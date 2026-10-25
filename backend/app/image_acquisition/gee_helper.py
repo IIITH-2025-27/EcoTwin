@@ -3,8 +3,8 @@ Google Earth Engine helper for per-lake Sentinel-2 composite downloads.
 
 Provides a clean interface for:
   - Building composites from Sentinel-2 Surface Reflectance imagery
-  - SCL-based cloud/shadow masking
-  - Selecting Prithvi-compatible bands
+  - Cloud Score+ cloud/haze/shadow masking (plus SCL saturation/snow)
+  - Selecting the full download band stack (S2_BANDS_DOWNLOAD)
   - Exporting clipped GeoTIFF files
 
 All GEE operations are encapsulated here so the downloader module
@@ -17,18 +17,25 @@ import time
 import urllib.request
 import urllib.error
 from pathlib import Path
-from typing import Any, Dict, Optional, Sequence
+from typing import Any, Dict, Optional, Sequence, Tuple
 import datetime
 
 import structlog
 
 from app.ML_pipeline.constants import (
     GEE_CLOUD_COVER_MAX,
+    GEE_CLOUD_SCORE_BAND,
+    GEE_CLOUD_SCORE_COLLECTION,
+    GEE_CLOUD_SCORE_MIN,
+    GEE_CRS_TRANSFORM,
     GEE_SCALE_METRES,
     GEE_SENTINEL2_COLLECTION,
-    S2_BANDS_PRITHVI,
+    S2_BAND_CLEAR_COUNT,
+    S2_BANDS_DOWNLOAD,
+    S2_NODATA,
 )
 from app.image_acquisition.config import ImageAcquisitionConfig
+from app.image_acquisition.merger import mosaic_geotiffs, set_nodata_tag
 
 logger = structlog.get_logger(__name__)
 
@@ -47,6 +54,11 @@ def _require_ee():
 
     ensure_gee_initialized()
     return ee
+
+
+class EarthEngineMemoryError(RuntimeError):
+    """Earth Engine refused a download with "User memory limit exceeded"
+    (the request is too heavy; retrying the same request will not help)."""
 
 
 class SentinelCompositeBuilder:
@@ -76,27 +88,20 @@ class SentinelCompositeBuilder:
 
     # ── Cloud masking ─────────────────────────────────────────────────────
 
-    def _cloud_mask_scl(self, image: Any) -> Any:
+    def _mask_image(self, image: Any) -> Any:
         """
-        Mask clouds, shadows, and snow using the Sentinel-2 SCL band.
+        Mask one Sentinel-2 SR scene before compositing.
 
-        SCL values to mask:
-          3 = Cloud Shadow
-          7 = Unclassified (often thin cloud)
-          8 = Cloud medium probability
-          9 = Cloud high probability
-         10 = Thin cirrus
+        Cloud Score+ (``cs_cdf`` linked in by ``build_composite``) removes
+        cloud, haze, and cloud shadow: pixels with a clear-sky score below
+        ``GEE_CLOUD_SCORE_MIN`` are masked. SCL is still used for what
+        Cloud Score+ does not flag:
+          1 = Saturated / defective
          11 = Snow / Ice
         """
+        clear = image.select(GEE_CLOUD_SCORE_BAND).gte(GEE_CLOUD_SCORE_MIN)
         scl = image.select("SCL")
-        mask = (
-            scl.neq(3)
-            .And(scl.neq(7))
-            .And(scl.neq(8))
-            .And(scl.neq(9))
-            .And(scl.neq(10))
-            .And(scl.neq(11))
-        )
+        mask = clear.And(scl.neq(1)).And(scl.neq(11))
         return image.updateMask(mask)
 
     # ── Composite construction ────────────────────────────────────────────
@@ -109,12 +114,21 @@ class SentinelCompositeBuilder:
 
         Steps:
           1. Filter collection by AOI, date range, and cloud cover percentage.
-          2. Apply SCL-based cloud masking to each image.
+          2. Link Cloud Score+ and mask each scene (``_mask_image``).
           3. Compute median composite.
-          4. Select bands (defaults to the Prithvi bands, B2–B7; pass an
-             explicit ``bands`` list, e.g. ``["B8"]``, for other fetches —
-             this never mutates ``self._cfg.prithvi_bands``).
+          4. Select bands (defaults to the full download stack,
+             ``S2_BANDS_DOWNLOAD``; pass an explicit ``bands`` list, e.g.
+             ``["B8"]``, for other fetches), round, and cast to uint16.
+             ``CLEAR_COUNT``, if requested, is the per-pixel number of
+             unmasked scenes that went into the median.
           5. Clip to AOI.
+
+        The rounded uint16 cast loses nothing meaningful (S2 SR is integer
+        reflectance × 10000) and keeps tiles 4× smaller than the float64 a
+        median composite would otherwise produce.
+
+        Masked pixels stay masked here so server-side reducers ignore them;
+        the export methods fill them with ``S2_NODATA``.
         """
         ee = self._ee
         start_date = f"{year}-01-01"
@@ -130,7 +144,11 @@ class SentinelCompositeBuilder:
                     self._cfg.cloud_cover_max,
                 )
             )
-            .map(self._cloud_mask_scl)
+            .linkCollection(
+                ee.ImageCollection(GEE_CLOUD_SCORE_COLLECTION),
+                [GEE_CLOUD_SCORE_BAND],
+            )
+            .map(self._mask_image)
         )
 
         # Yearly median composite
@@ -142,9 +160,16 @@ class SentinelCompositeBuilder:
         else:
             composite = collection.mosaic()
 
-        # Select requested bands (default: Prithvi bands) and clip to AOI
-        select_bands = list(bands) if bands is not None else list(self._cfg.prithvi_bands)
-        composite = composite.select(select_bands).clip(aoi)
+        # Select requested bands (default: full download stack) and clip to AOI
+        select_bands = list(bands) if bands is not None else list(self._cfg.download_bands)
+        spectral = [b for b in select_bands if b != S2_BAND_CLEAR_COUNT]
+        composite = composite.select(spectral)
+        if S2_BAND_CLEAR_COUNT in select_bands:
+            clear_count = (
+                collection.select(spectral[0]).count().rename(S2_BAND_CLEAR_COUNT)
+            )
+            composite = composite.addBands(clear_count)
+        composite = composite.select(select_bands).round().toUint16().clip(aoi)
         return composite
 
     # ── GeoTIFF export ────────────────────────────────────────────────────
@@ -166,17 +191,22 @@ class SentinelCompositeBuilder:
         Uses ``ee.Image.getDownloadURL`` to stream the image as a
         single-file GeoTIFF.  Retries on transient / quota errors.
 
-        ``bands`` defaults to the Prithvi bands; pass the same band list
+        ``bands`` defaults to the full download stack; pass the same band list
         used in the matching ``build_composite()`` call (e.g. ``["B8"]``)
         for other fetches.
+
+        Masked pixels (clouds, outside the AOI) are written as ``S2_NODATA``.
         """
         ee = self._ee
         dest_path.parent.mkdir(parents=True, exist_ok=True)
+        composite = composite.unmask(S2_NODATA, False)
 
         download_params = {
-            "bands": list(bands) if bands is not None else list(self._cfg.prithvi_bands),
+            "bands": list(bands) if bands is not None else list(self._cfg.download_bands),
             "region": aoi,
-            "scale": self._cfg.scale_metres,
+            # Fixed global grid (GEE_SCALE_METRES) instead of "scale", so
+            # tiles and years share pixel boundaries.
+            "crs_transform": list(GEE_CRS_TRANSFORM),
             "crs": self._cfg.output_crs,
             "filePerBand": False,
             "format": "GEO_TIFF",
@@ -203,6 +233,8 @@ class SentinelCompositeBuilder:
                                 break
                             f.write(chunk)
 
+                # GEE tags downloads nodata=0; the fill value is S2_NODATA
+                set_nodata_tag(dest_path)
                 logger.info(
                     "GeoTIFF download completed",
                     dest=str(dest_path),
@@ -227,6 +259,10 @@ class SentinelCompositeBuilder:
                 )
             
                 # Don't retry invalid requests
+                if exc.code == 400 and "memory limit" in body.lower():
+                    raise EarthEngineMemoryError(
+                        f"Earth Engine rejected the request (HTTP 400): {body}"
+                    ) from exc
                 if exc.code == 400:
                     raise RuntimeError(
                         f"Earth Engine rejected the request (HTTP 400): {body}"
@@ -291,6 +327,58 @@ class SentinelCompositeBuilder:
             f"GeoTIFF download failed after {max_retries} attempts: {last_error}"
         )
 
+    def export_geotiff_split(
+        self,
+        composite: Any,
+        bbox: Tuple[float, float, float, float],
+        dest_path: Path,
+        max_splits: int = 2,
+        **kwargs: Any,
+    ) -> Path:
+        """``export_geotiff`` for a bbox, falling back to 2 × 2 parts.
+
+        When Earth Engine answers "User memory limit exceeded", the bbox is
+        downloaded as four quarters (recursively, up to ``max_splits``
+        levels = 16 parts) and stitched locally into ``dest_path``. All parts
+        use the same fixed global pixel grid, so the result is identical to
+        a single download.
+        """
+        try:
+            return self.export_geotiff(
+                composite, self.build_aoi_from_bbox(*bbox), dest_path, **kwargs
+            )
+        except EarthEngineMemoryError:
+            if max_splits <= 0:
+                raise
+            logger.warning(
+                "Memory limit — downloading tile in 4 parts",
+                dest=str(dest_path),
+                levels_left=max_splits - 1,
+            )
+
+        west, south, east, north = bbox
+        mid_x, mid_y = (west + east) / 2, (south + north) / 2
+        quarters = [
+            (west, south, mid_x, mid_y),
+            (mid_x, south, east, mid_y),
+            (west, mid_y, mid_x, north),
+            (mid_x, mid_y, east, north),
+        ]
+        parts = [
+            dest_path.with_name(f"{dest_path.stem}.part{i}{dest_path.suffix}")
+            for i in range(len(quarters))
+        ]
+        try:
+            for quarter, part in zip(quarters, parts):
+                self.export_geotiff_split(
+                    composite, quarter, part, max_splits=max_splits - 1, **kwargs
+                )
+            mosaic_geotiffs(parts, dest_path)
+        finally:
+            for part in parts:
+                part.unlink(missing_ok=True)
+        return dest_path
+
     # ──────────────────────────────────────────────────────────────────────────────
     # Google Drive Export
     # ──────────────────────────────────────────────────────────────────────────────
@@ -315,8 +403,14 @@ class SentinelCompositeBuilder:
 
         ee = self._ee
 
-        if scale is None:
-            scale = self._cfg.scale_metres
+        # Same pixel grid and nodata convention as export_geotiff();
+        # an explicit ``scale`` overrides the fixed grid.
+        grid = (
+            {"scale": scale}
+            if scale is not None
+            else {"crsTransform": list(GEE_CRS_TRANSFORM)}
+        )
+        composite = composite.unmask(S2_NODATA, False)
 
         description = f"lake_{lake_id:06d}_{year}"
         file_prefix = f"lake_{lake_id:06d}"
@@ -327,8 +421,8 @@ class SentinelCompositeBuilder:
             folder=folder,
             fileNamePrefix=file_prefix,
             region=aoi,
-            scale=scale,
             crs=self._cfg.output_crs,
+            **grid,
             maxPixels=1e13,
             fileFormat="GeoTIFF",
             formatOptions={
@@ -461,7 +555,6 @@ class SentinelCompositeBuilder:
             lake_id=lake_id,
             year=year,
             folder=self._cfg.drive_folder,
-            scale=self._cfg.scale_metres,
         )
 
         self.wait_for_drive_export(

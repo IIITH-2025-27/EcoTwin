@@ -263,11 +263,28 @@ export default function MergeTilesModal({ onClose }: MergeTilesModalProps) {
                   <FolderOutput className="h-3.5 w-3.5 text-slate-400" />
                   Output location
                 </div>
-                <p className="font-mono text-[11px] leading-relaxed text-slate-400">
-                  {dataRoot}/
-                  <span className="text-amber-400">{'{year}'}</span>/lake_
-                  <span className="text-amber-400">{'{lake_id}'}</span>.tif
-                </p>
+                {selectedYears.length === 0 ? (
+                  <p className="font-mono text-[11px] leading-relaxed text-slate-400">
+                    {dataRoot}/
+                    <span className="text-amber-400">{'{year}'}</span>/lake_
+                    <span className="text-amber-400">{'{lake_id}'}</span>.tif
+                  </p>
+                ) : (
+                  // Each year can be stored on a different drive
+                  <ul className="space-y-0.5">
+                    {availableYears
+                      .filter((y) => selectedYears.includes(y.year))
+                      .map((y) => (
+                        <li
+                          key={y.year}
+                          className="truncate font-mono text-[11px] leading-relaxed text-slate-400"
+                          title={y.output_path_pattern}
+                        >
+                          {y.output_path_pattern}
+                        </li>
+                      ))}
+                  </ul>
+                )}
                 {selectedSummary && (
                   <p className="mt-1.5 text-[10px] text-slate-500">
                     Selected: {selectedSummary}

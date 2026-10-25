@@ -21,7 +21,8 @@ class GenerateLakeFeaturesRequest(BaseModel):
         default=False,
         description=(
             "When true, re-compute and overwrite existing feature rows. "
-            "When false, skip lakes that already have completed features."
+            "When false, skip lake-years whose current-version features are "
+            "newer than their merged image."
         ),
     )
 
@@ -37,7 +38,7 @@ class GenerateLakeFeaturesResponse(BaseModel):
 class LakeFeatureProgressResponse(BaseModel):
     """Real-time progress of the running (or last completed) feature pipeline."""
 
-    status: Literal["idle", "running", "done", "failed"]
+    status: Literal["idle", "running", "cancelling", "done", "failed", "cancelled"]
     total: int = 0
     processed: int = 0
     skipped: int = 0

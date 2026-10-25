@@ -2,7 +2,7 @@
 
 Implements a pure-NumPy GLCM computation without external dependencies
 like scikit-image.  The GLCM is computed on a configurable band
-(default: NIR-proxy B5), quantised to configurable grey levels,
+(default: NIR, B8), quantised to configurable grey levels,
 averaged over 4 orientations (0°, 45°, 90°, 135°) at a configurable
 distance.
 
@@ -182,7 +182,7 @@ def compute_glcm_features(
     ----------
     bands : (C, H, W) float32 array
     nodata : nodata sentinel value
-    band_index : which band to use (default 3 = B5 / NIR proxy)
+    band_index : which band to use (default GLCM_BAND_INDEX = B8 / NIR)
     num_levels : number of grey levels for quantisation
 
     Returns

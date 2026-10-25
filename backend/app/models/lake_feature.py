@@ -104,9 +104,8 @@ class LakeFeature(Base):
     b7_median = Column(Double, nullable=True)
 
     # ── Sentinel-2 Band Statistics (B8, NIR) ────────────────────────────────
-    # Fetched separately from B2-B7 — B8 is not part of the Prithvi band set
-    # used for embeddings, so it has its own dedicated acquisition pass.
-    # See app/services/b8_feature_generator.py.
+    # Part of the main download stack; lake_feature_generator fills these
+    # and sets b8_status (the separate "Fetch B8" pass was removed).
     # Plain text, not the lake_feature_status enum — kept independent of the
     # main pipeline's status type/state machine on purpose.
     b8_status = Column(
@@ -120,6 +119,41 @@ class LakeFeature(Base):
     b8_min = Column(Double, nullable=True)
     b8_max = Column(Double, nullable=True)
     b8_median = Column(Double, nullable=True)
+
+    # ── Sentinel-2 Band Statistics (B1, B8A, B11, B12) ────────────────────
+    # B1 coastal aerosol (water quality); narrow NIR + SWIR1/SWIR2: Prithvi
+    # input bands and the SWIR indices (MNDWI, NDMI, NBR, NBR2, BSI, NDBI,
+    # AWEI).
+    b1_mean = Column(Double, nullable=True)
+    b1_std = Column(Double, nullable=True)
+    b1_min = Column(Double, nullable=True)
+    b1_max = Column(Double, nullable=True)
+    b1_median = Column(Double, nullable=True)
+
+    b8a_mean = Column(Double, nullable=True)
+    b8a_std = Column(Double, nullable=True)
+    b8a_min = Column(Double, nullable=True)
+    b8a_max = Column(Double, nullable=True)
+    b8a_median = Column(Double, nullable=True)
+
+    b11_mean = Column(Double, nullable=True)
+    b11_std = Column(Double, nullable=True)
+    b11_min = Column(Double, nullable=True)
+    b11_max = Column(Double, nullable=True)
+    b11_median = Column(Double, nullable=True)
+
+    b12_mean = Column(Double, nullable=True)
+    b12_std = Column(Double, nullable=True)
+    b12_min = Column(Double, nullable=True)
+    b12_max = Column(Double, nullable=True)
+    b12_median = Column(Double, nullable=True)
+
+    # ── Composite Quality ─────────────────────────────────────────────────
+    # Cloud-free scenes per pixel behind the yearly median (CLEAR_COUNT band),
+    # over valid lake pixels. Low values flag unreliable composites.
+    clear_obs_mean = Column(Double, nullable=True)
+    clear_obs_min = Column(Double, nullable=True)
+    clear_obs_median = Column(Double, nullable=True)
 
     # ── Vegetation Indices ────────────────────────────────────────────────
     ndvi_mean = Column(Double, nullable=True)

@@ -3,6 +3,8 @@ import { apiClient } from './client';
 export interface GenerateEmbeddingsRequest {
   lake_ids: number[] | null;
   years: number[];
+  /** Lake share of the combined embedding; null = weight already in use. */
+  lake_weight?: number | null;
   confirmed: true;
 }
 
@@ -15,6 +17,8 @@ export interface GenerateEmbeddingsResponse {
 export interface MergeEmbeddingsRequest {
   years: number[];
   country: string;
+  /** w in normalize(w·lake + (1−w)·shore), 0–1. */
+  lake_weight: number;
   confirmed: true;
 }
 
@@ -35,10 +39,11 @@ export interface MergeEmbeddingProgress {
   skipped: number;
   current_lake_id: number | null;
   current_year: number | null;
+  lake_weight: number | null;
   errors: string[];
 }
 
-export type EmbeddingStatus = 'idle' | 'running' | 'done' | 'failed' | 'cancelled';
+export type EmbeddingStatus = 'idle' | 'running' | 'cancelling' | 'done' | 'failed' | 'cancelled';
 
 export interface EmbeddingProgressResponse {
   status: EmbeddingStatus;
@@ -50,11 +55,29 @@ export interface EmbeddingProgressResponse {
   current_lake_id: number | null;
   current_year: number | null;
   current_step: string | null;
+  /** Lake weight the run blends with. */
+  lake_weight: number | null;
   errors: string[];
 }
 
-export interface AvailableEmbeddingYearsResponse {
+export interface LakeWeightCount {
+  lake_weight: number;
+  lakes: number;
+}
+
+export interface EmbeddingYearInfo {
+  year: number;
+  lakes: number;
+  weights: LakeWeightCount[];
+}
+
+export interface EmbeddingMergeOptions {
   years: number[];
+  year_details: EmbeddingYearInfo[];
+  /** Weight most stored embeddings use (new embeddings use it too). */
+  current_lake_weight: number | null;
+  /** EMBEDDING_LAKE_WEIGHT setting. */
+  default_lake_weight: number;
 }
 
 export async function startEmbeddingGeneration(
@@ -69,10 +92,9 @@ export async function getEmbeddingProgress(): Promise<EmbeddingProgressResponse>
   return data;
 }
 
-export async function getAvailableEmbeddingYears(): Promise<number[]> {
-  const { data } = await apiClient.get<AvailableEmbeddingYearsResponse>('/embeddings/merge/options', {
-  });
-  return data.years;
+export async function getEmbeddingMergeOptions(): Promise<EmbeddingMergeOptions> {
+  const { data } = await apiClient.get<EmbeddingMergeOptions>('/embeddings/merge/options');
+  return data;
 }
 
 export async function mergeEmbeddings(request: MergeEmbeddingsRequest): Promise<MergeEmbeddingsResponse> {

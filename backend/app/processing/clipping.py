@@ -12,6 +12,7 @@ from typing import Any, Optional
 
 import numpy as np
 import rasterio
+from rasterio.features import geometry_mask
 from rasterio.mask import mask as rasterio_mask
 from shapely.geometry import mapping
 from shapely.ops import transform as shapely_transform
@@ -29,6 +30,7 @@ class ClippedRaster:
     transform: Any            # rasterio Affine
     crs: Any                  # rasterio CRS
     nodata: Optional[float]   # nodata sentinel value
+    lake_mask: np.ndarray     # (H, W) bool, True for pixels inside the polygon
     pixel_size_x: float       # pixel width in CRS units
     pixel_size_y: float       # pixel height in CRS units (absolute)
     band_count: int
@@ -91,6 +93,10 @@ def clip_raster_to_polygon(
         )
 
         nodata_val = src.nodata if src.nodata is not None else 0
+        # Same pixel-centre rule as rasterio_mask (all_touched=False)
+        lake_mask = ~geometry_mask(
+            [geojson_geom], out_shape=clipped.shape[1:], transform=clipped_transform
+        )
         pixel_size_x = abs(clipped_transform.a)
         pixel_size_y = abs(clipped_transform.e)
 
@@ -106,6 +112,7 @@ def clip_raster_to_polygon(
             transform=clipped_transform,
             crs=raster_crs,
             nodata=float(nodata_val) if nodata_val is not None else None,
+            lake_mask=lake_mask,
             pixel_size_x=pixel_size_x,
             pixel_size_y=pixel_size_y,
             band_count=clipped.shape[0],

@@ -11,7 +11,9 @@ Loading follows the official Prithvi inference.py pattern:
 
 Architecture overview
 ─────────────────────
-Prithvi-100M is a ViT pre-trained as a Masked Autoencoder on Sentinel-2.
+Prithvi-100M is a ViT pre-trained as a Masked Autoencoder on HLS L30
+(Harmonized Landsat, 30 m): Blue, Green, Red, Narrow NIR, SWIR1, SWIR2 —
+fed here from Sentinel-2 B2, B3, B4, B8A, B11, B12.
 
     Input  : (B, C, T, H, W)  — batch × bands × time-steps × height × width
     Output : (B, 1+num_tokens, 768)  — CLS + spatial patch embeddings
@@ -152,6 +154,49 @@ class PrithviEncoder:
             logger.error(msg)
             raise RuntimeError(msg)
         return self._encoder(x, mask_ratio=0.0)
+
+    def encode_tokens(self, x, keep_idx):
+        """Encode only the selected patch tokens of one window.
+
+        Mirrors ``PrithviViT.forward`` but replaces random masking with a
+        fixed token subset — the same "encoder sees a subset of tokens"
+        regime the MAE was pre-trained in (it saw 25 %). Tokens left out
+        (far-away land, nodata) neither enter attention nor the output.
+
+        Args:
+            x:        Tensor (1, C, T, H, W), already normalised.
+            keep_idx: 1-D LongTensor of token indices (row-major over the
+                      H/16 × W/16 grid) to encode.
+
+        Returns:
+            Tensor (len(keep_idx), embed_dim): final-layer, layer-normed
+            token embeddings in ``keep_idx`` order (CLS excluded).
+        """
+        import torch  # noqa: PLC0415
+
+        if not self._ready:
+            msg = "PrithviEncoder was not built successfully"
+            logger.error(msg)
+            raise RuntimeError(msg)
+
+        enc = self._encoder
+        if enc.temporal_encoding or enc.location_encoding:
+            raise RuntimeError("encode_tokens does not support coords encoding")
+
+        if x.shape[-3:] != enc.patch_embed.input_size:
+            pos_embed = enc._get_pos_embed(x)
+        else:
+            pos_embed = enc.pos_embed
+
+        tokens = enc.patch_embed(x) + pos_embed[:, 1:, :]   # (1, L, D)
+        tokens = tokens[:, keep_idx, :]                     # (1, K, D)
+
+        cls = (enc.cls_token + pos_embed[:, :1, :]).expand(tokens.shape[0], -1, -1)
+        h = torch.cat((cls, tokens), dim=1)
+        for block in enc.blocks:
+            h = block(h)
+        h = enc.norm(h)
+        return h[0, 1:, :]
 
     def eval(self):
         if self._backbone is not None:

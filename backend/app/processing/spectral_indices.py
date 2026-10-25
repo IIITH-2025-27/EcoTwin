@@ -1,16 +1,14 @@
 """Compute spectral indices from Sentinel-2 bands.
 
-The merged GeoTIFFs contain 6 Prithvi bands in order:
-  Band 0 → B2 (Blue)
-  Band 1 → B3 (Green)
-  Band 2 → B4 (Red)
-  Band 3 → B5 (Red Edge / NIR proxy)
-  Band 4 → B6 (Red Edge 2)
-  Band 5 → B7 (Red Edge 3 / SWIR proxy)
+The merged GeoTIFFs contain the S2_BANDS_DOWNLOAD stack in order:
+  Band 0 → B2  (Blue)          Band 5 → B7  (Red Edge 3)
+  Band 1 → B3  (Green)         Band 6 → B8  (NIR, broad)
+  Band 2 → B4  (Red)           Band 7 → B8A (NIR, narrow)
+  Band 3 → B5  (Red Edge 1)    Band 8 → B11 (SWIR1)
+  Band 4 → B6  (Red Edge 2)    Band 9 → B12 (SWIR2)
 
-Since B8 (NIR), B11 (SWIR1), B12 (SWIR2) are absent from the merged
-images, B5 is used as the NIR proxy and B7 as the SWIR proxy — consistent
-with the existing Prithvi pipeline approach.
+The per-index functions expect surface reflectance in [0, 1];
+``compute_all_indices`` converts from the stored ×10000 scale first.
 """
 
 from __future__ import annotations
@@ -24,9 +22,12 @@ from app.processing.constants import (
     EPSILON,
     GREEN,
     NIR,
-    RE2,
+    NIR_NARROW,
+    RE1,
     RED,
-    SWIR,
+    REFLECTANCE_SCALE,
+    SWIR1,
+    SWIR2,
 )
 
 
@@ -68,24 +69,24 @@ def _get_valid_mask(
 # ── Individual Index Functions ─────────────────────────────────────────────────
 
 def compute_ndvi(bands: np.ndarray) -> np.ndarray:
-    """NDVI = (NIR - RED) / (NIR + RED)"""
+    """NDVI = (B8 - B4) / (B8 + B4)"""
     return _safe_divide(bands[NIR] - bands[RED], bands[NIR] + bands[RED])
 
 
 def compute_evi(bands: np.ndarray) -> np.ndarray:
-    """EVI = 2.5 × (NIR - RED) / (NIR + 6×RED - 7.5×BLUE + 1)"""
+    """EVI = 2.5 × (B8 - B4) / (B8 + 6×B4 - 7.5×B2 + 1)   (reflectance)"""
     denom = bands[NIR] + 6.0 * bands[RED] - 7.5 * bands[BLUE] + 1.0
     return _safe_divide(2.5 * (bands[NIR] - bands[RED]), denom)
 
 
 def compute_savi(bands: np.ndarray, L: float = 0.5) -> np.ndarray:
-    """SAVI = ((NIR - RED) / (NIR + RED + L)) × (1 + L)"""
+    """SAVI = ((B8 - B4) / (B8 + B4 + L)) × (1 + L)   (reflectance)"""
     denom = bands[NIR] + bands[RED] + L
     return _safe_divide((bands[NIR] - bands[RED]) * (1.0 + L), denom)
 
 
 def compute_msavi(bands: np.ndarray) -> np.ndarray:
-    """MSAVI = (2×NIR + 1 - sqrt((2×NIR+1)² - 8×(NIR-RED))) / 2"""
+    """MSAVI = (2×B8 + 1 - sqrt((2×B8+1)² - 8×(B8-B4))) / 2   (reflectance)"""
     nir, red = bands[NIR], bands[RED]
     inner = (2.0 * nir + 1.0) ** 2 - 8.0 * (nir - red)
     inner = np.maximum(inner, 0.0)  # clamp negatives before sqrt
@@ -93,58 +94,60 @@ def compute_msavi(bands: np.ndarray) -> np.ndarray:
 
 
 def compute_gci(bands: np.ndarray) -> np.ndarray:
-    """GCI = (NIR / GREEN) - 1"""
+    """GCI = (B8 / B3) - 1"""
     return (_safe_divide(bands[NIR], bands[GREEN]) - 1.0).astype(np.float32)
 
 
 def compute_ndre(bands: np.ndarray) -> np.ndarray:
-    """NDRE = (NIR - RE2) / (NIR + RE2)"""
-    return _safe_divide(bands[NIR] - bands[RE2], bands[NIR] + bands[RE2])
+    """NDRE = (B8A - B5) / (B8A + B5)"""
+    return _safe_divide(
+        bands[NIR_NARROW] - bands[RE1], bands[NIR_NARROW] + bands[RE1]
+    )
 
 
 def compute_ndwi(bands: np.ndarray) -> np.ndarray:
-    """NDWI = (GREEN - NIR) / (GREEN + NIR)"""
+    """NDWI (McFeeters) = (B3 - B8) / (B3 + B8)"""
     return _safe_divide(bands[GREEN] - bands[NIR], bands[GREEN] + bands[NIR])
 
 
 def compute_mndwi(bands: np.ndarray) -> np.ndarray:
-    """MNDWI = (GREEN - SWIR) / (GREEN + SWIR)"""
-    return _safe_divide(bands[GREEN] - bands[SWIR], bands[GREEN] + bands[SWIR])
+    """MNDWI (Xu) = (B3 - B11) / (B3 + B11)"""
+    return _safe_divide(bands[GREEN] - bands[SWIR1], bands[GREEN] + bands[SWIR1])
 
 
 def compute_ndmi(bands: np.ndarray) -> np.ndarray:
-    """NDMI = (NIR - SWIR) / (NIR + SWIR)"""
-    return _safe_divide(bands[NIR] - bands[SWIR], bands[NIR] + bands[SWIR])
+    """NDMI = (B8 - B11) / (B8 + B11)"""
+    return _safe_divide(bands[NIR] - bands[SWIR1], bands[NIR] + bands[SWIR1])
 
 
 def compute_awei(bands: np.ndarray) -> np.ndarray:
-    """AWEI = 4×(GREEN - SWIR) - (0.25×NIR + 2.75×SWIR)"""
+    """AWEInsh = 4×(B3 - B11) - (0.25×B8 + 2.75×B12)   (reflectance)"""
     return (
-        4.0 * (bands[GREEN] - bands[SWIR])
-        - (0.25 * bands[NIR] + 2.75 * bands[SWIR])
+        4.0 * (bands[GREEN] - bands[SWIR1])
+        - (0.25 * bands[NIR] + 2.75 * bands[SWIR2])
     ).astype(np.float32)
 
 
 def compute_nbr(bands: np.ndarray) -> np.ndarray:
-    """NBR = (NIR - SWIR) / (NIR + SWIR)"""
-    return _safe_divide(bands[NIR] - bands[SWIR], bands[NIR] + bands[SWIR])
+    """NBR = (B8 - B12) / (B8 + B12)"""
+    return _safe_divide(bands[NIR] - bands[SWIR2], bands[NIR] + bands[SWIR2])
 
 
 def compute_nbr2(bands: np.ndarray) -> np.ndarray:
-    """NBR2 = (RE2 - SWIR) / (RE2 + SWIR)"""
-    return _safe_divide(bands[RE2] - bands[SWIR], bands[RE2] + bands[SWIR])
+    """NBR2 = (B11 - B12) / (B11 + B12)"""
+    return _safe_divide(bands[SWIR1] - bands[SWIR2], bands[SWIR1] + bands[SWIR2])
 
 
 def compute_bsi(bands: np.ndarray) -> np.ndarray:
-    """BSI = ((SWIR + RED) - (NIR + BLUE)) / ((SWIR + RED) + (NIR + BLUE))"""
-    num = (bands[SWIR] + bands[RED]) - (bands[NIR] + bands[BLUE])
-    den = (bands[SWIR] + bands[RED]) + (bands[NIR] + bands[BLUE])
+    """BSI = ((B11 + B4) - (B8 + B2)) / ((B11 + B4) + (B8 + B2))"""
+    num = (bands[SWIR1] + bands[RED]) - (bands[NIR] + bands[BLUE])
+    den = (bands[SWIR1] + bands[RED]) + (bands[NIR] + bands[BLUE])
     return _safe_divide(num, den)
 
 
 def compute_ndbi(bands: np.ndarray) -> np.ndarray:
-    """NDBI = (SWIR - NIR) / (SWIR + NIR)"""
-    return _safe_divide(bands[SWIR] - bands[NIR], bands[SWIR] + bands[NIR])
+    """NDBI = (B11 - B8) / (B11 + B8)"""
+    return _safe_divide(bands[SWIR1] - bands[NIR], bands[SWIR1] + bands[NIR])
 
 
 # ── Aggregate Functions ────────────────────────────────────────────────────────
@@ -175,7 +178,7 @@ def compute_all_indices(
 
     Parameters
     ----------
-    bands : (6, H, W) float32 array
+    bands : (NUM_BANDS, H, W) float32 array, raw ×10000 reflectance
     nodata : nodata sentinel value
 
     Returns
@@ -183,10 +186,11 @@ def compute_all_indices(
     Dict mapping index name → (H, W) float32 array (NaN where invalid).
     """
     valid = _get_valid_mask(bands, nodata)
+    reflectance = bands / REFLECTANCE_SCALE
     results: Dict[str, np.ndarray] = {}
 
     for name, fn in _INDEX_FUNCTIONS.items():
-        arr = fn(bands)
+        arr = fn(reflectance)
         arr[~valid] = np.nan
         results[name] = arr
 

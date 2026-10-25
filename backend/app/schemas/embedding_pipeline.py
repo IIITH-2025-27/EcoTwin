@@ -24,6 +24,16 @@ class GenerateEmbeddingsRequest(BaseModel):
         min_length=1,
         description="List of years to generate embeddings for.",
     )
+    lake_weight: Optional[float] = Field(
+        default=None,
+        ge=0.0,
+        le=1.0,
+        description=(
+            "Lake share w of the combined embedding normalize(w·lake + "
+            "(1−w)·shore). Null = the weight the stored embeddings already "
+            "use (keeps all lake-years comparable), else EMBEDDING_LAKE_WEIGHT."
+        ),
+    )
     confirmed: bool = Field(
         ...,
         description="Must be true to start the pipeline.",
@@ -62,11 +72,20 @@ class MergeEmbeddingsRequest(BaseModel):
     years: List[int] = Field(
         ...,
         min_length=1,
-        description="List of years to aggregate embeddings for.",
+        description="List of years to re-blend embeddings for.",
     )
     country: str = Field(
         default="India",
         description="Country to merge embeddings for. Currently India is supported.",
+    )
+    lake_weight: Optional[float] = Field(
+        default=None,
+        ge=0.0,
+        le=1.0,
+        description=(
+            "Weight of the lake part in normalize(w·lake + (1−w)·shore). "
+            "Defaults to EMBEDDING_LAKE_WEIGHT."
+        ),
     )
     confirmed: bool = Field(
         ...,
@@ -119,19 +138,44 @@ class MergeEmbeddingProgressResponse(BaseModel):
     skipped: int
     current_lake_id: Optional[int] = None
     current_year: Optional[int] = None
+    lake_weight: Optional[float] = None
     errors: List[str] = Field(default_factory=list)
 
 
+class LakeWeightCount(BaseModel):
+    """How many lake-years of a year use a given lake weight."""
+
+    lake_weight: float
+    lakes: int
+
+
+class EmbeddingYearInfo(BaseModel):
+    """Stored lake / shore embeddings of one year."""
+
+    year: int
+    lakes: int = Field(description="Lake-years with lake / shore parts stored.")
+    weights: List[LakeWeightCount] = Field(
+        default_factory=list,
+        description="Lake weights in use (lake-years without a shore part are lake-only).",
+    )
+
+
 class AvailableEmbeddingYearsResponse(BaseModel):
-    """Years with completed embeddings available for a region."""
+    """Years with lake / shore embeddings available for re-blending."""
 
     years: List[int]
+    year_details: List[EmbeddingYearInfo] = Field(default_factory=list)
+    current_lake_weight: Optional[float] = Field(
+        default=None,
+        description="Weight most stored embeddings use; new embeddings use it too.",
+    )
+    default_lake_weight: float = Field(description="EMBEDDING_LAKE_WEIGHT setting.")
 
 
 class EmbeddingProgressResponse(BaseModel):
     """Real-time progress of the running (or last completed) embedding pipeline."""
 
-    status: Literal["idle", "running", "done", "failed", "cancelled"]
+    status: Literal["idle", "running", "cancelling", "done", "failed", "cancelled"]
     total: int
     processed: int
     success: int
@@ -140,4 +184,5 @@ class EmbeddingProgressResponse(BaseModel):
     current_lake_id: Optional[int] = None
     current_year: Optional[int] = None
     current_step: Optional[str] = None
+    lake_weight: Optional[float] = None
     errors: List[str] = Field(default_factory=list)

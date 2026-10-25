@@ -1,21 +1,15 @@
 """Ecological index computation from Sentinel-2 band means.
 
-Computes indices from the band set available per lake-year: B2-B7 (always,
-from the merged imagery pipeline) plus B8 (NIR, when
-``lake_features.b8_status == 'completed'`` — fetched separately via
-``app/services/b8_feature_generator.py``, server-side reduceRegions, no
-raster download).
+Computes indices from the per-lake-year band means in ``lake_features``.
+B8 (NIR) comes from the main download stack (computed by
+``lake_feature_generator``); legacy rows from B2-B7-only imagery have no B8.
 
-NDVI and NDWI use the *standard* formulas with true NIR (B8) now that it's
-available — previously these were B7-based proxies (B7 = Red Edge 3,
-783nm) because B8 hadn't been fetched at all. NDCI, Turbidity Ratio, and
-Red Edge Slope never needed NIR and are unchanged.
+NDVI and NDWI use the standard formulas with true NIR (B8). NDCI,
+Turbidity Ratio, and Red Edge Slope use only visible / red-edge bands.
 
-Each index is computed independently: a lake-year missing B8 (not yet
-fetched, or fetch failed) still gets NDCI/Turbidity/Red-Edge-Slope — only
-NDVI and NDWI become ``None`` for that row, rather than the whole result
-going empty. This matters because B8 backfill lags behind the main B2-B7
-pipeline for many lake-years.
+Each index is computed independently: a lake-year missing B8 still gets
+NDCI/Turbidity/Red-Edge-Slope — only NDVI and NDWI become ``None`` for
+that row, rather than the whole result going empty.
 
 All formulas use the **mean** reflectance value of each band per
 lake-year, as required by the forecasting spec.

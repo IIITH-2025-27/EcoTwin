@@ -75,8 +75,12 @@ def generate_tile_grid(
             cell = box(x, y, x + tile_size_m, y + tile_size_m)
 
             if cell.intersects(projected_geom):
-                # Reproject tile to EPSG:4326
-                cell_4326 = transform(to_4326, cell)
+                # Trim the tile to the bounding box of the part of the
+                # buffered lake it covers, so small lakes don't download a
+                # full tile of empty (nodata) pixels. The union of trimmed
+                # tiles still covers the whole buffered polygon.
+                covered = box(*cell.intersection(projected_geom).bounds)
+                cell_4326 = transform(to_4326, covered)
                 tile_bounds = cell_4326.bounds  # (minx, miny, maxx, maxy)
 
                 tiles.append(

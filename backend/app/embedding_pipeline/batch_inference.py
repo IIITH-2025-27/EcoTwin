@@ -1,30 +1,46 @@
 """
-GPU-batched Prithvi inference for grid cells.
+Prithvi inference and lake / shore pooling.
 
-Processes multiple (C, H, W) arrays in a single forward pass to
-maximise GPU utilisation.  Reuses the model singleton from
-``prithvi_inference.py`` — the encoder is loaded only once per process.
+Encodes the lake + shore tokens of each window (see ``lake_tokens``) and
+pools the final-layer token embeddings into two vectors per lake-year:
+
+  lake  = Σ lake_frac_t  · v_t / Σ lake_frac_t     → L2-normalised
+  shore = Σ shore_frac_t · v_t / Σ shore_frac_t    → L2-normalised
+
+where the fractions count valid (cloud-free) pixels only. Edge tokens that
+straddle the shoreline contribute to both in proportion. The single
+embedding used by similarity and forecasting is ``blend(lake, shore, w)``.
+
+Reuses the encoder singleton from ``prithvi_inference.py`` — the model is
+loaded only once per process.
 """
 
 from __future__ import annotations
 
-import math
-from typing import List
+from dataclasses import dataclass
+from typing import Optional
 
 import numpy as np
 import structlog
 
-from app.ML_pipeline.constants import PRITHVI_EMBEDDING_DIM, PRITHVI_PATCH_SIZE_PX
+from app.embedding_pipeline.lake_tokens import LakeTokens
+from app.ML_pipeline.constants import PRITHVI_EMBEDDING_DIM
 
 logger = structlog.get_logger(__name__)
 
 
-def _get_device() -> str:
-    try:
-        import torch  # noqa: PLC0415
-        return "cuda" if torch.cuda.is_available() else "cpu"
-    except ImportError:
-        return "cpu"
+@dataclass
+class LakeEmbeddingResult:
+    """Pooled embeddings for one lake-year."""
+
+    lake: np.ndarray               # (768,) L2-normalised
+    shore: Optional[np.ndarray]    # (768,) L2-normalised, None if no valid shore
+    combined: np.ndarray           # (768,) L2-normalised blend
+    lake_weight: float             # w actually used (1.0 when shore is None)
+    lake_token_weight: float       # Σ lake_frac  (≈ valid lake area in tokens)
+    shore_token_weight: float      # Σ shore_frac
+    tokens_encoded: int
+    windows: int
 
 
 def _load_encoder():
@@ -33,113 +49,83 @@ def _load_encoder():
     return _load_encoder()
 
 
-def compute_embeddings_batch(
-    cell_arrays: List[np.ndarray],
-) -> List[np.ndarray]:
-    """
-    Run Prithvi inference on a batch of cell arrays.
+def _l2(vec: np.ndarray) -> np.ndarray:
+    norm = float(np.linalg.norm(vec))
+    if not np.isfinite(norm) or norm <= 1e-12:
+        raise ValueError("Cannot L2-normalise a zero / non-finite vector")
+    return (vec / norm).astype(np.float32)
 
-    Args:
-        cell_arrays: List of (C, H, W) float32 arrays, each already
-                     normalised and resized to PRITHVI_PATCH_SIZE_PX.
 
-    Returns:
-        List of (768,) float32 L2-normalised embedding vectors.
-        Returns empty array for cells that fail inference.
+def blend(lake: np.ndarray, shore: Optional[np.ndarray], lake_weight: float) -> np.ndarray:
+    """Combined embedding: normalize(w · lake + (1 − w) · shore).
+
+    Used both by the pipeline and by re-blending from stored parts, so the
+    two always produce identical vectors. Without a shore vector the lake
+    vector is returned unchanged.
     """
+    if shore is None:
+        return _l2(lake)
+    return _l2(lake_weight * lake + (1.0 - lake_weight) * shore)
+
+
+def encode_lake_tokens(tokens: LakeTokens, lake_weight: float) -> LakeEmbeddingResult:
+    """Run Prithvi on every window's lake / shore tokens and pool them."""
     import torch  # noqa: PLC0415
 
-    if not cell_arrays:
-        return []
-
     encoder = _load_encoder()
-    device = next(encoder.parameters()).device if hasattr(encoder, "parameters") else _get_device()
+    device = next(encoder.parameters()).device
 
-    batch_size = len(cell_arrays)
-    logger.info("Batch inference started", batch_size=batch_size, device=str(device))
+    lake_sum = np.zeros(PRITHVI_EMBEDDING_DIM, dtype=np.float64)
+    shore_sum = np.zeros(PRITHVI_EMBEDDING_DIM, dtype=np.float64)
+    lake_w = 0.0
+    shore_w = 0.0
+    n_tokens = 0
 
-    # ── Stack into batch tensor ──────────────────────────────────────────
-    # Each array: (C, H, W) → target (B, C, T=1, H, W)
-    tensors = []
-    for arr in cell_arrays:
-        # Ensure correct spatial size
-        if arr.shape[1] != PRITHVI_PATCH_SIZE_PX or arr.shape[2] != PRITHVI_PATCH_SIZE_PX:
-            arr = _resize_array(arr, PRITHVI_PATCH_SIZE_PX)
-        tensors.append(torch.from_numpy(arr).float())
-
-    batch = torch.stack(tensors, dim=0)      # (B, C, H, W)
-    batch = batch.unsqueeze(2)                # (B, C, T=1, H, W)
-    batch = batch.to(device)
-
-    # ── Forward pass ─────────────────────────────────────────────────────
     with torch.no_grad():
-        output = encoder(batch)
+        for w in tokens.windows:
+            x = (
+                torch.from_numpy(w.data)   # (C, H, W)
+                .unsqueeze(0)              # (1, C, H, W)
+                .unsqueeze(2)              # (1, C, T=1, H, W)
+                .float()
+                .to(device)
+            )
+            idx = torch.from_numpy(w.keep_idx).to(device)
+            out = encoder.encode_tokens(x, idx).double().cpu().numpy()  # (K, D)
+            if not np.isfinite(out).all():
+                raise RuntimeError("Prithvi returned non-finite token embeddings")
 
-    # ── Extract embeddings ───────────────────────────────────────────────
-    # encoder returns (hidden_states, mask, ids_restore)
-    if isinstance(output, (tuple, list)):
-        hidden = output[0]
-    elif isinstance(output, torch.Tensor):
-        hidden = output
-    elif hasattr(output, "last_hidden_state"):
-        hidden = output.last_hidden_state
-    else:
-        hidden = output
+            lake_sum += (w.lake_frac[:, None] * out).sum(axis=0)
+            shore_sum += (w.shore_frac[:, None] * out).sum(axis=0)
+            lake_w += float(w.lake_frac.sum())
+            shore_w += float(w.shore_frac.sum())
+            n_tokens += len(w.keep_idx)
 
-    # hidden shape: (B, 1+num_spatial_tokens, D)
-    # Skip CLS token at index 0, mean-pool spatial tokens
-    embeddings: List[np.ndarray] = []
+    if lake_w <= 0:
+        raise ValueError("No valid lake tokens to pool")
 
-    for i in range(batch_size):
-        try:
-            if hidden.dim() == 3:
-                spatial_tokens = hidden[i, 1:, :]     # (num_tokens, D)
-                vec = spatial_tokens.mean(dim=0)       # (D,)
-            elif hidden.dim() == 2:
-                vec = hidden[i]
-            else:
-                vec = hidden[i].reshape(-1)[:PRITHVI_EMBEDDING_DIM]
-
-            vec = vec.float().cpu().numpy()
-
-            # Validate
-            if vec.size != PRITHVI_EMBEDDING_DIM or not np.isfinite(vec).all():
-                logger.warning("Invalid embedding for cell", cell_idx=i)
-                embeddings.append(np.zeros(PRITHVI_EMBEDDING_DIM, dtype=np.float32))
-                continue
-
-            # L2 normalise
-            norm = np.linalg.norm(vec) + 1e-8
-            vec = (vec / norm).astype(np.float32)
-
-            embeddings.append(vec)
-
-        except Exception as exc:
-            logger.warning("Embedding extraction failed", cell_idx=i, error=str(exc))
-            embeddings.append(np.zeros(PRITHVI_EMBEDDING_DIM, dtype=np.float32))
+    lake = _l2(lake_sum / lake_w)
+    shore = _l2(shore_sum / shore_w) if shore_w > 0 else None
+    used_weight = lake_weight if shore is not None else 1.0
+    combined = blend(lake, shore, lake_weight)
 
     logger.info(
-        "Batch inference completed",
-        batch_size=batch_size,
-        valid_embeddings=sum(1 for e in embeddings if np.any(e != 0)),
+        "Lake / shore embeddings pooled",
+        windows=len(tokens.windows),
+        tokens_encoded=n_tokens,
+        lake_token_weight=round(lake_w, 2),
+        shore_token_weight=round(shore_w, 2),
+        lake_shore_cosine=(
+            round(float(lake @ shore), 4) if shore is not None else None
+        ),
     )
-    return embeddings
-
-
-def _resize_array(arr: np.ndarray, target: int) -> np.ndarray:
-    """Resize (C, H, W) to (C, target, target)."""
-    if arr.shape[1] == target and arr.shape[2] == target:
-        return arr
-    try:
-        import cv2  # noqa: PLC0415
-        return np.stack(
-            [cv2.resize(arr[c], (target, target), interpolation=cv2.INTER_LINEAR)
-             for c in range(arr.shape[0])],
-            axis=0,
-        )
-    except ImportError:
-        c, h, w = arr.shape
-        out = np.zeros((c, target, target), dtype=arr.dtype)
-        ch, cw = min(h, target), min(w, target)
-        out[:, :ch, :cw] = arr[:, :ch, :cw]
-        return out
+    return LakeEmbeddingResult(
+        lake=lake,
+        shore=shore,
+        combined=combined,
+        lake_weight=used_weight,
+        lake_token_weight=lake_w,
+        shore_token_weight=shore_w,
+        tokens_encoded=n_tokens,
+        windows=len(tokens.windows),
+    )

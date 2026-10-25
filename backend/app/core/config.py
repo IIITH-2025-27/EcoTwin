@@ -71,11 +71,6 @@ class Settings(BaseSettings):
     HYDROLAKES_SHAPEFILE_PATH: str = "" 
     INDIA_STATES_SOURCE_PATH: str = ""
 
-    # ── Lake processing grid ────────────────────────────────────────────────
-    # Grid dimensions are metres in an equal-area CRS (EPSG:6933).
-    LAKE_GRID_CELL_SIZE_METRES: int = 1_000
-    # Ignore a grid cell when less than this percentage is covered by lake.
-    LAKE_GRID_MIN_COVERAGE_PERCENT: float = 15.0
     # Maximum years a single sync job can span
     SYNC_MAX_YEAR_RANGE: int = 10
 
@@ -95,13 +90,20 @@ class Settings(BaseSettings):
 
     # ── Image Acquisition Pipeline ────────────────────────────────
     SENTINEL_DATA_DIR: str = "data/sentinel"
-    LAKE_IMAGERY_BUFFER_METRES: int = 1_200
-    IMAGERY_MAX_RETRIES: int = 1
-    IMAGERY_RETRY_DELAY_SEC: float = 2.0
-    IMAGERY_RETRY_BACKOFF: float = 1.0
+    # 3.5 km gives every lake grid cell Prithvi's full 224 px × 30 m
+    # (6.72 km) context window without padding.
+    LAKE_IMAGERY_BUFFER_METRES: int = 3_500
+    # Transient GEE errors (HTTP 503 / timeouts) are retried with backoff
+    IMAGERY_MAX_RETRIES: int = 3
+    IMAGERY_RETRY_DELAY_SEC: float = 5.0
+    IMAGERY_RETRY_BACKOFF: float = 2.0
     IMAGERY_DOWNLOAD_TIMEOUT_SEC: int = 600
     IMAGERY_BATCH_SIZE: int = 10
-    IMAGERY_TILE_SIZE_METRES: int = 8_500  # 9 km × 9 km tile grid
+    # Tiles are cut in EPSG:6933 but downloaded in EPSG:4326 at 30 m, so
+    # pixel counts grow with latitude. 25 km tiles with 12 uint16 bands are
+    # ≤ 20.4 MB across India (8°–35° N), under GEE's documented 32 MB
+    # getDownloadURL limit; 30 km would reach 29.4 MB at 35° N.
+    IMAGERY_TILE_SIZE_METRES: int = 25_000
     IMAGERY_DOWNLOAD_WORKERS: int = 2
     IMAGERY_LAKE_WORKERS: int = 4
 
@@ -113,8 +115,17 @@ class Settings(BaseSettings):
     USE_GEE_SERVICE_ACCOUNT: bool = True
 
     # ── Embedding Pipeline ────────────────────────────────────────
-    EMBEDDING_GPU_BATCH_SIZE: int = 8
-    EMBEDDING_MAX_WORKERS: int = 4
+    # Shoreline ring pooled into the shore embedding, outside the lake
+    # polygon. 500 m ≈ one 30 m Prithvi token and covers the lake's own
+    # water-level fluctuation zone (JRC Global Surface Water analysis).
+    EMBEDDING_SHORE_RING_METRES: int = 500
+    # Weight of the lake part in the combined embedding:
+    #   embedding = normalize(w · lake + (1 − w) · shore)
+    # Re-blendable later from the stored parts via POST /embeddings/merge.
+    EMBEDDING_LAKE_WEIGHT: float = 0.7
+    # A lake-year needs at least this many valid (cloud-free) 30 m lake
+    # pixels for a usable embedding (100 px ≈ 9 ha).
+    EMBEDDING_MIN_LAKE_PIXELS: int = 100
 
     # ── Internal helpers ──────────────────────────────────────────
 
