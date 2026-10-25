@@ -1,15 +1,24 @@
 """
 Run the per-year pipeline through the backend API, one year after another.
 
-  download thread:   fetch images for each year in turn (one download at a time)
+  download thread:   fetch images for each year in turn (one download at a time),
+                     through the backend API
   processing thread: as soon as a year's download is done →
-                     merge tiles (delete tiles) → generate embeddings → generate features
+                     merge tiles (delete tiles) → generate embeddings → generate features,
+                     each in its own short-lived Python process
+
+Processing runs outside the API server on purpose: Prithvi, merging and
+feature extraction build up several GB in a long-lived process, which got the
+server OOM-killed on an 8 GB machine. A fresh process per step frees all of
+it. (The pop-ups therefore do not show these steps' progress; this log does.)
 
 So the next year downloads while the previous one is processed. Every step
 skips work that is already done, so the script can be stopped and started
 again (e.g. with --years starting from the year that was interrupted).
 
-Usage (from backend/, with the API running on localhost:8000):
+Usage (from backend/, with the API running on localhost:8000; processing
+steps use this backend's settings, so pass the same DB environment the
+server uses, e.g. DATABASE_URL_OVERRIDE= POSTGRES_HOST=localhost):
     python scripts/run_year_pipeline.py \\
         --years 2019 2020 2021 2022 2023 2024 2025 2016 2017 \\
         --root /media/vikash/Entertainment/ecotwin_sentinel
@@ -22,11 +31,18 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import queue
+import subprocess
+import sys
 import threading
 import time
 import urllib.error
 import urllib.request
+from pathlib import Path
+
+BACKEND_DIR = Path(__file__).resolve().parents[1]
+PYTHON = BACKEND_DIR.parent / ".venv" / "bin" / "python"
 
 API = "http://localhost:8000/api/v1"
 POLL_SEC = 30
@@ -122,42 +138,67 @@ def download(year: int, root: str, first: bool) -> dict:
     return p
 
 
-def merge(year: int) -> dict:
-    before = get("/imagery/merge/status")
-    start("/imagery/merge", {"years": [year], "delete_tiles": True}, f"[{year}] merge")
-    log(f"[{year}] merge started (delete tiles)")
-    # The merge marks itself running only once its worker starts
-    t0 = time.time()
-    while time.time() - t0 < 120:
-        p = get("/imagery/merge/status")
-        if p.get("status") == "running" or p != before:
-            break
-        time.sleep(5)
-    p = wait_until_done("/imagery/merge/status", active=("running",))
-    log(f"[{year}] MERGE done: {counts(p, ('status', 'total', 'success', 'failed'))}")
-    for e in (p.get("errors") or [])[-10:]:
+# Each processing step: run the pipeline function in a fresh process and print
+# a JSON summary (result counts + the progress errors) as the last line.
+_STEP_CODE = {
+    "merge": (
+        "from app.image_acquisition.merge_pipeline import run_merge_pipeline as f, get_merge_progress as g\n"
+        "r = f(years=[{y}], delete_tiles=True)"
+    ),
+    "embeddings": (
+        "from app.embedding_pipeline.pipeline import run_embedding_pipeline as f, get_embedding_progress as g\n"
+        "r = f(years=[{y}])"
+    ),
+    "features": (
+        "from app.services.lake_feature_generator import generate_lake_features as f, get_feature_progress as g\n"
+        "r = f(year={y})"
+    ),
+}
+
+
+def run_step(name: str, year: int) -> dict:
+    code = (
+        "import json, logging\n"
+        + _STEP_CODE[name].format(y=year)
+        + "\np = g()\n"
+        + "print('__RESULT__' + json.dumps({**r, 'status': p.get('status'), 'errors': p.get('errors', [])[-20:]}))\n"
+    )
+    log(f"[{year}] {name} started (separate process)")
+    proc = subprocess.run(
+        [str(PYTHON), "-c", code],
+        cwd=BACKEND_DIR,
+        env=os.environ.copy(),
+        capture_output=True,
+        text=True,
+    )
+    result = None
+    for line in proc.stdout.splitlines():
+        if line.startswith("__RESULT__"):
+            result = json.loads(line[len("__RESULT__"):])
+    if result is None:
+        tail = (proc.stderr or proc.stdout)[-800:]
+        raise RuntimeError(f"exit code {proc.returncode}: {tail}")
+    keys = {
+        "merge": ("status", "success", "skipped", "failed"),
+        "embeddings": ("status", "success", "skipped", "failed"),
+        "features": ("status", "total", "processed", "skipped", "failed"),
+    }[name]
+    log(f"[{year}] {name.upper()} done: {counts(result, keys)}")
+    for e in (result.get("errors") or [])[-10:]:
         log(f"[{year}]   error: {e[:200]}")
-    return p
+    return result
 
 
-def embeddings(year: int) -> dict:
-    start("/embeddings/generate", {"years": [year], "lake_ids": None, "confirmed": True}, f"[{year}] embeddings")
-    log(f"[{year}] embeddings started")
-    p = wait_until_done("/embeddings/status")
-    log(f"[{year}] EMBEDDINGS done: {counts(p, ('status', 'total', 'success', 'skipped', 'failed', 'lake_weight'))}")
-    for e in (p.get("errors") or [])[-10:]:
-        log(f"[{year}]   error: {e[:200]}")
-    return p
-
-
-def features(year: int) -> dict:
-    start("/lake-features/generate", {"year": year, "overwrite": False}, f"[{year}] features")
-    log(f"[{year}] features started")
-    p = wait_until_done("/lake-features/status")
-    log(f"[{year}] FEATURES done: {counts(p, ('status', 'total', 'processed', 'skipped', 'failed'))}")
-    for e in (p.get("errors") or [])[-10:]:
-        log(f"[{year}]   error: {e[:200]}")
-    return p
+def remove_empty_tile_dirs(year: int, root: str) -> None:
+    """The merge deletes tile files but leaves their (empty) folders."""
+    year_dir = Path(root) / str(year)
+    removed = 0
+    for d in year_dir.glob("lake_*"):
+        if d.is_dir() and not any(d.iterdir()):
+            d.rmdir()
+            removed += 1
+    if removed:
+        log(f"[{year}] removed {removed} empty tile folders")
 
 
 # ── Threads ───────────────────────────────────────────────────────────────
@@ -176,18 +217,20 @@ def download_worker(years, root, ready: queue.Queue) -> None:
     ready.put(None)
 
 
-def processing_worker(ready: queue.Queue) -> None:
+def processing_worker(ready: queue.Queue, root: str) -> None:
     while True:
         year = ready.get()
         if year is None:
             return
         t0 = time.time()
-        for name, step in (("merge", merge), ("embeddings", embeddings), ("features", features)):
+        for name in ("merge", "embeddings", "features"):
             try:
-                summary[year][name] = step(year)
+                summary[year][name] = run_step(name, year)
             except Exception as exc:
                 log(f"[{year}] {name.upper()} crashed: {exc}")
                 summary[year][name] = {"status": f"crashed: {exc}"}
+            if name == "merge":
+                remove_empty_tile_dirs(year, root)
         summary[year]["process_min"] = round((time.time() - t0) / 60)
         log(f"[{year}] YEAR COMPLETE (processing {summary[year]['process_min']} min)")
 
@@ -202,7 +245,7 @@ def main() -> None:
     ready: queue.Queue = queue.Queue()
     threads = [
         threading.Thread(target=download_worker, args=(args.years, args.root, ready), name="download"),
-        threading.Thread(target=processing_worker, args=(ready,), name="processing"),
+        threading.Thread(target=processing_worker, args=(ready, args.root), name="processing"),
     ]
     for t in threads:
         t.start()
@@ -215,7 +258,7 @@ def main() -> None:
         line = [f"{year}:"]
         for step, keys in (
             ("download", ("success", "skipped", "failed")),
-            ("merge", ("success", "failed")),
+            ("merge", ("success", "skipped", "failed")),
             ("embeddings", ("success", "skipped", "failed")),
             ("features", ("processed", "skipped", "failed")),
         ):

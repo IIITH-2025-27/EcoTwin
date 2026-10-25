@@ -36,6 +36,11 @@ from app.ML_pipeline.constants import (
 )
 from app.image_acquisition.config import ImageAcquisitionConfig
 from app.image_acquisition.merger import mosaic_geotiffs, set_nodata_tag
+from app.ML_pipeline.gee_init import (
+    current_gee_account,
+    gee_account_count,
+    rotate_gee_account,
+)
 
 logger = structlog.get_logger(__name__)
 
@@ -54,6 +59,19 @@ def _require_ee():
 
     ensure_gee_initialized()
     return ee
+
+
+# Errors that mean "this account cannot be used right now" (quota, rate
+# limit, invalid / unregistered key) rather than "this request is bad".
+_ACCOUNT_ERROR_MARKERS = (
+    "429", "too many requests", "quota", "rate limit", "capacity exceeded",
+    "too many concurrent", "invalid_grant", "not registered", "permission_denied",
+)
+
+
+def _is_account_error(text: str) -> bool:
+    text = text.lower()
+    return any(marker in text for marker in _ACCOUNT_ERROR_MARKERS)
 
 
 class EarthEngineMemoryError(RuntimeError):
@@ -214,8 +232,12 @@ class SentinelCompositeBuilder:
 
         delay = retry_delay
         last_error: Optional[Exception] = None
+        attempt = 0
+        switches = 0
 
-        for attempt in range(1, max_retries + 1):
+        while attempt < max_retries:
+            attempt += 1
+            account = current_gee_account()
             try:
                 url = composite.getDownloadURL(download_params)
                 logger.info(
@@ -244,12 +266,11 @@ class SentinelCompositeBuilder:
 
             except urllib.error.HTTPError as exc:
                 last_error = exc
-            
                 try:
                     body = exc.read().decode("utf-8", errors="ignore")
                 except Exception:
                     body = "<unable to read response body>"
-            
+
                 logger.error(
                     "Earth Engine HTTP Error",
                     attempt=attempt,
@@ -257,71 +278,49 @@ class SentinelCompositeBuilder:
                     reason=exc.reason,
                     response=body,
                 )
-            
-                # Don't retry invalid requests
                 if exc.code == 400 and "memory limit" in body.lower():
                     raise EarthEngineMemoryError(
                         f"Earth Engine rejected the request (HTTP 400): {body}"
                     ) from exc
-                if exc.code == 400:
-                    raise RuntimeError(
-                        f"Earth Engine rejected the request (HTTP 400): {body}"
-                    ) from exc
-            
-                error_str = body.lower()
-            
-                is_quota = any(
-                    kw in error_str
-                    for kw in ("quota", "rate limit", "429", "too many")
-                )
-            
-                if attempt < max_retries:
-                    wait = delay * (2 if is_quota else 1)
-            
-                    logger.warning(
-                        "GeoTIFF download failed — retrying",
-                        attempt=attempt,
-                        retry_in_sec=wait,
-                        is_quota_error=is_quota,
-                    )
-            
-                    time.sleep(wait)
-                    delay *= retry_backoff
-                else:
-                    logger.error(
-                        "GeoTIFF download failed — retries exhausted",
-                        attempt=attempt,
-                        status=exc.code,
-                    )
-            
+                error_text = f"HTTP {exc.code} {exc.reason} {body}"
+                retryable = exc.code != 400
+
             except Exception as exc:
                 last_error = exc
-                error_str = str(exc).lower()
-            
-                is_quota = any(
-                    kw in error_str
-                    for kw in ("quota", "rate limit", "429", "too many")
+                error_text = str(exc)
+                retryable = True
+
+            # Account-level rejection (quota, rate limit, bad key): switch to
+            # the next service account and retry without using up an attempt.
+            if _is_account_error(error_text) and switches < max(1, gee_account_count()):
+                if rotate_gee_account(account, error_text):
+                    switches += 1
+                    attempt -= 1
+                    continue
+
+            if not retryable:
+                raise RuntimeError(
+                    f"Earth Engine rejected the request (HTTP 400): {error_text}"
+                ) from last_error
+
+            is_quota = _is_account_error(error_text)
+            if attempt < max_retries:
+                wait = delay * (2 if is_quota else 1)
+                logger.warning(
+                    "GeoTIFF download failed — retrying",
+                    attempt=attempt,
+                    error=error_text[:300],
+                    retry_in_sec=wait,
+                    is_quota_error=is_quota,
                 )
-            
-                if attempt < max_retries:
-                    wait = delay * (2 if is_quota else 1)
-            
-                    logger.warning(
-                        "GeoTIFF download failed — retrying",
-                        attempt=attempt,
-                        error=str(exc),
-                        retry_in_sec=wait,
-                        is_quota_error=is_quota,
-                    )
-            
-                    time.sleep(wait)
-                    delay *= retry_backoff
-                else:
-                    logger.error(
-                        "GeoTIFF download failed — retries exhausted",
-                        attempt=attempt,
-                        error=str(exc),
-                    )
+                time.sleep(wait)
+                delay *= retry_backoff
+            else:
+                logger.error(
+                    "GeoTIFF download failed — retries exhausted",
+                    attempt=attempt,
+                    error=error_text[:300],
+                )
 
         raise RuntimeError(
             f"GeoTIFF download failed after {max_retries} attempts: {last_error}"

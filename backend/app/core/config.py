@@ -84,6 +84,10 @@ class Settings(BaseSettings):
     # (run `earthengine authenticate` once for user-credential flow)
     GEE_SERVICE_ACCOUNT_KEY_PATH: str = ""
     GEE_SERVICE_ACCOUNT_EMAIL: str = ""
+    # Extra service-account keys (comma-separated) to switch to when the
+    # active account hits its quota; empty = every gee_key*.json next to
+    # GEE_SERVICE_ACCOUNT_KEY_PATH
+    GEE_SERVICE_ACCOUNT_KEY_PATHS: str = ""
     # Optional path to a serialised sklearn classifier (.pkl) for ecosystem
     # classification.  Leave empty to use the built-in rule-based classifier.
     CLASSIFIER_MODEL_PATH: str = ""
