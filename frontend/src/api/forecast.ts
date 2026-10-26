@@ -15,11 +15,12 @@ export async function getForecast(
 export async function getEcologicalForecast(
   regionId: string,
   method: SimilarityMethod = 'cosine',
+  year?: number,
   numAnalogs: number = 5,
 ): Promise<EcologicalForecastData> {
   const { data } = await apiClient.get<EcologicalForecastData>(
     `/forecast/ecological/${regionId}`,
-    { params: { method, num_analogs: numAnalogs }, timeout: 120_000 },
+    { params: { method, year, num_analogs: numAnalogs }, timeout: 120_000 },
   );
   return data;
 }

@@ -32,14 +32,21 @@ own history.
 ## Pipeline overview
 
 ```text
-target lake's latest lake_features row
+query_year (the `year` param — the frontend sends the selected region's year —
+            or the lake's latest embedding year)
+    -> embedding similarity search ending at query_year -> ranked twin lakes,
+       each with its own matched_year (aligned with query_year)
+    -> target's lake_features row at query_year (or latest earlier year)
     -> compute 5 ecological indices (anchor_indices)
-    -> embedding similarity search -> ranked twin lakes, each with its own matched_year
     -> for each twin, for h = 1..3: delta = index(matched_year + h) - index(matched_year)
-    -> weighted_score(index, h) = sum(rank_weight * delta) over twins with data at h
+    -> weighted_score(index, h) = sum(normalized_weight * delta) over twins with data at h
     -> expected_value(index, h) = anchor_indices[index] + weighted_score(index, h)
-    -> direction(index, h) = classify(weighted_score, twins_contributing)
+    -> direction(index, h) = classify(weighted_score, twins_contributing, threshold(index, h))
 ```
+
+Forecast years are `query_year + 1 .. +3`. `current_year` in the response is
+the year of the band data used for `anchor_indices`; it equals `query_year`
+unless that year has no lake features.
 
 Implementation: `app/services/ecological_forecast_service.py`,
 `EcologicalForecastService.generate_ecological_forecast`.
@@ -56,7 +63,12 @@ the main download stack). Implementation:
 | `ndvi` | `(B8 − B4) / (B8 + B4)` | Vegetation vigor |
 | `ndwi` | `(B3 − B8) / (B3 + B8)` | Water mask / wetness (McFeeters) |
 | `turbidity_ratio` | `(B4 − B3) / (B4 + B3)` | Water clarity / suspended sediment |
-| `red_edge_slope` | `(B7 − B5) / 78` (Δλ between 705 nm and 783 nm) | Pigment concentration trend, units: reflectance per nm |
+| `red_edge_slope` | `(ρB7 − ρB5) / 78 × 100` (Δλ between 705 nm and 783 nm, ρ = band mean / 10000) | Pigment concentration trend, units: reflectance per 100 nm |
+
+Band means in `lake_features` are Sentinel-2 L2A digital numbers (reflectance
+× 10000). The normalised-difference indices don't depend on that scale, but
+Red Edge Slope does, so it is computed on true reflectance. Per 100 nm keeps
+it on the same order as the other indices (typically ~±0.03 over water).
 
 Each index is `None` only when one of *its own* bands is missing/non-finite
 for that lake-year; the others are still computed. Divisions near zero return
@@ -145,7 +157,7 @@ Example: if only rank 1 (0.28) and rank 3 (0.20) have data for a given year,
 *relative* influence without being diluted by the two absent twins. This
 keeps `weighted_score` a true weighted average (bounded by the min/max of
 the contributing deltas) regardless of how many twins dropped out for that
-year, so the fixed classification threshold below means the same thing every
+year, so the classification threshold below means the same thing every
 year. `TwinDeltaContribution` carries both `fixed_weight` (the twin's
 constant rank weight) and `normalized_weight` (this year's renormalized
 weight) so the audit trail and UI can show when a twin's effective influence
@@ -159,14 +171,31 @@ that year's own weighted score onto the same fixed anchor.
 Classification (`_classify`):
 
 ```text
-twins_contributing < 2          -> "uncertain"
-weighted_score >  +0.005        -> "up"
-weighted_score <  -0.005        -> "down"
-otherwise                       -> "stable"
+twins_contributing < 2              -> "uncertain"
+weighted_score >  +threshold(i, h)  -> "up"
+weighted_score <  -threshold(i, h)  -> "down"
+otherwise                           -> "stable"
 ```
 
-`_DIRECTION_THRESHOLD = 0.005`, `_MIN_TWINS_FOR_DIRECTION = 2`,
-`_FORECAST_HORIZON = 3` (hardcoded).
+The indices have different ranges and natural variability, and a 3-year
+change is naturally larger than a 1-year one, so one fixed threshold can't
+fit them all. Each threshold is data-driven
+(`_load_direction_thresholds`):
+
+```text
+threshold(index, h) = 0.5 × median |index(lake, y + h) − index(lake, y)|
+                      over all lakes and years y with current-version features
+```
+
+A forecast change counts as up/down only when the twins agree on a move
+larger than half of a typical h-year fluctuation for that index. With fewer
+than 30 lake-year pairs, `_FALLBACK_THRESHOLDS` applies (0.005 for the ratio
+indices, 0.001 for Red Edge Slope). The thresholds are cached per process for
+an hour, logged when computed, returned per year as
+`YearlyDirection.threshold`, and listed in `audit_report.classification_rule`.
+
+`_NOISE_FRACTION = 0.5`, `_MIN_NOISE_SAMPLES = 30`,
+`_MIN_TWINS_FOR_DIRECTION = 2`, `_FORECAST_HORIZON = 3` (hardcoded).
 
 ## 5. Response contract
 

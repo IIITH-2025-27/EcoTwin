@@ -94,6 +94,7 @@ class YearlyDirection(BaseModel):
     weighted_score: float              # combined weighted delta for this year
     twins_contributing: int            # how many twins had data for this year
     expected_value: Optional[float] = None   # current_value + weighted_score, or None if no anchor
+    threshold: Optional[float] = None        # |weighted_score| above this → up/down
     twin_deltas: List[TwinDeltaContribution] = Field(default_factory=list)
 
 

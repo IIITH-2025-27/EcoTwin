@@ -5,11 +5,13 @@ import type { SimilarityMethod } from '@/types';
 export function useEcologicalForecast(
   regionId: string | null,
   method: SimilarityMethod = 'cosine',
+  year?: number,
+  enabled: boolean = true,
 ) {
   return useQuery({
-    queryKey: ['ecologicalForecast', regionId, method],
-    queryFn: () => getEcologicalForecast(regionId!, method),
-    enabled: !!regionId,
+    queryKey: ['ecologicalForecast', regionId, method, year],
+    queryFn: () => getEcologicalForecast(regionId!, method, year),
+    enabled: !!regionId && enabled,
     staleTime: 10 * 60 * 1_000,
   });
 }

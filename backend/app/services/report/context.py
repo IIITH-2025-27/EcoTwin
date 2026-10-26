@@ -584,6 +584,7 @@ async def build_report_context(
             )
             return await svc.generate_ecological_forecast(
                 region_id=region.region_id,
+                year=similarity.query_year,
                 num_analogs=5,
                 method=method,
                 precomputed_analogs=analog_rows,

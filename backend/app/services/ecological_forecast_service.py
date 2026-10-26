@@ -10,19 +10,33 @@ Fixed rank-based weights, not recalculated per year:
   Rank 1 = 0.28,  Rank 2 = 0.24,  Rank 3 = 0.20,
   Rank 4 = 0.16,  Rank 5 = 0.12
 
-If a twin has no data for a given forecast year, its weight becomes **0** for
-that year (excluded, not redistributed to other twins).
+If a twin has no data for a given forecast year, it is left out for that year
+and the remaining twins' weights are renormalized to sum to 1.
+
+Anchor year
+-----------
+The forecast is anchored on the similarity query year (the last year of the
+target lake's query trajectory, ``year`` when given, otherwise the lake's
+latest embedding year). Twins' deltas are measured from their matched year,
+which lines up with that query year, so forecast years are
+``query_year + 1 .. +3``. The target's current index values come from its
+``lake_features`` row for the query year, or the latest earlier row if that
+year has no features.
 
 Classification
 --------------
 For each index and each forecast year, compute a weighted score:
-  ``score = Σ (rank_weight × delta)``  for all twins that have data.
+  ``score = Σ (normalized_weight × delta)``  for all twins that have data.
 
-Then classify:
+Then classify against a threshold specific to that index and horizon:
   * score >  +threshold  →  **up** (↑)
   * score <  −threshold  →  **down** (↓)
   * |score| ≤  threshold  →  **stable** (→)  — current state holds
   * < 2 twins contribute  →  **uncertain** (?) — distinct from stable
+
+Each threshold is ``_NOISE_FRACTION`` × the median absolute change of that
+index over the same horizon across all lakes (its natural year-to-year
+variability), so it is in the index's own units and widens with the horizon.
 
 Output
 ------
@@ -31,7 +45,8 @@ Output
 
 from __future__ import annotations
 
-from typing import Dict, List, Optional, Sequence, Tuple
+import time
+from typing import Dict, List, Mapping, Optional, Sequence, Tuple
 from uuid import UUID
 
 import numpy as np
@@ -39,6 +54,7 @@ import structlog
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.processing.constants import FEATURE_VERSION
 from app.repositories.embedding_repository import EmbeddingRepository
 from app.repositories.region_repository import RegionRepository
 from app.schemas.forecast import (
@@ -66,9 +82,6 @@ _RANK_WEIGHTS: Dict[int, float] = {
     5: 0.12,
 }
 
-# Classification threshold — weighted score above/below this → up/down
-_DIRECTION_THRESHOLD: float = 0.005
-
 # Minimum twins contributing for a year to avoid "uncertain"
 _MIN_TWINS_FOR_DIRECTION: int = 2
 
@@ -76,6 +89,30 @@ _MIN_TWINS_FOR_DIRECTION: int = 2
 _FORECAST_HORIZON: int = 3
 
 _INDEX_KEYS: List[str] = ["ndci", "ndvi", "ndwi", "turbidity_ratio", "red_edge_slope"]
+
+# Direction thresholds are data-driven: a weighted change counts as up/down
+# only when it exceeds this fraction of the median absolute change of that
+# index over the same horizon across all lakes (its natural variability).
+_NOISE_FRACTION: float = 0.5
+
+# Fewer lake-year pairs than this → the noise estimate is unreliable and the
+# fallback threshold is used instead.
+_MIN_NOISE_SAMPLES: int = 30
+
+# Fallback thresholds, in each index's own units (Red Edge Slope is
+# reflectance per 100 nm, typically ~±0.03 over water)
+_FALLBACK_THRESHOLDS: Dict[str, float] = {
+    "ndci": 0.005,
+    "ndvi": 0.005,
+    "ndwi": 0.005,
+    "turbidity_ratio": 0.005,
+    "red_edge_slope": 0.001,
+}
+
+# The noise estimate scans every lake_features row, so it is cached per
+# process; lake features only change when the feature pipeline runs.
+_THRESHOLD_CACHE_TTL_SEC: float = 3600.0
+_threshold_cache: Optional[Tuple[float, Dict[str, Dict[int, float]]]] = None
 
 _INDEX_LABELS: Dict[str, str] = {
     "ndci": "NDCI (Chlorophyll-a)",
@@ -96,7 +133,7 @@ _DIRECTION_ARROWS: Dict[str, str] = {
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 
-def _compute_indices_from_row(row: dict) -> Dict[str, Optional[float]]:
+def _compute_indices_from_row(row: Mapping) -> Dict[str, Optional[float]]:
     """Compute indices on-the-fly from band means in a lake_features row.
 
     b8_mean may be absent (B8 fetch coverage lags the main pipeline) — NDVI
@@ -114,15 +151,75 @@ def _compute_indices_from_row(row: dict) -> Dict[str, Optional[float]]:
     )
 
 
-def _classify(score: float, num_twins: int) -> str:
+def _classify(score: float, num_twins: int, threshold: float) -> str:
     """Classify a weighted score into a direction label."""
     if num_twins < _MIN_TWINS_FOR_DIRECTION:
         return "uncertain"
-    if score > _DIRECTION_THRESHOLD:
+    if score > threshold:
         return "up"
-    if score < -_DIRECTION_THRESHOLD:
+    if score < -threshold:
         return "down"
     return "stable"
+
+
+def _compute_direction_thresholds(
+    indices_by_lake: Mapping[int, Mapping[int, Mapping[str, Optional[float]]]],
+) -> Dict[str, Dict[int, float]]:
+    """Per index and horizon h: ``_NOISE_FRACTION`` × median |Δ over h years|.
+
+    ``indices_by_lake`` maps lake_id → year → index values. Only pairs of
+    years exactly ``h`` apart contribute, matching how twin deltas are taken.
+    """
+    thresholds: Dict[str, Dict[int, float]] = {}
+    for idx_key in _INDEX_KEYS:
+        thresholds[idx_key] = {}
+        for h in range(1, _FORECAST_HORIZON + 1):
+            changes = []
+            for yearly in indices_by_lake.values():
+                for yr, values in yearly.items():
+                    base = values.get(idx_key)
+                    future = yearly.get(yr + h, {}).get(idx_key)
+                    if base is not None and future is not None:
+                        changes.append(abs(future - base))
+            median = float(np.median(changes)) if len(changes) >= _MIN_NOISE_SAMPLES else 0.0
+            thresholds[idx_key][h] = (
+                _NOISE_FRACTION * median if median > 0 else _FALLBACK_THRESHOLDS[idx_key]
+            )
+    return thresholds
+
+
+async def _load_direction_thresholds(session: AsyncSession) -> Dict[str, Dict[int, float]]:
+    """Direction thresholds from all current-version lake features (cached)."""
+    global _threshold_cache
+    now = time.monotonic()
+    if _threshold_cache is not None and now - _threshold_cache[0] < _THRESHOLD_CACHE_TTL_SEC:
+        return _threshold_cache[1]
+
+    result = await session.execute(
+        text("""
+            SELECT lake_id, year,
+                   b2_mean, b3_mean, b4_mean, b5_mean, b6_mean, b7_mean, b8_mean
+            FROM lake_features
+            WHERE status = 'completed'
+              AND b2_mean IS NOT NULL
+              AND feature_version = :feature_version
+        """),
+        {"feature_version": FEATURE_VERSION},
+    )
+    indices_by_lake: Dict[int, Dict[int, Dict[str, Optional[float]]]] = {}
+    for row in result.mappings():
+        indices_by_lake.setdefault(int(row["lake_id"]), {})[int(row["year"])] = (
+            _compute_indices_from_row(row)
+        )
+
+    thresholds = _compute_direction_thresholds(indices_by_lake)
+    _threshold_cache = (now, thresholds)
+    logger.info(
+        "Forecast direction thresholds computed",
+        lakes=len(indices_by_lake),
+        thresholds={k: {h: round(v, 6) for h, v in t.items()} for k, t in thresholds.items()},
+    )
+    return thresholds
 
 
 async def _fetch_band_rows_for_twins(
@@ -181,8 +278,10 @@ async def _fetch_band_rows_for_twins(
 async def _fetch_latest_band_row(
     session: AsyncSession,
     lake_id: int,
+    max_year: Optional[int] = None,
 ) -> Optional[Dict]:
-    """Return the most recent completed lake_features row with band means."""
+    """Return the most recent completed lake_features row with band means,
+    no later than ``max_year`` when given."""
     result = await session.execute(
         text("""
             SELECT year,
@@ -191,10 +290,12 @@ async def _fetch_latest_band_row(
             WHERE lake_id = :lake_id
               AND status = 'completed'
               AND b2_mean IS NOT NULL
+              AND (CAST(:max_year AS integer) IS NULL
+                   OR year <= CAST(:max_year AS integer))
             ORDER BY year DESC
             LIMIT 1
         """),
-        {"lake_id": lake_id},
+        {"lake_id": lake_id, "max_year": max_year},
     )
     row = result.mappings().one_or_none()
     if row is None:
@@ -219,13 +320,16 @@ class EcologicalForecastService:
 
     Pipeline
     --------
-    1. Fetch target lake's latest band means → compute anchor indices.
-    2. Run embedding similarity search to find top-k twin lakes.
+    1. Run embedding similarity search to find top-k twin lakes for the
+       query year (``year``, or the lake's latest embedding year).
+    2. Fetch the target's band means at the query year (or the latest
+       earlier year) → compute anchor indices.
     3. Assign fixed rank weights (0.28, 0.24, 0.20, 0.16, 0.12).
     4. For each twin, compute indices at matched_year and at each
        future offset (matched_year + 1, +2, +3).  Delta = future − base.
-    5. For each index × each forecast year: sum (rank_weight × delta)
-       across twins that have data.  Classify as up/down/stable/uncertain.
+    5. For each index × each forecast year: weighted mean of the deltas
+       across twins that have data.  Classify as up/down/stable/uncertain
+       against that index's threshold for that horizon.
     6. Build 3-year forecast table + full audit report.
     """
 
@@ -262,21 +366,12 @@ class EcologicalForecastService:
             raise ValueError(f"Region {region_id} not found")
         lake_id: int = region.lake_id
 
-        # ── 2. Target lake anchor indices ────────────────────────────────
-        latest_row = await _fetch_latest_band_row(self._session, lake_id)
-        if latest_row is None:
-            raise ValueError(
-                f"No band statistics in lake_features for lake {lake_id}. "
-                "Run the feature generation pipeline first."
-            )
-        anchor_year: int = latest_row["year"]
-        anchor_indices = _compute_indices_from_row(latest_row)
-
-        forecast_years = [anchor_year + h for h in range(1, _FORECAST_HORIZON + 1)]
-
-        # ── 3. Similarity search (skip if caller provided pre-computed analogs)
+        # ── 2. Similarity search (skip if caller provided pre-computed analogs)
+        # The query year is the last year of the target's query trajectory;
+        # twins' matched_year lines up with it, so the forecast starts there.
         if precomputed_analogs is not None:
             analog_list = list(precomputed_analogs)
+            query_year: int = year if year is not None else region.year
         else:
             sim_svc = self._get_similarity_service()
             search_response = await sim_svc.search_analogs(
@@ -287,6 +382,20 @@ class EcologicalForecastService:
                 method=method,
             )
             analog_list = search_response.analogs
+            query_year = search_response.query_year
+
+        forecast_years = [query_year + h for h in range(1, _FORECAST_HORIZON + 1)]
+
+        # ── 3. Target lake anchor indices at the query year ──────────────
+        anchor_row = await _fetch_latest_band_row(self._session, lake_id, max_year=query_year)
+        if anchor_row is None:
+            raise ValueError(
+                f"No band statistics in lake_features for lake {lake_id} "
+                f"up to {query_year}. Run the feature generation pipeline first."
+            )
+        anchor_year: int = anchor_row["year"]
+        anchor_indices = _compute_indices_from_row(anchor_row)
+        thresholds = await _load_direction_thresholds(self._session)
 
         if not analog_list:
             return self._empty_forecast(
@@ -420,7 +529,8 @@ class EcologicalForecastService:
             yearly_dirs: List[YearlyDirection] = []
 
             for h in range(1, _FORECAST_HORIZON + 1):
-                forecast_yr = anchor_year + h
+                forecast_yr = forecast_years[h - 1]
+                threshold = thresholds[idx_key][h]
 
                 # Twins with usable data for this specific offset. A twin's
                 # fixed rank weight only reflects its relative influence when
@@ -466,7 +576,7 @@ class EcologicalForecastService:
                         )
                     )
 
-                direction = _classify(weighted_score, twins_contributing)
+                direction = _classify(weighted_score, twins_contributing, threshold)
                 expected_value = (
                     round(current_val + weighted_score, 6)
                     if current_val is not None
@@ -479,6 +589,7 @@ class EcologicalForecastService:
                         weighted_score=round(weighted_score, 6),
                         twins_contributing=twins_contributing,
                         expected_value=expected_value,
+                        threshold=round(threshold, 6),
                         twin_deltas=twin_deltas,
                     )
                 )
@@ -487,7 +598,8 @@ class EcologicalForecastService:
                 per_year_report.append(
                     f"{_INDEX_LABELS[idx_key]} @ {forecast_yr}: "
                     f"{arrow} ({direction}) — "
-                    f"weighted score = {weighted_score:+.6f}, "
+                    f"weighted score = {weighted_score:+.6f} "
+                    f"(threshold ±{threshold:.6f}), "
                     f"{twins_contributing} twin(s) contributing"
                     + (f" [{', '.join(contributions_detail)}]" if contributions_detail else "")
                     + "."
@@ -544,15 +656,27 @@ class EcologicalForecastService:
             f"Rank{r}={w:.2f}" for r, w in sorted(_RANK_WEIGHTS.items())
         )
 
+        threshold_desc = "; ".join(
+            f"{_INDEX_LABELS[k]}: "
+            + ", ".join(f"+{h}y ±{thresholds[k][h]:.4g}" for h in range(1, _FORECAST_HORIZON + 1))
+            for k in _INDEX_KEYS
+        )
+        anchor_note = (
+            ""
+            if anchor_year == query_year
+            else f" (no band data for {query_year}; using the latest earlier year)"
+        )
+
         # ── 8. Audit report ──────────────────────────────────────────────
         audit_report = ForecastAuditReport(
             summary=(
                 f"Ecological forecast for lake {lake_id} "
-                f"(anchor year {anchor_year}) using {len(twin_data)} twin(s) "
+                f"(query year {query_year}) using {len(twin_data)} twin(s) "
                 f"found via {method.value} embedding similarity."
             ),
             anchor_details=(
-                f"Target lake {lake_id}: latest band data year {anchor_year}. "
+                f"Target lake {lake_id}: query year {query_year}, "
+                f"band data year {anchor_year}{anchor_note}. "
                 f"Anchor indices — "
                 + ", ".join(
                     f"{_INDEX_LABELS[k]}: {anchor_indices[k]:.4f}"
@@ -564,14 +688,16 @@ class EcologicalForecastService:
             ),
             weight_scheme=(
                 f"Fixed rank-based weights: {weight_desc}. "
-                f"If a twin has no data for a forecast year, its weight is 0 "
-                f"for that year (excluded, not redistributed)."
+                f"If a twin has no data for a forecast year, it is left out "
+                f"for that year and the remaining weights are renormalized to sum to 1."
             ),
             classification_rule=(
-                f"Score > +{_DIRECTION_THRESHOLD} → Upward (↑). "
-                f"Score < −{_DIRECTION_THRESHOLD} → Downward (↓). "
-                f"Score within ±{_DIRECTION_THRESHOLD} → Stable (→). "
-                f"Fewer than {_MIN_TWINS_FOR_DIRECTION} twins → Uncertain (?)."
+                f"Score > +threshold → Upward (↑). "
+                f"Score < −threshold → Downward (↓). "
+                f"Score within ±threshold → Stable (→). "
+                f"Fewer than {_MIN_TWINS_FOR_DIRECTION} twins → Uncertain (?). "
+                f"Each threshold is {_NOISE_FRACTION:g} × the median absolute change "
+                f"of that index over the same horizon across all lakes — {threshold_desc}."
             ),
             twin_details=twin_report_parts,
             per_year_reasoning=per_year_report,
@@ -586,6 +712,7 @@ class EcologicalForecastService:
             "Ecological forecast generated",
             region_id=str(region_id),
             lake_id=lake_id,
+            query_year=query_year,
             anchor_year=anchor_year,
             num_twins=len(twin_data),
         )

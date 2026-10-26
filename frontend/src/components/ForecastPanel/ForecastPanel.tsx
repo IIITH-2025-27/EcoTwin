@@ -22,6 +22,7 @@ import Badge, { trendToBadgeVariant } from '@/components/common/Badge';
 import { forecastQueryKey, useForecast } from '@/hooks/useForecast';
 import { clearRequestStart } from '@/lib/requestStart';
 import { useEcologicalForecast } from '@/hooks/useEcologicalForecast';
+import { useRegion } from '@/hooks/useRegion';
 import { useMapStore } from '@/store/mapStore';
 import type { TrendDirection, EcologicalForecastData, EcoDirection, IndexForecast } from '@/types';
 
@@ -181,8 +182,15 @@ export default function ForecastPanel() {
 
   const { data: forecast, isLoading: fLoading, error: fError, refetch: fRefetch } =
     useForecast(selectedRegionId, similarityMethod);
-  const { data: ecoForecast, isLoading: ecoLoading } =
-    useEcologicalForecast(selectedRegionId, similarityMethod);
+  // The selected region is one lake-year; forecast from that year. If the
+  // region lookup fails, the backend falls back to the lake's latest year.
+  const { data: regionData, isLoading: regionLoading } = useRegion(selectedRegionId);
+  const { data: ecoForecast, isLoading: ecoLoading } = useEcologicalForecast(
+    selectedRegionId,
+    similarityMethod,
+    regionData?.region.year,
+    !regionLoading,
+  );
 
   const ecoChartData = useMemo(() => {
     if (!ecoForecast) return [];
@@ -371,7 +379,7 @@ export default function ForecastPanel() {
         )}
       </div>
 
-      <EcologicalForecastSection data={ecoForecast} isLoading={ecoLoading} />
+      <EcologicalForecastSection data={ecoForecast} isLoading={regionLoading || ecoLoading} />
     </div>
   );
 }

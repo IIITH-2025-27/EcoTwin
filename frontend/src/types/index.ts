@@ -173,6 +173,7 @@ export interface YearlyDirection {
   weighted_score: number;
   twins_contributing: number;
   expected_value: number | null;
+  threshold?: number | null;
   twin_deltas: TwinDeltaContribution[];
 }
 

@@ -7,6 +7,12 @@ B8 (NIR) comes from the main download stack (computed by
 NDVI and NDWI use the standard formulas with true NIR (B8). NDCI,
 Turbidity Ratio, and Red Edge Slope use only visible / red-edge bands.
 
+Band means are stored as Sentinel-2 L2A digital numbers (reflectance ×
+10000). The four normalised-difference indices are scale-invariant, but Red
+Edge Slope is a difference, so it is computed on true reflectance and
+expressed per 100 nm. That keeps it on the same order of magnitude as the
+other indices (typically |value| < 0.1) instead of ~10000× larger.
+
 Each index is computed independently: a lake-year missing B8 still gets
 NDCI/Turbidity/Red-Edge-Slope — only NDVI and NDWI become ``None`` for
 that row, rather than the whole result going empty.
@@ -20,11 +26,16 @@ from __future__ import annotations
 import math
 from typing import Dict, Optional
 
+from app.processing.constants import REFLECTANCE_SCALE
+
 # Same epsilon used by app/processing/spectral_indices.py
 _EPSILON: float = 1e-10
 
 # Sentinel-2 central wavelengths used for Red Edge Slope: B5 = 705nm, B7 = 783nm
 _RED_EDGE_DELTA_LAMBDA: float = 783.0 - 705.0  # 78 nm
+
+# Red Edge Slope is reported as reflectance change per this many nm
+_RED_EDGE_SLOPE_PER_NM: float = 100.0
 
 
 def _safe_ratio(numerator: float, denominator: float) -> float:
@@ -75,7 +86,10 @@ def compute_ecological_indices(
     NDVI             (B8 − B4) / (B8 + B4)         Vegetation vigor (standard formula)
     NDWI             (B3 − B8) / (B3 + B8)         Water mask (McFeeters, standard formula)
     Turbidity Ratio  (B4 − B3) / (B4 + B3)         Water clarity / sediment
-    Red Edge Slope   (B7 − B5) / (783 − 705)       Pigment concentration trend
+    Red Edge Slope   (ρB7 − ρB5) / (783 − 705) × 100
+                                                   Pigment concentration trend,
+                                                   reflectance per 100 nm
+                                                   (ρ = band mean / 10000)
     """
     result: Dict[str, Optional[float]] = {
         "ndci": None,
@@ -106,6 +120,10 @@ def compute_ecological_indices(
         result["turbidity_ratio"] = _safe_ratio(b4 - b3, b4 + b3)
 
     if b7 is not None and b5 is not None:
-        result["red_edge_slope"] = (b7 - b5) / _RED_EDGE_DELTA_LAMBDA
+        result["red_edge_slope"] = (
+            (b7 - b5) / REFLECTANCE_SCALE
+            / _RED_EDGE_DELTA_LAMBDA
+            * _RED_EDGE_SLOPE_PER_NM
+        )
 
     return result
